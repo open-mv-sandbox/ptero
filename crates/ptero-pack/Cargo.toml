@@ -1,0 +1,14 @@
+[package]
+name = "ptero-pack"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+dacti-index.workspace = true
+daicon.workspace = true
+stewart.workspace = true
+stewart-local.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+ptero-daicon.workspace = true
