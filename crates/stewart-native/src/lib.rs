@@ -1,8 +1,7 @@
 //! Native runtime for stewart.
 
 mod actors;
-mod dispatcher;
-mod factory_runner;
-mod runtime;
+mod executor;
+mod world;
 
-pub use self::runtime::NativeRuntime;
+pub use self::{executor::ThreadExecutor, world::World};

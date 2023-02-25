@@ -3,7 +3,7 @@ mod io;
 
 use clap::{Parser, Subcommand};
 use stewart_local::Factory;
-use stewart_native::NativeRuntime;
+use stewart_native::{ThreadExecutor, World};
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
@@ -19,7 +19,7 @@ fn main() {
     let args = CliArgs::parse();
 
     // Set up the runtime
-    let runtime = NativeRuntime::new();
+    let world = World::new();
 
     // Start the command actor
     let command: Box<dyn Factory> = match args.command {
@@ -28,8 +28,9 @@ fn main() {
     };
 
     // Run the command until it's done
-    runtime.start(command);
-    runtime.block_execute();
+    world.start(command);
+    let executor = ThreadExecutor::new(world);
+    executor.run_until_idle();
 
     // TODO: Stewart doesn't currently bubble up errors for us to catch, and we need those for the
     // correct error code.

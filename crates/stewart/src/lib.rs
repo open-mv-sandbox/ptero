@@ -16,6 +16,8 @@ pub trait Actor {
 }
 
 /// What should be done with the actor after returning from the message handler.
+///
+/// TODO: Replace with context function.
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum Next {
     Continue,
