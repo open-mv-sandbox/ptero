@@ -1,7 +1,7 @@
 use std::{any::Any, sync::Arc};
 
 use stewart::Next;
-use stewart_local::Factory;
+use stewart::{Context, Factory};
 use tracing::{event, Level};
 
 use crate::{world::WorldTask, World};
@@ -45,7 +45,7 @@ impl ThreadExecutor {
         let result = self
             .world
             .actors()
-            .run(address, |actor| actor.handle_any(message));
+            .run(address, |actor| actor.handle_any(self, message));
 
         // TODO: What should we do with the error?
         let next = match result {
@@ -72,7 +72,27 @@ impl ThreadExecutor {
 
     fn execute_start(&self, factory: Box<dyn Factory>) {
         // TODO: Track hierarchy
-        let factory = |id| factory.start(id, self.world.clone(), id);
+        let factory = |id| factory.start(self, id);
         self.world.actors().start(factory);
+    }
+}
+
+impl Context for ThreadExecutor {
+    fn send_any(&self, address: usize, message: Box<dyn Any>) {
+        // TODO: Consider downcasting at this point to bin messages in contiguous queues,
+        // maybe even avoiding the need for Box altogether by granting a memory slot in-line.
+
+        self.world.send(address, message);
+    }
+
+    fn start_any(&self, factory: Box<dyn Factory>) {
+        // TODO: Reorganize the pattern in which actors are stored and run.
+        // Actors should be associated with an executor, and the executor should handle its own
+        // actors first. When an executor no longer has local actors to handle messages for, it
+        // should 'steal' actors from other executors to distribute work.
+
+        // TODO: Track hierarchy.
+
+        self.world.start(factory);
     }
 }

@@ -2,7 +2,7 @@ mod commands;
 mod io;
 
 use clap::{Parser, Subcommand};
-use stewart_local::Factory;
+use stewart::Factory;
 use stewart_native::{ThreadExecutor, World};
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;

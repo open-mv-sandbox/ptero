@@ -11,8 +11,7 @@ use dacti_index::{
 };
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{io::ReadWrite, FindComponent, FindComponentResult};
-use stewart::{Actor, Next};
-use stewart_local::{Address, Context, Factory};
+use stewart::{Actor, Address, Context, Factory, Next};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -65,7 +64,7 @@ pub struct AddData {
 struct AddDataActor;
 
 impl AddDataActor {
-    pub fn start(ctx: Context, _address: Address<()>, data: AddData) -> Result<Self, Error> {
+    pub fn start(ctx: &dyn Context, _address: Address<()>, data: AddData) -> Result<Self, Error> {
         event!(Level::DEBUG, "adding data to package");
 
         // The first 64kb is reserved for components and indices
@@ -98,7 +97,7 @@ impl AddDataActor {
 impl Actor for AddDataActor {
     type Message = ();
 
-    fn handle(&mut self, _message: ()) -> Result<Next, Error> {
+    fn handle(&mut self, _ctx: &dyn Context, _message: ()) -> Result<Next, Error> {
         // TODO: Report success/failure back
         unimplemented!()
     }
@@ -112,14 +111,13 @@ struct AddIndex {
 }
 
 struct AddIndexActor {
-    ctx: Context,
     package: Address<ReadWrite>,
     value: IndexEntry,
 }
 
 impl AddIndexActor {
     pub fn start(
-        ctx: Context,
+        ctx: &dyn Context,
         address: Address<FindComponentResult>,
         data: AddIndex,
     ) -> Result<Self, Error> {
@@ -131,7 +129,6 @@ impl AddIndexActor {
         ctx.start(find_component);
 
         Ok(Self {
-            ctx,
             package: data.package,
             value: data.value,
         })
@@ -141,7 +138,7 @@ impl AddIndexActor {
 impl Actor for AddIndexActor {
     type Message = FindComponentResult;
 
-    fn handle(&mut self, message: FindComponentResult) -> Result<Next, Error> {
+    fn handle(&mut self, ctx: &dyn Context, message: FindComponentResult) -> Result<Next, Error> {
         let region = RegionData::from_bytes(message.entry.data());
         let component_offset = region.offset(message.header.entries_offset());
 
@@ -154,7 +151,7 @@ impl Actor for AddIndexActor {
             start: component_offset,
             data,
         };
-        self.ctx.send(self.package, msg);
+        ctx.send(self.package, msg);
 
         Ok(Next::Stop)
     }

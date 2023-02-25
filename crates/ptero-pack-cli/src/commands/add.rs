@@ -2,8 +2,7 @@ use anyhow::Error;
 use clap::Args;
 use ptero_daicon::io::ReadWrite;
 use ptero_pack::AddData;
-use stewart::{Actor, Next};
-use stewart_local::{Address, Context, Factory};
+use stewart::{Actor, Address, Context, Factory, Next};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -27,14 +26,13 @@ pub struct AddCommand {
 }
 
 struct AddCommandActor {
-    ctx: Context,
     input: Vec<u8>,
     uuid: Uuid,
 }
 
 impl AddCommandActor {
     pub fn start(
-        ctx: Context,
+        ctx: &dyn Context,
         address: Address<Address<ReadWrite>>,
         data: AddCommand,
     ) -> Result<Self, Error> {
@@ -49,7 +47,6 @@ impl AddCommandActor {
         ctx.start(start_file);
 
         Ok(AddCommandActor {
-            ctx,
             input,
             uuid: data.uuid,
         })
@@ -59,7 +56,7 @@ impl AddCommandActor {
 impl Actor for AddCommandActor {
     type Message = Address<ReadWrite>;
 
-    fn handle(&mut self, message: Address<ReadWrite>) -> Result<Next, Error> {
+    fn handle(&mut self, ctx: &dyn Context, message: Address<ReadWrite>) -> Result<Next, Error> {
         let package = message;
 
         let (input, uuid) = (self.input.clone(), self.uuid);
@@ -68,7 +65,7 @@ impl Actor for AddCommandActor {
             data: input,
             uuid,
         };
-        self.ctx.start(add_data);
+        ctx.start(add_data);
 
         Ok(Next::Stop)
     }

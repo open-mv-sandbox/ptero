@@ -6,20 +6,47 @@
 //! This is a reference documentation for stewart, for more detailed explanation on stewart's
 //! design philosophy, read the stewart book.
 
+mod actor;
+mod context;
+
+use std::{marker::PhantomData, sync::atomic::AtomicPtr};
+
 use anyhow::Error;
 
-/// Actor message handling trait.
-pub trait Actor {
-    type Message;
+pub use self::{
+    actor::{Actor, AnyActor, Next},
+    context::Context,
+};
+pub use stewart_derive::Factory;
 
-    fn handle(&mut self, message: Self::Message) -> Result<Next, Error>;
+/// Opaque target address of an actor.
+pub struct Address<M> {
+    address: usize,
+    _m: PhantomData<AtomicPtr<M>>,
 }
 
-/// What should be done with the actor after returning from the message handler.
-///
-/// TODO: Replace with context function.
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum Next {
-    Continue,
-    Stop,
+impl<M> Address<M> {
+    pub fn from_raw(address: usize) -> Self {
+        Self {
+            address,
+            _m: PhantomData,
+        }
+    }
+}
+
+impl<M> Clone for Address<M> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M> Copy for Address<M> {}
+
+/// Instructions for creating an actor on a runtime locally.
+pub trait Factory {
+    fn start(
+        self: Box<Self>,
+        ctx: &dyn Context,
+        address: usize,
+    ) -> Result<Box<dyn AnyActor>, Error>;
 }

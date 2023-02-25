@@ -1,7 +1,7 @@
 use std::{any::Any, sync::Arc};
 
 use crossbeam_queue::SegQueue;
-use stewart_local::{Dispatcher, Factory};
+use stewart::Factory;
 
 use crate::actors::Actors;
 
@@ -31,29 +31,14 @@ impl World {
         &self.actors
     }
 
-    pub fn start(&self, factory: Box<dyn Factory>) {
-        let task = WorldTask::Start { factory };
-        self.queue.push(task);
-    }
-}
-
-impl Dispatcher for World {
-    fn send(&self, _actor_id: usize, address: usize, message: Box<dyn Any>) {
-        // TODO: Consider downcasting at this point to bin messages in contiguous queues,
-        // maybe even avoiding the need for Box altogether by granting a memory slot in-line.
-
+    pub(crate) fn send(&self, address: usize, message: Box<dyn Any>) {
         let task = WorldTask::Message { address, message };
         self.queue.push(task);
     }
 
-    fn start(&self, _actor_id: usize, factory: Box<dyn Factory>) {
-        // TODO: It makes sense to have this more executor-local. If we queue up with the local
-        // executor first, we can keep the memory thread core-local. This is better for
-        // performance. Then if an executor is out of work to do it can 'steal' an actor from
-        // another executor.
-        // TODO: Track hierarchy.
-
-        self.start(factory);
+    pub fn start(&self, factory: Box<dyn Factory>) {
+        let task = WorldTask::Start { factory };
+        self.queue.push(task);
     }
 }
 

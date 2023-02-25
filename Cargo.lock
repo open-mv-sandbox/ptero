@@ -789,7 +789,6 @@ dependencies = [
  "anyhow",
  "daicon",
  "stewart",
- "stewart-local",
  "uuid",
 ]
 
@@ -802,7 +801,6 @@ dependencies = [
  "daicon",
  "ptero-daicon",
  "stewart",
- "stewart-local",
  "tracing",
  "uuid",
 ]
@@ -816,7 +814,6 @@ dependencies = [
  "ptero-daicon",
  "ptero-pack",
  "stewart",
- "stewart-local",
  "stewart-native",
  "tracing",
  "tracing-subscriber",
@@ -939,20 +936,12 @@ name = "stewart"
 version = "0.1.0"
 dependencies = [
  "anyhow",
-]
-
-[[package]]
-name = "stewart-local"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "stewart",
- "stewart-local-derive",
+ "stewart-derive",
  "tracing",
 ]
 
 [[package]]
-name = "stewart-local-derive"
+name = "stewart-derive"
 version = "0.1.0"
 dependencies = [
  "quote",
@@ -967,7 +956,6 @@ dependencies = [
  "crossbeam-queue",
  "sharded-slab",
  "stewart",
- "stewart-local",
  "tracing",
 ]
 

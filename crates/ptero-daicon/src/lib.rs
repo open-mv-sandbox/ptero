@@ -10,8 +10,7 @@ use std::{
 use anyhow::{bail, Error};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
 use io::ReadResult;
-use stewart::{Actor, Next};
-use stewart_local::{Address, Context, Factory};
+use stewart::{Actor, Address, Context, Factory, Next};
 use uuid::Uuid;
 
 use crate::io::ReadWrite;
@@ -30,14 +29,13 @@ pub struct FindComponentResult {
 }
 
 struct FindComponentActor {
-    ctx: Context,
     address: Address<FindComponentMessage>,
     data: FindComponent,
 }
 
 impl FindComponentActor {
     fn start(
-        ctx: Context,
+        ctx: &dyn Context,
         address: Address<FindComponentMessage>,
         data: FindComponent,
     ) -> Result<FindComponentActor, Error> {
@@ -48,14 +46,14 @@ impl FindComponentActor {
         };
         ctx.start(read_header);
 
-        Ok(FindComponentActor { ctx, address, data })
+        Ok(FindComponentActor { address, data })
     }
 }
 
 impl Actor for FindComponentActor {
     type Message = FindComponentMessage;
 
-    fn handle(&mut self, message: FindComponentMessage) -> Result<Next, Error> {
+    fn handle(&mut self, ctx: &dyn Context, message: FindComponentMessage) -> Result<Next, Error> {
         let next = match message {
             FindComponentMessage::Header(location, header) => {
                 let read_entries = StartReadEntries {
@@ -64,7 +62,7 @@ impl Actor for FindComponentActor {
                     header,
                     reply: self.address,
                 };
-                self.ctx.start(read_entries);
+                ctx.start(read_entries);
 
                 // TODO: Follow extensions
 
@@ -76,7 +74,7 @@ impl Actor for FindComponentActor {
                     .find(|e| e.type_id() == self.data.target)
                 {
                     let result = FindComponentResult { header, entry };
-                    self.ctx.send(self.data.reply, result);
+                    ctx.send(self.data.reply, result);
                 } else {
                     // TODO: Better error reporting
                     bail!("unable to find component");
@@ -103,12 +101,15 @@ struct ReadHeader {
 }
 
 struct ReadHeaderActor {
-    ctx: Context,
     reply: Address<FindComponentMessage>,
 }
 
 impl ReadHeaderActor {
-    fn start(ctx: Context, address: Address<ReadResult>, data: ReadHeader) -> Result<Self, Error> {
+    fn start(
+        ctx: &dyn Context,
+        address: Address<ReadResult>,
+        data: ReadHeader,
+    ) -> Result<Self, Error> {
         let msg = ReadWrite::Read {
             start: 0,
             length: (SIGNATURE.len() + size_of::<ComponentTableHeader>()) as u64,
@@ -116,17 +117,14 @@ impl ReadHeaderActor {
         };
         ctx.send(data.package, msg);
 
-        Ok(ReadHeaderActor {
-            ctx,
-            reply: data.reply,
-        })
+        Ok(ReadHeaderActor { reply: data.reply })
     }
 }
 
 impl Actor for ReadHeaderActor {
     type Message = ReadResult;
 
-    fn handle(&mut self, message: ReadResult) -> Result<Next, Error> {
+    fn handle(&mut self, ctx: &dyn Context, message: ReadResult) -> Result<Next, Error> {
         let data = message?;
 
         // Validate signature
@@ -139,7 +137,7 @@ impl Actor for ReadHeaderActor {
         let header = ComponentTableHeader::from_bytes(&data[8..]).clone();
 
         let msg = FindComponentMessage::Header(header_location, header);
-        self.ctx.send(self.reply, msg);
+        ctx.send(self.reply, msg);
 
         Ok(Next::Stop)
     }
@@ -155,14 +153,13 @@ struct StartReadEntries {
 }
 
 struct ReadEntriesActor {
-    ctx: Context,
     header: ComponentTableHeader,
     reply: Address<FindComponentMessage>,
 }
 
 impl ReadEntriesActor {
     fn start(
-        ctx: Context,
+        ctx: &dyn Context,
         address: Address<ReadResult>,
         data: StartReadEntries,
     ) -> Result<Self, Error> {
@@ -174,7 +171,6 @@ impl ReadEntriesActor {
         ctx.send(data.package, msg);
 
         Ok(ReadEntriesActor {
-            ctx,
             header: data.header,
             reply: data.reply,
         })
@@ -184,7 +180,7 @@ impl ReadEntriesActor {
 impl Actor for ReadEntriesActor {
     type Message = ReadResult;
 
-    fn handle(&mut self, message: ReadResult) -> Result<Next, Error> {
+    fn handle(&mut self, ctx: &dyn Context, message: ReadResult) -> Result<Next, Error> {
         let data = message?;
 
         let mut entries = Vec::new();
@@ -199,7 +195,7 @@ impl Actor for ReadEntriesActor {
 
         // Reply with the read data
         let msg = FindComponentMessage::Entries(self.header.clone(), entries);
-        self.ctx.send(self.reply, msg);
+        ctx.send(self.reply, msg);
 
         Ok(Next::Stop)
     }

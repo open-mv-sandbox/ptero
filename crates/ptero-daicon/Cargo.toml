@@ -7,5 +7,4 @@ edition = "2021"
 anyhow.workspace = true
 daicon.workspace = true
 stewart.workspace = true
-stewart-local.workspace = true
 uuid.workspace = true

@@ -1,5 +1,5 @@
 use anyhow::Error;
-use stewart_local::Address;
+use stewart::Address;
 
 pub enum ReadWrite {
     Read {

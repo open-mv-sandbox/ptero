@@ -9,4 +9,3 @@ crossbeam-queue.workspace = true
 sharded-slab.workspace = true
 tracing.workspace = true
 stewart.workspace = true
-stewart-local.workspace = true
