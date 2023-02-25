@@ -22,14 +22,13 @@ impl Actors {
     where
         F: FnOnce(usize) -> Result<Box<dyn AnyActor>, Error>,
     {
-        event!(Level::TRACE, "starting actor");
-
         // Allocate an ID
         let entry = self
             .slab
             .vacant_entry()
             .expect("unable to allocate actor id");
         let id = entry.key();
+        event!(Level::TRACE, id, "starting actor");
 
         // Attempt to create the actor
         let result = factory(id);
@@ -47,7 +46,7 @@ impl Actors {
     }
 
     pub fn stop(&self, id: usize) {
-        event!(Level::TRACE, "stopping actor");
+        event!(Level::TRACE, id, "stopping actor");
         self.slab.remove(id);
     }
 

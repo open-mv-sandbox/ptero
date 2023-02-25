@@ -17,7 +17,7 @@ impl dyn '_ + Context {
         T: Any,
     {
         let message = Box::new(message);
-        self.send_any(address.address, message);
+        self.send_any(address.raw(), message);
     }
 
     /// Start a new child actor.

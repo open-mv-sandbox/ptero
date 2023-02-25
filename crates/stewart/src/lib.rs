@@ -7,46 +7,14 @@
 //! design philosophy, read the stewart book.
 
 mod actor;
+mod address;
 mod context;
-
-use std::{marker::PhantomData, sync::atomic::AtomicPtr};
-
-use anyhow::Error;
+mod factory;
 
 pub use self::{
-    actor::{Actor, AnyActor, Next},
+    actor::{Actor, Next},
+    address::Address,
     context::Context,
+    factory::{AnyActor, Factory},
 };
 pub use stewart_derive::Factory;
-
-/// Opaque target address of an actor.
-pub struct Address<M> {
-    address: usize,
-    _m: PhantomData<AtomicPtr<M>>,
-}
-
-impl<M> Address<M> {
-    pub fn from_raw(address: usize) -> Self {
-        Self {
-            address,
-            _m: PhantomData,
-        }
-    }
-}
-
-impl<M> Clone for Address<M> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<M> Copy for Address<M> {}
-
-/// Instructions for creating an actor on a runtime locally.
-pub trait Factory {
-    fn start(
-        self: Box<Self>,
-        ctx: &dyn Context,
-        address: usize,
-    ) -> Result<Box<dyn AnyActor>, Error>;
-}

@@ -47,14 +47,14 @@ impl Actor for FileReadWriteActor {
                 length,
                 reply,
             } => {
-                event!(Level::TRACE, "performing read");
+                event!(Level::DEBUG, "performing read");
                 let mut buffer = vec![0u8; length as usize];
                 self.package_file.seek(SeekFrom::Start(start))?;
                 self.package_file.read_exact(&mut buffer)?;
                 ctx.send(reply, Ok(buffer));
             }
             ReadWrite::Write { start, data } => {
-                event!(Level::TRACE, "performing write");
+                event!(Level::DEBUG, "performing write");
                 self.package_file.seek(SeekFrom::Start(start))?;
                 self.package_file.write_all(&data)?;
             }
