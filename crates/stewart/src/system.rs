@@ -4,7 +4,7 @@ use thunderdome::{Arena, Index};
 use tracing::{event, Level};
 
 use crate::{
-    Actor, AfterReduce, AnyActor, AnyMessageSlot, Factory, Protocol, RawSystemAddr, SystemAddr,
+    Actor, AfterReduce, AnyActor, AnyMessage, Factory, Protocol, RawSystemAddr, SystemAddr,
 };
 
 /// Thread-local cooperative multitasking actor scheduler.
@@ -51,7 +51,7 @@ impl System {
 
         // Let the actor reduce the message
         let mut message_slot = Some(message);
-        let slot = AnyMessageSlot::new::<P>(&mut message_slot);
+        let slot = AnyMessage::new::<P>(&mut message_slot);
         let after = entry.actor.reduce(slot);
 
         // Schedule process if necessary

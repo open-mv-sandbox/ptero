@@ -7,7 +7,6 @@ edition = "2021"
 thunderdome.workspace = true
 tracing.workspace = true
 stewart-derive.workspace = true
-value-bag = "0.1.0"
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

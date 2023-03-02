@@ -10,7 +10,7 @@ pub trait AnyActor {
     /// # Safety
     /// - The given type ID **must** be correct for the 'static equivalent of the passed type.
     /// - The message **must** be valid and exclusively owned for the duration of the call.
-    fn reduce(&mut self, message: AnyMessageSlot) -> AfterReduce;
+    fn reduce(&mut self, message: AnyMessage) -> AfterReduce;
 
     fn process(&mut self);
 }
@@ -19,7 +19,7 @@ impl<A> AnyActor for A
 where
     A: Actor,
 {
-    fn reduce(&mut self, mut message: AnyMessageSlot) -> AfterReduce {
+    fn reduce(&mut self, mut message: AnyMessage) -> AfterReduce {
         let message = match message.take::<A::Protocol>() {
             Some(message) => message,
             None => {
@@ -36,13 +36,13 @@ where
     }
 }
 
-pub struct AnyMessageSlot<'a> {
+pub struct AnyMessage<'a> {
     protocol_id: TypeId,
     slot_ptr: *mut c_void,
     _lifetime: PhantomData<&'a mut u32>,
 }
 
-impl<'a> AnyMessageSlot<'a> {
+impl<'a> AnyMessage<'a> {
     pub fn new<'b: 'a, P: Protocol>(slot: &'a mut Option<P::Message<'b>>) -> Self {
         Self {
             protocol_id: TypeId::of::<P>(),
@@ -58,8 +58,8 @@ impl<'a> AnyMessageSlot<'a> {
         }
 
         // Very unsafe, very bad, downcast the message
-        let typed_pointer = self.slot_ptr as *mut Option<P::Message<'b>>;
-        let slot = unsafe { &mut *typed_pointer };
+        let typed_slot_ptr = self.slot_ptr as *mut Option<P::Message<'b>>;
+        let slot = unsafe { &mut *typed_slot_ptr };
 
         // Take the value out
         slot.take()

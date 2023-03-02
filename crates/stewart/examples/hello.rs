@@ -66,8 +66,5 @@ impl Actor for PingActor {
     }
 }
 
+#[derive(Protocol)]
 struct Ping<'a>(&'a str);
-
-impl Protocol for Ping<'static> {
-    type Message<'a> = Ping<'a>;
-}
