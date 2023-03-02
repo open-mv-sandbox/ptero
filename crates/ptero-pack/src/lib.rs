@@ -11,7 +11,7 @@ use dacti_index::{
 };
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{io::ReadWrite, FindComponent, FindComponentResult};
-use stewart::{Actor, Address, Context, Factory, Next};
+use stewart::{Process, HandlerId, Context, Factory, Next};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -56,7 +56,7 @@ pub fn create_package(path: &str) -> Result<(), Error> {
 #[derive(Factory)]
 #[factory(AddDataActor::start)]
 pub struct AddData {
-    pub package: Address<ReadWrite>,
+    pub package: HandlerId<ReadWrite>,
     pub data: Vec<u8>,
     pub uuid: Uuid,
 }
@@ -64,7 +64,7 @@ pub struct AddData {
 struct AddDataActor;
 
 impl AddDataActor {
-    pub fn start(ctx: &dyn Context, _address: Address<()>, data: AddData) -> Result<Self, Error> {
+    pub fn start(ctx: &dyn Context, _address: HandlerId<()>, data: AddData) -> Result<Self, Error> {
         event!(Level::DEBUG, "adding data to package");
 
         // The first 64kb is reserved for components and indices
@@ -94,7 +94,7 @@ impl AddDataActor {
     }
 }
 
-impl Actor for AddDataActor {
+impl Process for AddDataActor {
     type Message = ();
 
     fn handle(&mut self, _ctx: &dyn Context, _message: ()) -> Result<Next, Error> {
@@ -106,19 +106,19 @@ impl Actor for AddDataActor {
 #[derive(Factory)]
 #[factory(AddIndexActor::start)]
 struct AddIndex {
-    package: Address<ReadWrite>,
+    package: HandlerId<ReadWrite>,
     value: IndexEntry,
 }
 
 struct AddIndexActor {
-    package: Address<ReadWrite>,
+    package: HandlerId<ReadWrite>,
     value: IndexEntry,
 }
 
 impl AddIndexActor {
     pub fn start(
         ctx: &dyn Context,
-        address: Address<FindComponentResult>,
+        address: HandlerId<FindComponentResult>,
         data: AddIndex,
     ) -> Result<Self, Error> {
         let find_component = FindComponent {
@@ -135,7 +135,7 @@ impl AddIndexActor {
     }
 }
 
-impl Actor for AddIndexActor {
+impl Process for AddIndexActor {
     type Message = FindComponentResult;
 
     fn handle(&mut self, ctx: &dyn Context, message: FindComponentResult) -> Result<Next, Error> {

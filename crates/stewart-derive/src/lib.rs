@@ -13,12 +13,11 @@ pub fn derive_factory(input: TokenStream) -> TokenStream {
         impl stewart::Factory for #ident {
             fn start(
                 self: Box<Self>,
-                ctx: &dyn stewart::Context,
-                address: usize,
-            ) -> Result<Box<dyn stewart::AnyActor>, anyhow::Error> {
-                let address = stewart::Address::from_raw(address);
-                let actor = #attr(ctx, address, *self)?;
-                Ok(Box::new(actor))
+                addr: stewart::AnySystemAddr,
+            ) -> Box<dyn stewart::AnyActor> {
+                let addr = stewart::SystemAddr::from_any(addr);
+                let actor = #attr(addr, *self);
+                Box::new(actor)
             }
         }
     };

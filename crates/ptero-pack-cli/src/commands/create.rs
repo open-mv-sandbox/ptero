@@ -1,6 +1,6 @@
 use anyhow::Error;
 use clap::Args;
-use stewart::{Actor, Address, Context, Factory};
+use stewart::{Process, HandlerId, Context, Factory};
 use tracing::{event, Level};
 
 /// Create a new dacti package.
@@ -17,7 +17,7 @@ struct CreateCommandActor;
 impl CreateCommandActor {
     pub fn start(
         _ctx: &dyn Context,
-        _address: Address<()>,
+        _address: HandlerId<()>,
         data: CreateCommand,
     ) -> Result<Self, Error> {
         event!(Level::INFO, "creating package");
@@ -28,7 +28,7 @@ impl CreateCommandActor {
     }
 }
 
-impl Actor for CreateCommandActor {
+impl Process for CreateCommandActor {
     type Message = ();
 
     fn handle(

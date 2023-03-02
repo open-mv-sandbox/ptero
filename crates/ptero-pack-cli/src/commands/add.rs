@@ -2,7 +2,7 @@ use anyhow::Error;
 use clap::Args;
 use ptero_daicon::io::ReadWrite;
 use ptero_pack::AddData;
-use stewart::{Actor, Address, Context, Factory, Next};
+use stewart::{Process, HandlerId, Context, Factory, Next};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -33,7 +33,7 @@ struct AddCommandActor {
 impl AddCommandActor {
     pub fn start(
         ctx: &dyn Context,
-        address: Address<Address<ReadWrite>>,
+        address: HandlerId<HandlerId<ReadWrite>>,
         data: AddCommand,
     ) -> Result<Self, Error> {
         event!(Level::INFO, "adding file to package");
@@ -53,10 +53,10 @@ impl AddCommandActor {
     }
 }
 
-impl Actor for AddCommandActor {
-    type Message = Address<ReadWrite>;
+impl Process for AddCommandActor {
+    type Message = HandlerId<ReadWrite>;
 
-    fn handle(&mut self, ctx: &dyn Context, message: Address<ReadWrite>) -> Result<Next, Error> {
+    fn handle(&mut self, ctx: &dyn Context, message: HandlerId<ReadWrite>) -> Result<Next, Error> {
         let package = message;
 
         let (input, uuid) = (self.input.clone(), self.uuid);

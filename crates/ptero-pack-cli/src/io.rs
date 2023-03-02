@@ -5,14 +5,14 @@ use std::{
 
 use anyhow::{Context as ContextExt, Error};
 use ptero_daicon::io::ReadWrite;
-use stewart::{Actor, Address, Context, Factory, Next};
+use stewart::{Process, HandlerId, Context, Factory, Next};
 use tracing::{event, Level};
 
 #[derive(Factory)]
 #[factory(FileReadWriteActor::start)]
 pub struct FileReadWrite {
     pub path: String,
-    pub reply: Address<Address<ReadWrite>>,
+    pub reply: HandlerId<HandlerId<ReadWrite>>,
 }
 
 struct FileReadWriteActor {
@@ -22,7 +22,7 @@ struct FileReadWriteActor {
 impl FileReadWriteActor {
     pub fn start(
         ctx: &dyn Context,
-        address: Address<ReadWrite>,
+        address: HandlerId<ReadWrite>,
         data: FileReadWrite,
     ) -> Result<Self, Error> {
         let package_file = OpenOptions::new()
@@ -37,7 +37,7 @@ impl FileReadWriteActor {
     }
 }
 
-impl Actor for FileReadWriteActor {
+impl Process for FileReadWriteActor {
     type Message = ReadWrite;
 
     fn handle(&mut self, ctx: &dyn Context, message: ReadWrite) -> Result<Next, Error> {

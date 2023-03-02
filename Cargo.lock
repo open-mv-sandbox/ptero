@@ -80,6 +80,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "better_any"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1795ebc740ea791ffbe6685e0688ab1effec16c2864e0476db40bfdf0c02cb3d"
+dependencies = [
+ "better_typeid_derive",
+]
+
+[[package]]
+name = "better_typeid_derive"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3deeecb812ca5300b7d3f66f730cc2ebd3511c3d36c691dd79c165d5b19a26e3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -239,25 +259,6 @@ dependencies = [
  "core-foundation",
  "foreign-types",
  "libc",
-]
-
-[[package]]
-name = "crossbeam-queue"
-version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1cfb3ea8a53f37c40dea2c7bedcbd88bdfae54f5e2175d6ecaff1c988353add"
-dependencies = [
- "cfg-if",
- "crossbeam-utils",
-]
-
-[[package]]
-name = "crossbeam-utils"
-version = "0.8.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fb766fa798726286dbbb842f174001dab8abc7b627a1dd86e0b7222a95d929f"
-dependencies = [
- "cfg-if",
 ]
 
 [[package]]
@@ -814,7 +815,6 @@ dependencies = [
  "ptero-daicon",
  "ptero-pack",
  "stewart",
- "stewart-native",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -935,9 +935,11 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "stewart"
 version = "0.1.0"
 dependencies = [
- "anyhow",
+ "better_any",
  "stewart-derive",
+ "thunderdome",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -946,17 +948,6 @@ version = "0.1.0"
 dependencies = [
  "quote",
  "syn",
-]
-
-[[package]]
-name = "stewart-native"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "crossbeam-queue",
- "sharded-slab",
- "stewart",
- "tracing",
 ]
 
 [[package]]
@@ -1014,6 +1005,12 @@ dependencies = [
  "cfg-if",
  "once_cell",
 ]
+
+[[package]]
+name = "thunderdome"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6622a25a2ebb440f5de09ab4aa507c3a539f77c891d1dfc95a52c35fd58a5621"
 
 [[package]]
 name = "tracing"

@@ -10,7 +10,7 @@ use std::{
 use anyhow::{bail, Error};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
 use io::ReadResult;
-use stewart::{Actor, Address, Context, Factory, Next};
+use stewart::{Process, HandlerId, Context, Factory, Next};
 use uuid::Uuid;
 
 use crate::io::ReadWrite;
@@ -19,8 +19,8 @@ use crate::io::ReadWrite;
 #[factory(FindComponentActor::start)]
 pub struct FindComponent {
     pub target: Uuid,
-    pub package: Address<ReadWrite>,
-    pub reply: Address<FindComponentResult>,
+    pub package: HandlerId<ReadWrite>,
+    pub reply: HandlerId<FindComponentResult>,
 }
 
 pub struct FindComponentResult {
@@ -29,14 +29,14 @@ pub struct FindComponentResult {
 }
 
 struct FindComponentActor {
-    address: Address<FindComponentMessage>,
+    address: HandlerId<FindComponentMessage>,
     data: FindComponent,
 }
 
 impl FindComponentActor {
     fn start(
         ctx: &dyn Context,
-        address: Address<FindComponentMessage>,
+        address: HandlerId<FindComponentMessage>,
         data: FindComponent,
     ) -> Result<FindComponentActor, Error> {
         // Start reading the header
@@ -50,7 +50,7 @@ impl FindComponentActor {
     }
 }
 
-impl Actor for FindComponentActor {
+impl Process for FindComponentActor {
     type Message = FindComponentMessage;
 
     fn handle(&mut self, ctx: &dyn Context, message: FindComponentMessage) -> Result<Next, Error> {
@@ -96,18 +96,18 @@ enum FindComponentMessage {
 #[derive(Factory)]
 #[factory(ReadHeaderActor::start)]
 struct ReadHeader {
-    package: Address<ReadWrite>,
-    reply: Address<FindComponentMessage>,
+    package: HandlerId<ReadWrite>,
+    reply: HandlerId<FindComponentMessage>,
 }
 
 struct ReadHeaderActor {
-    reply: Address<FindComponentMessage>,
+    reply: HandlerId<FindComponentMessage>,
 }
 
 impl ReadHeaderActor {
     fn start(
         ctx: &dyn Context,
-        address: Address<ReadResult>,
+        address: HandlerId<ReadResult>,
         data: ReadHeader,
     ) -> Result<Self, Error> {
         let msg = ReadWrite::Read {
@@ -121,7 +121,7 @@ impl ReadHeaderActor {
     }
 }
 
-impl Actor for ReadHeaderActor {
+impl Process for ReadHeaderActor {
     type Message = ReadResult;
 
     fn handle(&mut self, ctx: &dyn Context, message: ReadResult) -> Result<Next, Error> {
@@ -146,21 +146,21 @@ impl Actor for ReadHeaderActor {
 #[derive(Factory)]
 #[factory(ReadEntriesActor::start)]
 struct StartReadEntries {
-    package: Address<ReadWrite>,
+    package: HandlerId<ReadWrite>,
     header_location: u64,
     header: ComponentTableHeader,
-    reply: Address<FindComponentMessage>,
+    reply: HandlerId<FindComponentMessage>,
 }
 
 struct ReadEntriesActor {
     header: ComponentTableHeader,
-    reply: Address<FindComponentMessage>,
+    reply: HandlerId<FindComponentMessage>,
 }
 
 impl ReadEntriesActor {
     fn start(
         ctx: &dyn Context,
-        address: Address<ReadResult>,
+        address: HandlerId<ReadResult>,
         data: StartReadEntries,
     ) -> Result<Self, Error> {
         let msg = ReadWrite::Read {
@@ -177,7 +177,7 @@ impl ReadEntriesActor {
     }
 }
 
-impl Actor for ReadEntriesActor {
+impl Process for ReadEntriesActor {
     type Message = ReadResult;
 
     fn handle(&mut self, ctx: &dyn Context, message: ReadResult) -> Result<Next, Error> {

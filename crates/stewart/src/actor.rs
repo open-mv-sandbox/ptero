@@ -1,17 +1,17 @@
-use anyhow::Error;
+use better_any::TidAble;
 
-use crate::Context;
-
-/// Actor message handling trait.
 pub trait Actor {
-    type Message;
+    type Message<'a>: TidAble<'a>;
 
-    fn handle(&mut self, ctx: &dyn Context, message: Self::Message) -> Result<Next, Error>;
+    /// Handle a message in-place, storing it as appropriate until processing.
+    fn reduce<'a>(&mut self, message: Self::Message<'a>) -> AfterReduce;
+
+    /// Process reduced messages.
+    fn process(&mut self);
 }
 
-/// What should be done with the actor after returning from the message handler.
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum Next {
-    Continue,
-    Stop,
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+pub enum AfterReduce {
+    Nothing,
+    Process,
 }
