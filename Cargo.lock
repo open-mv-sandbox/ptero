@@ -262,6 +262,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctor"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d2301688392eb071b0bf1a37be05c469d3cc4dbbd95df672fe28ab021e6a096"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "cty"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -940,6 +950,7 @@ dependencies = [
  "thunderdome",
  "tracing",
  "tracing-subscriber",
+ "value-bag",
 ]
 
 [[package]]
@@ -1110,6 +1121,16 @@ name = "valuable"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
+
+[[package]]
+name = "value-bag"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e42ee182c3667b7d22b228b3f5cf9a204559c892e52b0cb424d1275693eeb6f9"
+dependencies = [
+ "ctor",
+ "version_check",
+]
 
 [[package]]
 name = "version_check"

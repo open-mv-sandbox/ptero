@@ -47,8 +47,8 @@ impl System {
         };
 
         // Let the actor reduce the message
-        let message = Box::new(message);
-        let after = entry.actor.reduce(message);
+        let mut message = Some(message);
+        let after = entry.actor.reduce(&mut message);
 
         // Schedule process if necessary
         match after {
