@@ -80,26 +80,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "better_any"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1795ebc740ea791ffbe6685e0688ab1effec16c2864e0476db40bfdf0c02cb3d"
-dependencies = [
- "better_typeid_derive",
-]
-
-[[package]]
-name = "better_typeid_derive"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3deeecb812ca5300b7d3f66f730cc2ebd3511c3d36c691dd79c165d5b19a26e3"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -945,7 +925,6 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "stewart"
 version = "0.1.0"
 dependencies = [
- "better_any",
  "stewart-derive",
  "thunderdome",
  "tracing",

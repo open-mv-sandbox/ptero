@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-better_any = { workspace = true, features = ["derive"] }
 thunderdome.workspace = true
 tracing.workspace = true
 stewart-derive.workspace = true

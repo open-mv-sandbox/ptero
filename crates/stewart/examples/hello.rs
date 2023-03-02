@@ -2,8 +2,7 @@ mod utils;
 
 use std::sync::mpsc::{channel, Sender};
 
-use better_any::{Tid, TidAble};
-use stewart::{Actor, AfterReduce, Factory, System, SystemAddr};
+use stewart::{Actor, AfterReduce, Factory, Protocol, System, SystemAddr};
 use tracing::{event, Level};
 
 fn main() {
@@ -20,7 +19,8 @@ fn main() {
     let addr = receiver.try_recv().expect("PingActor didn't report start");
 
     // Now that we have an address, send it some data
-    system.handle(addr, Ping("World"));
+    let data = String::from("World");
+    system.handle(addr, Ping(data.as_str()));
     system.handle(addr, Ping("Actors"));
 
     // Let the system process the messages we just sent
@@ -47,7 +47,7 @@ impl PingActor {
 }
 
 impl Actor for PingActor {
-    type Message<'a> = Ping<'a>;
+    type Protocol = Ping<'static>;
 
     fn reduce(&mut self, message: Ping) -> AfterReduce {
         event!(Level::DEBUG, "adding message");
@@ -66,5 +66,8 @@ impl Actor for PingActor {
     }
 }
 
-#[derive(Tid)]
 struct Ping<'a>(&'a str);
+
+impl Protocol for Ping<'static> {
+    type Message<'a> = Ping<'a>;
+}

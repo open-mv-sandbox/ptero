@@ -1,10 +1,11 @@
 use std::collections::VecDeque;
 
-use better_any::{Tid, TidAble};
 use thunderdome::{Arena, Index};
 use tracing::{event, Level};
 
-use crate::{Actor, AfterReduce, AnyActor, AnySystemAddr, Factory, SystemAddr};
+use crate::{
+    Actor, AfterReduce, AnyActor, AnyMessageSlot, Factory, Protocol, RawSystemAddr, SystemAddr,
+};
 
 /// Thread-local cooperative multitasking actor scheduler.
 ///
@@ -29,13 +30,15 @@ impl System {
         }
     }
 
-    /// Add a deferred action for starting an actor.
+    /// Queue starting an actor.
     pub fn start(&mut self, factory: impl Factory + 'static) {
-        self.deferred.push(DeferredAction::Start(Box::new(factory)));
+        let action = DeferredAction::Start(Box::new(factory));
+        self.deferred.push(action);
     }
 
-    pub fn handle<'a, M: TidAble<'a>>(&mut self, addr: SystemAddr<M>, message: M) {
-        let index = addr.any().0;
+    /// Handle a message, immediately sending it to the actor's reducer.
+    pub fn handle<'a, P: Protocol>(&mut self, addr: SystemAddr<P>, message: P::Message<'a>) {
+        let index = addr.raw().0;
 
         let entry = match self.actors.get_mut(index) {
             Some(actor) => actor,
@@ -47,8 +50,9 @@ impl System {
         };
 
         // Let the actor reduce the message
-        let mut message = Some(message);
-        let after = entry.actor.reduce(&mut message);
+        let mut message_slot = Some(message);
+        let slot = AnyMessageSlot::new::<P>(&mut message_slot);
+        let after = entry.actor.reduce(slot);
 
         // Schedule process if necessary
         match after {
@@ -93,7 +97,7 @@ impl System {
         let index = self.actors.insert(dummy_entry);
 
         // Start the real actor
-        let addr = AnySystemAddr(index);
+        let addr = RawSystemAddr(index);
         let actor = factory.start(addr);
 
         // Replace the dummy entry
@@ -133,7 +137,7 @@ enum DeferredAction {
 struct UnreachableActor;
 
 impl Actor for UnreachableActor {
-    type Message<'a> = Unreachable;
+    type Protocol = Unreachable;
 
     fn reduce<'a>(&mut self, _message: Unreachable) -> AfterReduce {
         unreachable!()
@@ -144,5 +148,8 @@ impl Actor for UnreachableActor {
     }
 }
 
-#[derive(Tid)]
 enum Unreachable {}
+
+impl Protocol for Unreachable {
+    type Message<'a> = Self;
+}

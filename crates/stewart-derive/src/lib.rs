@@ -13,9 +13,9 @@ pub fn derive_factory(input: TokenStream) -> TokenStream {
         impl stewart::Factory for #ident {
             fn start(
                 self: Box<Self>,
-                addr: stewart::AnySystemAddr,
+                addr: stewart::RawSystemAddr,
             ) -> Box<dyn stewart::AnyActor> {
-                let addr = stewart::SystemAddr::from_any(addr);
+                let addr = stewart::SystemAddr::from_raw(addr);
                 let actor = #attr(addr, *self);
                 Box::new(actor)
             }
