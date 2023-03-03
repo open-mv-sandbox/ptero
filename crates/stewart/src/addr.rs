@@ -2,6 +2,8 @@ use std::marker::PhantomData;
 
 use thunderdome::Index;
 
+use crate::Protocol;
+
 pub struct ActorAddr<P> {
     id: ActorId,
     /// Intentionally !Send + !Sync
@@ -28,6 +30,11 @@ impl<M> Clone for ActorAddr<M> {
 }
 
 impl<M> Copy for ActorAddr<M> {}
+
+// TODO: This can probably be auto-derived when the macro is smarter
+impl<T> Protocol for ActorAddr<T> {
+    type Message<'a> = Self;
+}
 
 #[derive(Clone, Copy)]
 pub struct ActorId(pub(crate) Index);

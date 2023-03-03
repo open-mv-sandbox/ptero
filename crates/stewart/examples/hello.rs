@@ -41,11 +41,15 @@ struct PingActor {
 }
 
 impl PingActor {
-    pub fn start(addr: ActorAddr<Ping<'static>>, data: PingData) -> Self {
+    pub fn start(
+        _system: &mut System,
+        addr: ActorAddr<Ping<'static>>,
+        data: PingData,
+    ) -> Result<Self, Error> {
         event!(Level::DEBUG, "creating ping actor");
         data.on_start.send(addr).unwrap();
 
-        Self { queue: Vec::new() }
+        Ok(Self { queue: Vec::new() })
     }
 }
 

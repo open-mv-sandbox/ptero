@@ -42,7 +42,13 @@ impl System {
 
     /// Queue starting an actor.
     pub fn start(&mut self, factory: impl Factory + 'static) {
-        let action = DeferredAction::Start(Box::new(factory));
+        let factory = Box::new(factory);
+        self.start_boxed(factory);
+    }
+
+    /// Queue starting a boxed actor.
+    pub fn start_boxed(&mut self, factory: Box<dyn Factory>) {
+        let action = DeferredAction::Start(factory);
         self.deferred.push(action);
     }
 
@@ -118,7 +124,7 @@ impl System {
 
         // Start the real actor
         let addr = ActorId(index);
-        let result = factory.start(addr);
+        let result = factory.start(self, addr);
 
         // Handle factory result
         match result {

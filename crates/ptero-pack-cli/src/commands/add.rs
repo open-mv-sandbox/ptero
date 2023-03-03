@@ -1,8 +1,8 @@
-use anyhow::Error;
+use anyhow::{Context, Error};
 use clap::Args;
 use ptero_daicon::io::ReadWrite;
 use ptero_pack::AddData;
-use stewart::{Process, HandlerId, Context, Factory, Next};
+use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Factory, System};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -26,14 +26,15 @@ pub struct AddCommand {
 }
 
 struct AddCommandActor {
+    package: Option<ActorAddr<ReadWrite>>,
     input: Vec<u8>,
     uuid: Uuid,
 }
 
 impl AddCommandActor {
     pub fn start(
-        ctx: &dyn Context,
-        address: HandlerId<HandlerId<ReadWrite>>,
+        system: &mut System,
+        addr: ActorAddr<ActorAddr<ReadWrite>>,
         data: AddCommand,
     ) -> Result<Self, Error> {
         event!(Level::INFO, "adding file to package");
@@ -42,22 +43,28 @@ impl AddCommandActor {
 
         let start_file = FileReadWrite {
             path: data.package,
-            reply: address,
+            reply: addr,
         };
-        ctx.start(start_file);
+        system.start(start_file);
 
         Ok(AddCommandActor {
+            package: None,
             input,
             uuid: data.uuid,
         })
     }
 }
 
-impl Process for AddCommandActor {
-    type Message = HandlerId<ReadWrite>;
+impl Actor for AddCommandActor {
+    type Protocol = ActorAddr<ReadWrite>;
 
-    fn handle(&mut self, ctx: &dyn Context, message: HandlerId<ReadWrite>) -> Result<Next, Error> {
-        let package = message;
+    fn reduce(&mut self, message: ActorAddr<ReadWrite>) -> Result<AfterReduce, Error> {
+        self.package = Some(message);
+        Ok(AfterReduce::Process)
+    }
+
+    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
+        let package = self.package.take().context("incorrect state")?;
 
         let (input, uuid) = (self.input.clone(), self.uuid);
         let add_data = AddData {
@@ -65,8 +72,8 @@ impl Process for AddCommandActor {
             data: input,
             uuid,
         };
-        ctx.start(add_data);
+        system.start(add_data);
 
-        Ok(Next::Stop)
+        Ok(AfterProcess::Nothing)
     }
 }

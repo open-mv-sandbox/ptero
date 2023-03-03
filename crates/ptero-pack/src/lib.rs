@@ -11,7 +11,7 @@ use dacti_index::{
 };
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{io::ReadWrite, FindComponent, FindComponentResult};
-use stewart::{Process, HandlerId, Context, Factory, Next};
+use stewart::{utils::Unreachable, Actor, ActorAddr, AfterProcess, AfterReduce, Factory, System};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -56,7 +56,7 @@ pub fn create_package(path: &str) -> Result<(), Error> {
 #[derive(Factory)]
 #[factory(AddDataActor::start)]
 pub struct AddData {
-    pub package: HandlerId<ReadWrite>,
+    pub package: ActorAddr<ReadWrite>,
     pub data: Vec<u8>,
     pub uuid: Uuid,
 }
@@ -64,7 +64,11 @@ pub struct AddData {
 struct AddDataActor;
 
 impl AddDataActor {
-    pub fn start(ctx: &dyn Context, _address: HandlerId<()>, data: AddData) -> Result<Self, Error> {
+    pub fn start(
+        system: &mut System,
+        _addr: ActorAddr<Unreachable>,
+        data: AddData,
+    ) -> Result<Self, Error> {
         event!(Level::DEBUG, "adding data to package");
 
         // The first 64kb is reserved for components and indices
@@ -81,23 +85,27 @@ impl AddDataActor {
             package: data.package.clone(),
             value: index_entry,
         };
-        ctx.start(add_index);
+        system.start(add_index);
 
         // Write the file to the package
         let write = ReadWrite::Write {
             start: data_start,
             data: data.data,
         };
-        ctx.send(data.package, write);
+        system.handle(data.package, write);
 
         Ok(AddDataActor)
     }
 }
 
-impl Process for AddDataActor {
-    type Message = ();
+impl Actor for AddDataActor {
+    type Protocol = Unreachable;
 
-    fn handle(&mut self, _ctx: &dyn Context, _message: ()) -> Result<Next, Error> {
+    fn reduce(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {
+        unimplemented!()
+    }
+
+    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
         // TODO: Report success/failure back
         unimplemented!()
     }
@@ -106,39 +114,48 @@ impl Process for AddDataActor {
 #[derive(Factory)]
 #[factory(AddIndexActor::start)]
 struct AddIndex {
-    package: HandlerId<ReadWrite>,
+    package: ActorAddr<ReadWrite>,
     value: IndexEntry,
 }
 
 struct AddIndexActor {
-    package: HandlerId<ReadWrite>,
+    message: Option<FindComponentResult>,
+    package: ActorAddr<ReadWrite>,
     value: IndexEntry,
 }
 
 impl AddIndexActor {
     pub fn start(
-        ctx: &dyn Context,
-        address: HandlerId<FindComponentResult>,
+        system: &mut System,
+        addr: ActorAddr<FindComponentResult>,
         data: AddIndex,
     ) -> Result<Self, Error> {
         let find_component = FindComponent {
             target: INDEX_COMPONENT_UUID,
             package: data.package.clone(),
-            reply: address,
+            reply: addr,
         };
-        ctx.start(find_component);
+        system.start(find_component);
 
         Ok(Self {
+            message: None,
             package: data.package,
             value: data.value,
         })
     }
 }
 
-impl Process for AddIndexActor {
-    type Message = FindComponentResult;
+impl Actor for AddIndexActor {
+    type Protocol = FindComponentResult;
 
-    fn handle(&mut self, ctx: &dyn Context, message: FindComponentResult) -> Result<Next, Error> {
+    fn reduce(&mut self, message: FindComponentResult) -> Result<AfterReduce, Error> {
+        self.message = Some(message);
+        Ok(AfterReduce::Process)
+    }
+
+    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
+        let message = self.message.take().context("incorrect state")?;
+
         let region = RegionData::from_bytes(message.entry.data());
         let component_offset = region.offset(message.header.entries_offset());
 
@@ -151,9 +168,9 @@ impl Process for AddIndexActor {
             start: component_offset,
             data,
         };
-        ctx.send(self.package, msg);
+        system.handle(self.package, msg);
 
-        Ok(Next::Stop)
+        Ok(AfterProcess::Stop)
     }
 }
 

@@ -14,5 +14,5 @@ pub use anyhow::Error;
 pub use stewart_derive::{Factory, Protocol};
 
 pub trait Factory {
-    fn start(self: Box<Self>, addr: ActorId) -> Result<Box<dyn AnyActor>, Error>;
+    fn start(self: Box<Self>, system: &mut System, id: ActorId) -> Result<Box<dyn AnyActor>, Error>;
 }

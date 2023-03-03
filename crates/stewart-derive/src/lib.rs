@@ -31,10 +31,11 @@ pub fn derive_factory(input: TokenStream) -> TokenStream {
         impl stewart::Factory for #ident {
             fn start(
                 self: Box<Self>,
+                system: &mut stewart::System,
                 id: stewart::ActorId,
             ) -> Result<Box<dyn stewart::AnyActor>, stewart::Error> {
                 let addr = stewart::ActorAddr::<<#actor_type as stewart::Actor>::Protocol>::from_id(id);
-                let actor = #factory_fn(addr, *self);
+                let actor = #factory_fn(system, addr, *self)?;
                 Ok(Box::new(actor))
             }
         }

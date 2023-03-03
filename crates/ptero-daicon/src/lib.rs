@@ -7,36 +7,37 @@ use std::{
     mem::size_of,
 };
 
-use anyhow::{bail, Error};
+use anyhow::{bail, Context, Error};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
-use io::ReadResult;
-use stewart::{Process, HandlerId, Context, Factory, Next};
+use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Factory, Protocol, System};
 use uuid::Uuid;
 
-use crate::io::ReadWrite;
+use crate::io::{ReadResult, ReadWrite};
 
 #[derive(Factory)]
 #[factory(FindComponentActor::start)]
 pub struct FindComponent {
     pub target: Uuid,
-    pub package: HandlerId<ReadWrite>,
-    pub reply: HandlerId<FindComponentResult>,
+    pub package: ActorAddr<ReadWrite>,
+    pub reply: ActorAddr<FindComponentResult>,
 }
 
+#[derive(Protocol)]
 pub struct FindComponentResult {
     pub header: ComponentTableHeader,
     pub entry: ComponentEntry,
 }
 
 struct FindComponentActor {
-    address: HandlerId<FindComponentMessage>,
+    queue: Vec<FindComponentMessage>,
+    address: ActorAddr<FindComponentMessage>,
     data: FindComponent,
 }
 
 impl FindComponentActor {
     fn start(
-        ctx: &dyn Context,
-        address: HandlerId<FindComponentMessage>,
+        system: &mut System,
+        address: ActorAddr<FindComponentMessage>,
         data: FindComponent,
     ) -> Result<FindComponentActor, Error> {
         // Start reading the header
@@ -44,50 +45,62 @@ impl FindComponentActor {
             package: data.package.clone(),
             reply: address,
         };
-        ctx.start(read_header);
+        system.start(read_header);
 
-        Ok(FindComponentActor { address, data })
+        Ok(FindComponentActor {
+            queue: Vec::new(),
+            address,
+            data,
+        })
     }
 }
 
-impl Process for FindComponentActor {
-    type Message = FindComponentMessage;
+impl Actor for FindComponentActor {
+    type Protocol = FindComponentMessage;
 
-    fn handle(&mut self, ctx: &dyn Context, message: FindComponentMessage) -> Result<Next, Error> {
-        let next = match message {
-            FindComponentMessage::Header(location, header) => {
-                let read_entries = StartReadEntries {
-                    package: self.data.package.clone(),
-                    header_location: location,
-                    header,
-                    reply: self.address,
-                };
-                ctx.start(read_entries);
+    fn reduce(&mut self, message: FindComponentMessage) -> Result<AfterReduce, Error> {
+        self.queue.push(message);
+        Ok(AfterReduce::Process)
+    }
 
-                // TODO: Follow extensions
+    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
+        let mut next = AfterProcess::Nothing;
 
-                Next::Continue
-            }
-            FindComponentMessage::Entries(header, entries) => {
-                if let Some(entry) = entries
-                    .into_iter()
-                    .find(|e| e.type_id() == self.data.target)
-                {
-                    let result = FindComponentResult { header, entry };
-                    ctx.send(self.data.reply, result);
-                } else {
-                    // TODO: Better error reporting
-                    bail!("unable to find component");
+        while let Some(message) = self.queue.pop() {
+            match message {
+                FindComponentMessage::Header(location, header) => {
+                    let read_entries = StartReadEntries {
+                        package: self.data.package.clone(),
+                        header_location: location,
+                        header,
+                        reply: self.address,
+                    };
+                    system.start(read_entries);
+
+                    // TODO: Follow extensions
                 }
+                FindComponentMessage::Entries(header, entries) => {
+                    if let Some(entry) = entries
+                        .into_iter()
+                        .find(|e| e.type_id() == self.data.target)
+                    {
+                        let result = FindComponentResult { header, entry };
+                        system.handle(self.data.reply, result);
+                    } else {
+                        // TODO: Better error reporting
+                        bail!("unable to find component");
+                    }
 
-                Next::Stop
+                    next = AfterProcess::Stop;
+                }
             }
-        };
+        }
 
         Ok(next)
     }
 }
 
+#[derive(Protocol)]
 enum FindComponentMessage {
     Header(u64, ComponentTableHeader),
     Entries(ComponentTableHeader, Vec<ComponentEntry>),
@@ -96,18 +109,19 @@ enum FindComponentMessage {
 #[derive(Factory)]
 #[factory(ReadHeaderActor::start)]
 struct ReadHeader {
-    package: HandlerId<ReadWrite>,
-    reply: HandlerId<FindComponentMessage>,
+    package: ActorAddr<ReadWrite>,
+    reply: ActorAddr<FindComponentMessage>,
 }
 
 struct ReadHeaderActor {
-    reply: HandlerId<FindComponentMessage>,
+    message: Option<Vec<u8>>,
+    reply: ActorAddr<FindComponentMessage>,
 }
 
 impl ReadHeaderActor {
     fn start(
-        ctx: &dyn Context,
-        address: HandlerId<ReadResult>,
+        system: &mut System,
+        address: ActorAddr<ReadResult>,
         data: ReadHeader,
     ) -> Result<Self, Error> {
         let msg = ReadWrite::Read {
@@ -115,17 +129,25 @@ impl ReadHeaderActor {
             length: (SIGNATURE.len() + size_of::<ComponentTableHeader>()) as u64,
             reply: address,
         };
-        ctx.send(data.package, msg);
+        system.handle(data.package, msg);
 
-        Ok(ReadHeaderActor { reply: data.reply })
+        Ok(ReadHeaderActor {
+            message: None,
+            reply: data.reply,
+        })
     }
 }
 
-impl Process for ReadHeaderActor {
-    type Message = ReadResult;
+impl Actor for ReadHeaderActor {
+    type Protocol = ReadResult;
 
-    fn handle(&mut self, ctx: &dyn Context, message: ReadResult) -> Result<Next, Error> {
-        let data = message?;
+    fn reduce(&mut self, message: ReadResult) -> Result<AfterReduce, Error> {
+        self.message = Some(message.0?);
+        Ok(AfterReduce::Process)
+    }
+
+    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
+        let data = self.message.take().context("incorrect state")?;
 
         // Validate signature
         if &data[0..8] != SIGNATURE {
@@ -137,30 +159,31 @@ impl Process for ReadHeaderActor {
         let header = ComponentTableHeader::from_bytes(&data[8..]).clone();
 
         let msg = FindComponentMessage::Header(header_location, header);
-        ctx.send(self.reply, msg);
+        system.handle(self.reply, msg);
 
-        Ok(Next::Stop)
+        Ok(AfterProcess::Stop)
     }
 }
 
 #[derive(Factory)]
 #[factory(ReadEntriesActor::start)]
 struct StartReadEntries {
-    package: HandlerId<ReadWrite>,
+    package: ActorAddr<ReadWrite>,
     header_location: u64,
     header: ComponentTableHeader,
-    reply: HandlerId<FindComponentMessage>,
+    reply: ActorAddr<FindComponentMessage>,
 }
 
 struct ReadEntriesActor {
+    message: Option<Vec<u8>>,
     header: ComponentTableHeader,
-    reply: HandlerId<FindComponentMessage>,
+    reply: ActorAddr<FindComponentMessage>,
 }
 
 impl ReadEntriesActor {
     fn start(
-        ctx: &dyn Context,
-        address: HandlerId<ReadResult>,
+        system: &mut System,
+        address: ActorAddr<ReadResult>,
         data: StartReadEntries,
     ) -> Result<Self, Error> {
         let msg = ReadWrite::Read {
@@ -168,20 +191,26 @@ impl ReadEntriesActor {
             length: (data.header.length() as usize * size_of::<ComponentEntry>()) as u64,
             reply: address,
         };
-        ctx.send(data.package, msg);
+        system.handle(data.package, msg);
 
         Ok(ReadEntriesActor {
+            message: None,
             header: data.header,
             reply: data.reply,
         })
     }
 }
 
-impl Process for ReadEntriesActor {
-    type Message = ReadResult;
+impl Actor for ReadEntriesActor {
+    type Protocol = ReadResult;
 
-    fn handle(&mut self, ctx: &dyn Context, message: ReadResult) -> Result<Next, Error> {
-        let data = message?;
+    fn reduce(&mut self, message: ReadResult) -> Result<AfterReduce, Error> {
+        self.message = Some(message.0?);
+        Ok(AfterReduce::Process)
+    }
+
+    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
+        let data = self.message.take().context("incorrect state")?;
 
         let mut entries = Vec::new();
         let mut data = Cursor::new(data);
@@ -195,8 +224,8 @@ impl Process for ReadEntriesActor {
 
         // Reply with the read data
         let msg = FindComponentMessage::Entries(self.header.clone(), entries);
-        ctx.send(self.reply, msg);
+        system.handle(self.reply, msg);
 
-        Ok(Next::Stop)
+        Ok(AfterProcess::Stop)
     }
 }

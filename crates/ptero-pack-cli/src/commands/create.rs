@@ -1,6 +1,6 @@
 use anyhow::Error;
 use clap::Args;
-use stewart::{Process, HandlerId, Context, Factory};
+use stewart::{utils::Unreachable, Actor, ActorAddr, AfterProcess, AfterReduce, Factory, System};
 use tracing::{event, Level};
 
 /// Create a new dacti package.
@@ -16,8 +16,8 @@ struct CreateCommandActor;
 
 impl CreateCommandActor {
     pub fn start(
-        _ctx: &dyn Context,
-        _address: HandlerId<()>,
+        _system: &mut System,
+        _addr: ActorAddr<Unreachable>,
         data: CreateCommand,
     ) -> Result<Self, Error> {
         event!(Level::INFO, "creating package");
@@ -28,14 +28,14 @@ impl CreateCommandActor {
     }
 }
 
-impl Process for CreateCommandActor {
-    type Message = ();
+impl Actor for CreateCommandActor {
+    type Protocol = Unreachable;
 
-    fn handle(
-        &mut self,
-        _ctx: &dyn Context,
-        _message: Self::Message,
-    ) -> Result<stewart::Next, anyhow::Error> {
+    fn reduce<'a>(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {
+        unimplemented!()
+    }
+
+    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
         // TODO: Currently makes no sense for this to be an actor, but it will use other actors
         unimplemented!()
     }

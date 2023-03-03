@@ -1,11 +1,12 @@
 use anyhow::Error;
-use stewart::HandlerId;
+use stewart::{ActorAddr, Protocol};
 
+#[derive(Protocol)]
 pub enum ReadWrite {
     Read {
         start: u64,
         length: u64,
-        reply: HandlerId<ReadResult>,
+        reply: ActorAddr<ReadResult>,
     },
     Write {
         start: u64,
@@ -14,4 +15,6 @@ pub enum ReadWrite {
 }
 
 // TODO: Figure out a better way than passing small vectors
-pub type ReadResult = Result<Vec<u8>, Error>;
+// With the new stewart version we actually can do that now
+#[derive(Protocol)]
+pub struct ReadResult(pub Result<Vec<u8>, Error>);
