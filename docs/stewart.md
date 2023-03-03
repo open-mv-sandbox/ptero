@@ -1,22 +1,15 @@
- # Stewart
+# Stewart
 
-> 🚧 This will become the stewart book, currently it just contains quick design notes to be worked out into full documentation as stewart is being built, and the notes are actually implemented.
+Stewart is a modular, flexible, and high-performance actor system.
 
-## Actors
+## Avoiding Unnecessary Overhead
 
-Actors are recursive, they can start and own other actors. Through this, an actor can manage a group of child actors that perform various sub-tasks. When the parent actor is stopped, its child actors are also stopped. This automatically cleans up resources.
+Stewart's foundation is based on thread-local `System` instances. A `System` is a collection of running actors, local to that execution thread, and a queue of which actors to process next.
 
-### Lightweight
+Using this design, execution is kept local to a CPU core where possible. This avoids needing synchronization primitives to pass data between CPU cores when it's not needed, and keeps it cache-local. Additionally, passing messages between actors on the same thread does not require the data to be owned inside the message. Actors can decide themselves during `reduce` what the most optimal way to store the data is until `process`.
 
-Actors are very lightweight, and can be used on a granular level. A few examples of lightweight actors are:
+This does not prevent actors from passing data between `System`s on different cores when needed, and stewart provides an additional library to make this easy. This also lets you tightly control what group of actors is on what thread, which can be useful if specific threads handle IO and need to be ready.
 
-- A helper actor that translates messages from another system, into the messages of the parent actor.
-- A public API actor that exposes a limited interface of its parent actor.
+## Bring-Your-Own Event-Loop
 
-## Staying Local and Actor Stealing
-
-Stewart's execution model is built around the idea that keeping related systems local, machine-local or even core-local, is generally better for performance when possible. This avoids having to unnecessarily transfer data.
-
-For example, when keeping actors entirely core-local, they never have to send their inner data between cores, keeping it in core-local memory cache. While, if you kept jumping an actor between cores its data would need to continually be sent between cores. This assumption similarly extends at a larger scale. Executing something on the same machine is faster than sending it between machines.
-
-Based on this idea, stewart is built around "actor stealing". Execution engines will track the actors they currently own, and if they have spare resources to spend they'll "steal" actors from other execution engines, if it would be a good idea to do so.
+Stewart's `System` execution engine doesn't implement a specific event loop. You can use it on existing event loops, such as `mio`, `winit`, Win32's `GetMessage`, or even browsers and web workers.
