@@ -4,9 +4,11 @@ use thunderdome::{Arena, Index};
 use tracing::{event, Level};
 
 use crate::{
-    utils::UnreachableActor, AfterReduce, AnyActor, AnyMessage, Factory, Protocol, RawAddr,
-    ActorAddr,
+    utils::UnreachableActor, ActorAddr, ActorId, AfterReduce, AnyActor, AnyMessage, Factory,
+    Protocol,
 };
+
+// TODO: Change all unwrap/expect to soft errors
 
 /// Thread-local cooperative multitasking actor scheduler.
 ///
@@ -16,6 +18,8 @@ pub struct System {
     actors: Arena<ActorEntry>,
     queue: VecDeque<Index>,
     deferred: Vec<DeferredAction>,
+    /// Dummy placeholder, keep one around to avoid re-allocating.
+    dummy_entry: Option<ActorEntry>,
 }
 
 impl System {
@@ -23,11 +27,16 @@ impl System {
         let actors = Arena::new();
         let queue = VecDeque::new();
         let deferred = Vec::new();
+        let dummy_entry = ActorEntry {
+            actor: Box::new(UnreachableActor),
+            queued: false,
+        };
 
         Self {
             actors,
             queue,
             deferred,
+            dummy_entry: Some(dummy_entry),
         }
     }
 
@@ -43,7 +52,7 @@ impl System {
         addr: ActorAddr<P>,
         message: P::Message<'a>,
     ) {
-        let index = addr.raw().0;
+        let index = addr.id().0;
 
         let entry = match self.actors.get_mut(index) {
             Some(actor) => actor,
@@ -57,18 +66,22 @@ impl System {
         // Let the actor reduce the message
         let mut message_slot = Some(message);
         let slot = AnyMessage::new::<P>(&mut message_slot);
-        let after = entry.actor.reduce(slot);
+        let result = entry.actor.reduce(slot);
 
         // Schedule process if necessary
-        match after {
-            AfterReduce::Nothing => {
+        match result {
+            Ok(AfterReduce::Nothing) => {
                 // Nothing to do
             }
-            AfterReduce::Process => {
+            Ok(AfterReduce::Process) => {
                 if !entry.queued {
                     self.queue.push_back(index);
                     entry.queued = true;
                 }
+            }
+            Err(error) => {
+                // TODO: What to do with this?
+                event!(Level::ERROR, "actor failed to reduce message\n{:?}", error);
             }
         }
     }
@@ -78,7 +91,7 @@ impl System {
             self.run_deferred();
 
             if let Some(index) = self.queue.pop_front() {
-                self.process(index)
+                self.process_at(index);
             } else {
                 return;
             };
@@ -94,6 +107,8 @@ impl System {
     }
 
     fn run_deferred_start(&mut self, factory: Box<dyn Factory>) {
+        event!(Level::TRACE, "starting actor");
+
         // Get an index for the actor by starting a dummy actor
         let dummy_entry = ActorEntry {
             actor: Box::new(UnreachableActor),
@@ -102,31 +117,53 @@ impl System {
         let index = self.actors.insert(dummy_entry);
 
         // Start the real actor
-        let addr = RawAddr(index);
-        let actor = factory.start(addr);
+        let addr = ActorId(index);
+        let result = factory.start(addr);
 
-        // Replace the dummy entry
-        let entry = ActorEntry {
-            actor,
-            queued: false,
-        };
-        self.actors.insert_at(index, entry);
+        // Handle factory result
+        match result {
+            Ok(actor) => {
+                let entry = ActorEntry {
+                    actor,
+                    queued: false,
+                };
+                self.actors.insert_at(index, entry);
+            }
+            Err(error) => {
+                event!(Level::ERROR, "actor failed to start\n{:?}", error);
+                self.actors.remove(index);
+            }
+        }
     }
 
-    fn process(&mut self, index: Index) -> bool {
-        let entry = match self.actors.get_mut(index) {
-            Some(entry) => entry,
-            None => {
-                event!(Level::ERROR, "invalid id in schedule");
-                return true;
-            }
-        };
+    fn process_at(&mut self, index: Index) {
+        if !self.actors.contains(index) {
+            event!(Level::ERROR, "invalid id in schedule");
+            return;
+        }
+
+        // Swap out for a dummy actor
+        let dummy_entry = self.dummy_entry.take().expect("dummy entry already taken");
+        let mut entry = self
+            .actors
+            .insert_at(index, dummy_entry)
+            .expect("actor unexpectedly disappeared");
 
         // Perform the actor's process step
-        entry.actor.process();
+        let result = entry.actor.process(self);
         entry.queued = false;
 
-        true
+        // Re-insert the actor
+        let dummy_entry = self
+            .actors
+            .insert_at(index, entry)
+            .expect("actor unexpectedly disappeared");
+        self.dummy_entry = Some(dummy_entry);
+
+        // Handle the result
+        if let Err(error) = result {
+            event!(Level::ERROR, "actor failed to process\n{:?}", error);
+        }
     }
 }
 

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow.workspace = true
 bevy_ptr.workspace = true
 thunderdome.workspace = true
 tracing.workspace = true

@@ -2,15 +2,16 @@
 
 use std::{any::TypeId, ptr::NonNull};
 
+use anyhow::Error;
 use bevy_ptr::PtrMut;
 use tracing::{event, Level};
 
-use crate::{Actor, AfterReduce, Protocol};
+use crate::{Actor, AfterReduce, Protocol, System};
 
 pub trait AnyActor {
-    fn reduce(&mut self, message: AnyMessage) -> AfterReduce;
+    fn reduce(&mut self, message: AnyMessage) -> Result<AfterReduce, Error>;
 
-    fn process(&mut self);
+    fn process(&mut self, system: &mut System) -> Result<(), Error>;
 }
 
 impl<A> AnyActor for A
@@ -18,20 +19,22 @@ where
     A: Actor,
     A::Protocol: 'static,
 {
-    fn reduce(&mut self, message: AnyMessage) -> AfterReduce {
+    fn reduce(&mut self, message: AnyMessage) -> Result<AfterReduce, Error> {
         let message = match message.take::<A::Protocol>() {
             Some(message) => message,
             None => {
+                // This is not an error with the actor, but with the sending actor
+                // TODO: Pass errors back
                 event!(Level::ERROR, "incorrect dynamic message type");
-                return AfterReduce::Nothing;
+                return Ok(AfterReduce::Nothing);
             }
         };
 
         Actor::reduce(self, message)
     }
 
-    fn process(&mut self) {
-        Actor::process(self);
+    fn process(&mut self, system: &mut System) -> Result<(), Error> {
+        Actor::process(self, system)
     }
 }
 

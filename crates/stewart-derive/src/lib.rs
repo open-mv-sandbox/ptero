@@ -1,6 +1,6 @@
 use proc_macro::{self, TokenStream};
 use quote::quote;
-use syn::{parse_macro_input, Attribute, DeriveInput, Path};
+use syn::{parse_macro_input, punctuated::Punctuated, token::Colon2, Attribute, DeriveInput, Path};
 
 /// Derive `Factory` implementation from typed target actor start function.
 #[proc_macro_derive(Factory, attributes(factory))]
@@ -8,17 +8,34 @@ pub fn derive_factory(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input);
     let DeriveInput { ident, attrs, .. } = input;
 
-    let attr = find_attr(attrs);
+    // Find the target function
+    let factory_fn = find_attr(attrs);
 
+    // Infer target actor type
+    if factory_fn.segments.len() < 2 {
+        panic!("factory function path must contain actor type when inferring actor");
+    }
+
+    let mut actor_type: Punctuated<_, Colon2> = Punctuated::new();
+    for (i, segment) in factory_fn.segments.clone().into_iter().enumerate() {
+        // Skip last
+        if i == factory_fn.segments.len() - 1 {
+            continue;
+        }
+
+        actor_type.push(segment);
+    }
+
+    // Build the final output
     let output = quote! {
         impl stewart::Factory for #ident {
             fn start(
                 self: Box<Self>,
-                addr: stewart::RawAddr,
-            ) -> Box<dyn stewart::AnyActor> {
-                let addr = stewart::ActorAddr::from_raw(addr);
-                let actor = #attr(addr, *self);
-                Box::new(actor)
+                id: stewart::ActorId,
+            ) -> Result<Box<dyn stewart::AnyActor>, stewart::Error> {
+                let addr = stewart::ActorAddr::<<#actor_type as stewart::Actor>::Protocol>::from_id(id);
+                let actor = #factory_fn(addr, *self);
+                Ok(Box::new(actor))
             }
         }
     };

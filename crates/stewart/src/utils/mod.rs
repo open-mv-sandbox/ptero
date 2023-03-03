@@ -1,4 +1,6 @@
-use crate::{Actor, AfterReduce, Protocol};
+use anyhow::{bail, Error};
+
+use crate::{Actor, AfterReduce, Protocol, System};
 
 /// Should-be-unreachable placeholder actor.
 ///
@@ -10,13 +12,12 @@ pub struct UnreachableActor;
 impl Actor for UnreachableActor {
     type Protocol = Unreachable;
 
-    fn reduce<'a>(&mut self, _message: Unreachable) -> AfterReduce {
+    fn reduce<'a>(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {
         unreachable!()
     }
 
-    fn process(&mut self) {
-        // TODO: Soft error
-        panic!("attempted to process UnreachableActor")
+    fn process(&mut self, _system: &mut System) -> Result<(), Error> {
+        bail!("attempted to process UnreachableActor")
     }
 }
 

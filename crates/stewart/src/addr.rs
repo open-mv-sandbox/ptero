@@ -3,21 +3,21 @@ use std::marker::PhantomData;
 use thunderdome::Index;
 
 pub struct ActorAddr<P> {
-    raw: RawAddr,
+    id: ActorId,
     /// Intentionally !Send + !Sync
     _p: PhantomData<*const P>,
 }
 
 impl<P> ActorAddr<P> {
-    pub fn from_raw(raw: RawAddr) -> Self {
+    pub fn from_id(raw: ActorId) -> Self {
         Self {
-            raw,
+            id: raw,
             _p: PhantomData,
         }
     }
 
-    pub(crate) fn raw(&self) -> RawAddr {
-        self.raw
+    pub(crate) fn id(&self) -> ActorId {
+        self.id
     }
 }
 
@@ -30,7 +30,7 @@ impl<M> Clone for ActorAddr<M> {
 impl<M> Copy for ActorAddr<M> {}
 
 #[derive(Clone, Copy)]
-pub struct RawAddr(pub(crate) Index);
+pub struct ActorId(pub(crate) Index);
 
 #[cfg(test)]
 mod tests {
