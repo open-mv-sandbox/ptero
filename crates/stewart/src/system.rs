@@ -4,7 +4,8 @@ use thunderdome::{Arena, Index};
 use tracing::{event, Level};
 
 use crate::{
-    Actor, AfterReduce, AnyActor, AnyMessage, Factory, Protocol, RawSystemAddr, SystemAddr,
+    utils::UnreachableActor, AfterReduce, AnyActor, AnyMessage, Factory, Protocol, RawAddr,
+    ActorAddr,
 };
 
 /// Thread-local cooperative multitasking actor scheduler.
@@ -37,7 +38,11 @@ impl System {
     }
 
     /// Handle a message, immediately sending it to the actor's reducer.
-    pub fn handle<'a, P: Protocol>(&mut self, addr: SystemAddr<P>, message: P::Message<'a>) {
+    pub fn handle<'a, P: Protocol + 'static>(
+        &mut self,
+        addr: ActorAddr<P>,
+        message: P::Message<'a>,
+    ) {
         let index = addr.raw().0;
 
         let entry = match self.actors.get_mut(index) {
@@ -97,7 +102,7 @@ impl System {
         let index = self.actors.insert(dummy_entry);
 
         // Start the real actor
-        let addr = RawSystemAddr(index);
+        let addr = RawAddr(index);
         let actor = factory.start(addr);
 
         // Replace the dummy entry
@@ -132,24 +137,4 @@ struct ActorEntry {
 
 enum DeferredAction {
     Start(Box<dyn Factory>),
-}
-
-struct UnreachableActor;
-
-impl Actor for UnreachableActor {
-    type Protocol = Unreachable;
-
-    fn reduce<'a>(&mut self, _message: Unreachable) -> AfterReduce {
-        unreachable!()
-    }
-
-    fn process(&mut self) {
-        unreachable!()
-    }
-}
-
-enum Unreachable {}
-
-impl Protocol for Unreachable {
-    type Message<'a> = Self;
 }

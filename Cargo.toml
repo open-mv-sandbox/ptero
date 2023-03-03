@@ -4,6 +4,7 @@ resolver = "2"
 
 [workspace.dependencies]
 anyhow = "1.0.69"
+bevy_ptr = "0.9.1"
 bytemuck = "1.13.0"
 clap = "4.1.6"
 console_error_panic_hook = "0.1.6"

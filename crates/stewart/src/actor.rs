@@ -1,6 +1,3 @@
-use std::any::Any;
-
-// TODO: Can we remove 'static?
 pub trait Actor {
     type Protocol: Protocol;
 
@@ -17,6 +14,6 @@ pub enum AfterReduce {
     Process,
 }
 
-pub trait Protocol: Any {
+pub trait Protocol {
     type Message<'a>;
 }

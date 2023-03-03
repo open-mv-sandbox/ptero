@@ -2,6 +2,7 @@ use proc_macro::{self, TokenStream};
 use quote::quote;
 use syn::{parse_macro_input, Attribute, DeriveInput, Path};
 
+/// Derive `Factory` implementation from typed target actor start function.
 #[proc_macro_derive(Factory, attributes(factory))]
 pub fn derive_factory(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input);
@@ -13,9 +14,9 @@ pub fn derive_factory(input: TokenStream) -> TokenStream {
         impl stewart::Factory for #ident {
             fn start(
                 self: Box<Self>,
-                addr: stewart::RawSystemAddr,
+                addr: stewart::RawAddr,
             ) -> Box<dyn stewart::AnyActor> {
-                let addr = stewart::SystemAddr::from_raw(addr);
+                let addr = stewart::ActorAddr::from_raw(addr);
                 let actor = #attr(addr, *self);
                 Box::new(actor)
             }
@@ -39,6 +40,11 @@ fn find_attr(attrs: Vec<Attribute>) -> Path {
     panic!("unable to find \"factory\" attribute")
 }
 
+/// Derive `Protocol` implementation for common message cases.
+///
+/// Supports:
+/// - Owned message types, as `Type`
+/// - Borrowed message types with one lifetime, as `Type<'static>`
 #[proc_macro_derive(Protocol)]
 pub fn derive_protocol(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input);
