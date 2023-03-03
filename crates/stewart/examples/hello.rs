@@ -2,7 +2,7 @@ mod utils;
 
 use std::sync::mpsc::{channel, Sender};
 
-use stewart::{Actor, ActorAddr, AfterReduce, Error, Factory, Protocol, System};
+use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Error, Factory, Protocol, System};
 use tracing::{event, Level};
 
 fn main() {
@@ -60,14 +60,17 @@ impl Actor for PingActor {
         Ok(AfterReduce::Process)
     }
 
-    fn process(&mut self, _system: &mut System) -> Result<(), Error> {
+    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
         event!(Level::DEBUG, "handling queued messages");
 
         for entry in self.queue.drain(..) {
             event!(Level::INFO, "Hello, {}!", entry);
         }
 
-        Ok(())
+        // We only listen to one wave of messages then stop immediately.
+        // Note though that the runtime could call this at any point after `reduce`, and messages
+        // may be dropped as a result.
+        Ok(AfterProcess::Stop)
     }
 }
 

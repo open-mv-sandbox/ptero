@@ -4,8 +4,8 @@ use thunderdome::{Arena, Index};
 use tracing::{event, Level};
 
 use crate::{
-    utils::UnreachableActor, ActorAddr, ActorId, AfterReduce, AnyActor, AnyMessage, Factory,
-    Protocol,
+    utils::UnreachableActor, ActorAddr, ActorId, AfterProcess, AfterReduce, AnyActor, AnyMessage,
+    Factory, Protocol,
 };
 
 // TODO: Change all unwrap/expect to soft errors
@@ -161,9 +161,22 @@ impl System {
         self.dummy_entry = Some(dummy_entry);
 
         // Handle the result
-        if let Err(error) = result {
-            event!(Level::ERROR, "actor failed to process\n{:?}", error);
+        match result {
+            Ok(AfterProcess::Nothing) => {
+                // Nothing to do
+            }
+            Ok(AfterProcess::Stop) => {
+                self.stop(index);
+            }
+            Err(error) => {
+                event!(Level::ERROR, "actor failed to process\n{:?}", error);
+            }
         }
+    }
+
+    fn stop(&mut self, index: Index) {
+        event!(Level::TRACE, "stopping actor");
+        self.actors.remove(index);
     }
 }
 

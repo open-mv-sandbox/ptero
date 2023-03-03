@@ -12,13 +12,19 @@ pub trait Actor {
     ) -> Result<AfterReduce, Error>;
 
     /// Process reduced messages.
-    fn process(&mut self, system: &mut System) -> Result<(), Error>;
+    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error>;
 }
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum AfterReduce {
     Nothing,
     Process,
+}
+
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+pub enum AfterProcess {
+    Nothing,
+    Stop,
 }
 
 pub trait Protocol {

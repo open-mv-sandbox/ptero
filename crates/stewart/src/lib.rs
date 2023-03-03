@@ -5,7 +5,7 @@ mod system;
 pub mod utils;
 
 pub use self::{
-    actor::{Actor, AfterReduce, Protocol},
+    actor::{Actor, AfterProcess, AfterReduce, Protocol},
     addr::{ActorAddr, ActorId},
     dynamic::{AnyActor, AnyMessage},
     system::System,

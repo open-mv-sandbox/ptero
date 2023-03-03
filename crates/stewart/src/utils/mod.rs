@@ -1,6 +1,6 @@
 use anyhow::{bail, Error};
 
-use crate::{Actor, AfterReduce, Protocol, System};
+use crate::{Actor, AfterProcess, AfterReduce, Protocol, System};
 
 /// Should-be-unreachable placeholder actor.
 ///
@@ -16,7 +16,7 @@ impl Actor for UnreachableActor {
         unreachable!()
     }
 
-    fn process(&mut self, _system: &mut System) -> Result<(), Error> {
+    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
         bail!("attempted to process UnreachableActor")
     }
 }

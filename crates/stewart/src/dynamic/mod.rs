@@ -6,12 +6,12 @@ use anyhow::Error;
 use bevy_ptr::PtrMut;
 use tracing::{event, Level};
 
-use crate::{Actor, AfterReduce, Protocol, System};
+use crate::{Actor, AfterProcess, AfterReduce, Protocol, System};
 
 pub trait AnyActor {
     fn reduce(&mut self, message: AnyMessage) -> Result<AfterReduce, Error>;
 
-    fn process(&mut self, system: &mut System) -> Result<(), Error>;
+    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error>;
 }
 
 impl<A> AnyActor for A
@@ -33,7 +33,7 @@ where
         Actor::reduce(self, message)
     }
 
-    fn process(&mut self, system: &mut System) -> Result<(), Error> {
+    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
         Actor::process(self, system)
     }
 }
