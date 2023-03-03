@@ -1,5 +1,4 @@
 use std::{
-    collections::VecDeque,
     fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
 };
@@ -17,7 +16,7 @@ pub struct FileReadWrite {
 }
 
 struct FileReadWriteActor {
-    queue: VecDeque<ReadWrite>,
+    queue: Vec<ReadWrite>,
     package_file: File,
 }
 
@@ -36,7 +35,7 @@ impl FileReadWriteActor {
         system.handle(data.reply, addr);
 
         Ok(Self {
-            queue: VecDeque::new(),
+            queue: Vec::new(),
             package_file,
         })
     }
@@ -46,26 +45,32 @@ impl Actor for FileReadWriteActor {
     type Protocol = ReadWrite;
 
     fn reduce<'a>(&mut self, message: ReadWrite) -> Result<AfterReduce, Error> {
-        self.queue.push_back(message);
+        self.queue.push(message);
         Ok(AfterReduce::Process)
     }
 
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
-        while let Some(message) = self.queue.pop_front() {
+        event!(
+            Level::DEBUG,
+            count = self.queue.len(),
+            "processing operations"
+        );
+
+        for message in self.queue.drain(..) {
+            event!(Level::DEBUG, "performing {}", message.kind());
+
             match message {
                 ReadWrite::Read {
                     start,
                     length,
                     reply,
                 } => {
-                    event!(Level::DEBUG, "performing read");
                     let mut buffer = vec![0u8; length as usize];
                     self.package_file.seek(SeekFrom::Start(start))?;
                     self.package_file.read_exact(&mut buffer)?;
                     system.handle(reply, ReadResult(Ok(buffer)));
                 }
                 ReadWrite::Write { start, data } => {
-                    event!(Level::DEBUG, "performing write");
                     self.package_file.seek(SeekFrom::Start(start))?;
                     self.package_file.write_all(&data)?;
                 }

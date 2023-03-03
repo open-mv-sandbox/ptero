@@ -9,6 +9,8 @@ use tracing::{event, Level};
 use crate::{Actor, AfterProcess, AfterReduce, Protocol, System};
 
 pub trait AnyActor {
+    fn type_name(&self) -> &'static str;
+
     fn reduce(&mut self, message: AnyMessage) -> Result<AfterReduce, Error>;
 
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error>;
@@ -19,6 +21,10 @@ where
     A: Actor,
     A::Protocol: 'static,
 {
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<A>()
+    }
+
     fn reduce(&mut self, message: AnyMessage) -> Result<AfterReduce, Error> {
         let message = match message.take::<A::Protocol>() {
             Some(message) => message,

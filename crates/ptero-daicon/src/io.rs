@@ -14,6 +14,15 @@ pub enum ReadWrite {
     },
 }
 
+impl ReadWrite {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            ReadWrite::Read { .. } => "read",
+            ReadWrite::Write { .. } => "write",
+        }
+    }
+}
+
 // TODO: Figure out a better way than passing small vectors
 // With the new stewart version we actually can do that now
 #[derive(Protocol)]

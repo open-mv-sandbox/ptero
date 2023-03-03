@@ -3,15 +3,20 @@ mod io;
 
 use clap::{Parser, Subcommand};
 use stewart::{Factory, System};
-use tracing::Level;
-use tracing_subscriber::FmtSubscriber;
+use tracing::{metadata::LevelFilter, Level};
+use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, EnvFilter, FmtSubscriber};
 
 use crate::commands::{add::AddCommand, create::CreateCommand};
 
 fn main() {
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::TRACE.into())
+        .parse("trace,stewart=debug")
+        .unwrap();
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::TRACE)
-        .finish();
+        .finish()
+        .with(filter);
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
     // Parse command line args

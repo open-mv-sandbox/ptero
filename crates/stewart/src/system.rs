@@ -129,11 +129,14 @@ impl System {
         // Handle factory result
         match result {
             Ok(actor) => {
+                // Replace the placeholder
                 let entry = ActorEntry {
                     actor,
                     queued: false,
                 };
+                let actor = entry.actor.type_name();
                 self.actors.insert_at(index, entry);
+                event!(Level::DEBUG, actor, "started actor");
             }
             Err(error) => {
                 event!(Level::ERROR, "actor failed to start\n{:?}", error);
@@ -182,7 +185,9 @@ impl System {
 
     fn stop(&mut self, index: Index) {
         event!(Level::TRACE, "stopping actor");
-        self.actors.remove(index);
+        let entry = self.actors.remove(index).expect("actor didn't exist");
+        let actor = entry.actor.type_name();
+        event!(Level::DEBUG, actor, "stopped actor");
     }
 }
 
