@@ -9,7 +9,7 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
-use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Protocol, Start, System};
+use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Family, Start, System};
 use uuid::Uuid;
 
 use crate::io::{ReadResult, ReadWrite};
@@ -24,7 +24,7 @@ pub struct FindComponent {
     pub reply: ActorAddr<FindComponentResult>,
 }
 
-#[derive(Protocol)]
+#[derive(Family)]
 pub struct FindComponentResult {
     pub header: ComponentTableHeader,
     pub entry: ComponentEntry,
@@ -60,7 +60,7 @@ impl Start for FindComponentActor {
 }
 
 impl Actor for FindComponentActor {
-    type Protocol = FindComponentMessage;
+    type Message = FindComponentMessage;
 
     fn reduce(&mut self, message: FindComponentMessage) -> Result<AfterReduce, Error> {
         self.queue.push(message);
@@ -104,7 +104,7 @@ impl Actor for FindComponentActor {
     }
 }
 
-#[derive(Protocol)]
+#[derive(Family)]
 enum FindComponentMessage {
     Header(u64, ComponentTableHeader),
     Entries(ComponentTableHeader, Vec<ComponentEntry>),
@@ -143,7 +143,7 @@ impl Start for ReadHeaderActor {
 }
 
 impl Actor for ReadHeaderActor {
-    type Protocol = ReadResult;
+    type Message = ReadResult;
 
     fn reduce(&mut self, message: ReadResult) -> Result<AfterReduce, Error> {
         self.message = Some(message.0?);
@@ -206,7 +206,7 @@ impl Start for ReadEntriesActor {
 }
 
 impl Actor for ReadEntriesActor {
-    type Protocol = ReadResult;
+    type Message = ReadResult;
 
     fn reduce(&mut self, message: ReadResult) -> Result<AfterReduce, Error> {
         self.message = Some(message.0?);

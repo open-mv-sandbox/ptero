@@ -2,13 +2,13 @@ use proc_macro::{self, TokenStream};
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
-/// Derive `Protocol` implementation for common message cases.
+/// Derive `Family` implementation for common cases.
 ///
 /// Supports:
-/// - Owned message types, as `Type`
-/// - Borrowed message types with one lifetime, as `Type<'static>`
-#[proc_macro_derive(Protocol)]
-pub fn derive_protocol(input: TokenStream) -> TokenStream {
+/// - Owned types, as `Type`
+/// - Borrowed types with one lifetime, as `Type<'static>`
+#[proc_macro_derive(Family)]
+pub fn derive_family(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input);
     let DeriveInput {
         ident, generics, ..
@@ -22,8 +22,8 @@ pub fn derive_protocol(input: TokenStream) -> TokenStream {
     };
 
     let output = quote! {
-        impl Protocol for #ident #generics_impl {
-            type Message<'a> = #ident #generics_gat;
+        impl Family for #ident #generics_impl {
+            type Member<'a> = #ident #generics_gat;
         }
     };
     output.into()

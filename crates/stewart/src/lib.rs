@@ -11,12 +11,16 @@ mod system;
 pub mod utils;
 
 pub use self::{
-    actor::{Actor, AfterProcess, AfterReduce, Protocol, Start},
+    actor::{Actor, AfterProcess, AfterReduce, Start},
     addr::ActorAddr,
     system::System,
 };
-pub use anyhow::Error;
-pub use stewart_derive::Protocol;
+pub use stewart_derive::Family;
 
-/// Re-exported for macro generation.
-pub use tracing;
+/// Family pattern interface.
+///
+/// See this post for more information:
+/// http://smallcultfollowing.com/babysteps/blog/2016/11/03/associated-type-constructors-part-2-family-traits/
+pub trait Family {
+    type Member<'a>;
+}

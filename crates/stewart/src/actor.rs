@@ -1,14 +1,14 @@
 use anyhow::Error;
 
-use crate::{ActorAddr, System};
+use crate::{ActorAddr, Family, System};
 
 pub trait Actor {
-    type Protocol: Protocol;
+    type Message: Family;
 
     /// Handle a message in-place, storing it as appropriate until processing.
     fn reduce<'a>(
         &mut self,
-        message: <Self::Protocol as Protocol>::Message<'a>,
+        message: <Self::Message as Family>::Member<'a>,
     ) -> Result<AfterReduce, Error>;
 
     /// Process reduced messages.
@@ -27,17 +27,13 @@ pub enum AfterProcess {
     Stop,
 }
 
-pub trait Protocol {
-    type Message<'a>;
-}
-
 /// Starting interface for actors.
 pub trait Start: Actor + Sized {
     type Data;
 
     fn start(
         system: &mut System,
-        addr: ActorAddr<<Self as Actor>::Protocol>,
+        addr: ActorAddr<<Self as Actor>::Message>,
         data: Self::Data,
     ) -> Result<Self, Error>;
 }

@@ -2,15 +2,15 @@ use std::marker::PhantomData;
 
 use thunderdome::Index;
 
-use crate::Protocol;
+use crate::Family;
 
-pub struct ActorAddr<P> {
+pub struct ActorAddr<F> {
     id: Index,
     /// Intentionally !Send + !Sync
-    _p: PhantomData<*const P>,
+    _p: PhantomData<*const F>,
 }
 
-impl<P> ActorAddr<P> {
+impl<F> ActorAddr<F> {
     pub(crate) fn from_id(id: Index) -> Self {
         Self {
             id,
@@ -23,17 +23,17 @@ impl<P> ActorAddr<P> {
     }
 }
 
-impl<M> Clone for ActorAddr<M> {
+impl<F> Clone for ActorAddr<F> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<M> Copy for ActorAddr<M> {}
+impl<F> Copy for ActorAddr<F> {}
 
-// TODO: This can probably be auto-derived when the macro is smarter
-impl<T> Protocol for ActorAddr<T> {
-    type Message<'a> = Self;
+// TODO: Make derive macro smarter so we don't have to manually derive on generics
+impl<F> Family for ActorAddr<F> {
+    type Member<'a> = Self;
 }
 
 #[cfg(test)]
