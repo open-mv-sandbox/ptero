@@ -14,8 +14,11 @@ pub fn derive_factory(input: TokenStream) -> TokenStream {
     let actor_type = infer_actor_type(&factory_fn);
 
     // Infer the logging name from the actor type
-    let actor_ident = actor_type.get_ident().unwrap();
-    let converted_type_name = actor_ident.to_string().to_kebab_case();
+    let actor_ident = actor_type
+        .segments
+        .last()
+        .expect("failed to get actor ident");
+    let converted_type_name = actor_ident.ident.to_string().to_kebab_case();
     let actor_logging_name = converted_type_name.trim_end_matches("-actor");
 
     // Build the final output

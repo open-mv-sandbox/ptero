@@ -31,7 +31,7 @@ fn main() {
 }
 
 #[derive(Factory)]
-#[factory(self::PingActor::start)]
+#[factory(PingActor::start)]
 struct PingData {
     on_start: Sender<ActorAddr<Ping<'static>>>,
 }
