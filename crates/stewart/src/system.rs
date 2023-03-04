@@ -6,7 +6,7 @@ use tracing::{event, span, Level, Span};
 use crate::{
     actor::StartF,
     dynamic::{AnyActor, AnyMessage},
-    factory::DataFactory,
+    factory::{AnyFactory, Factory},
     utils::UnreachableActor,
     ActorAddrF, AfterProcess, AfterReduce, Family,
 };
@@ -49,8 +49,8 @@ impl System {
     where
         S: StartF + 'static,
     {
-        let factory = DataFactory::new::<S>(data);
-        let action = DeferredAction::Start(factory);
+        let factory = Factory::<S>::new(data);
+        let action = DeferredAction::Start(Box::new(factory));
         self.deferred.push(action);
     }
 
@@ -119,7 +119,7 @@ impl System {
         }
     }
 
-    fn run_deferred_start(&mut self, factory: DataFactory) {
+    fn run_deferred_start(&mut self, factory: Box<dyn AnyFactory>) {
         let span = factory.create_span();
         let entry = span.enter();
         event!(Level::TRACE, "starting actor");
@@ -211,5 +211,5 @@ struct ActorEntry {
 }
 
 enum DeferredAction {
-    Start(DataFactory),
+    Start(Box<dyn AnyFactory>),
 }

@@ -7,45 +7,27 @@ use tracing::{span, Level, Span};
 
 use crate::{dynamic::AnyActor, ActorAddrF, StartF, System};
 
-pub struct DataFactory {
-    starter: Box<dyn AnyStarter>,
-}
-
-impl DataFactory {
-    pub fn new<S>(data: S::Data) -> Self
-    where
-        S: StartF + 'static,
-    {
-        let starter: Starter<S> = Starter {
-            data,
-            _s: PhantomData,
-        };
-        Self {
-            starter: Box::new(starter),
-        }
-    }
-
-    pub fn create_span(&self) -> Span {
-        self.starter.create_span()
-    }
-
-    pub fn start(self, system: &mut System, id: Index) -> Result<Box<dyn AnyActor>, Error> {
-        self.starter.start(system, id)
-    }
-}
-
-trait AnyStarter {
+pub trait AnyFactory {
     fn create_span(&self) -> Span;
 
     fn start(self: Box<Self>, system: &mut System, id: Index) -> Result<Box<dyn AnyActor>, Error>;
 }
 
-struct Starter<S: StartF> {
+pub struct Factory<S: StartF> {
     data: S::Data,
     _s: PhantomData<AtomicPtr<S>>,
 }
 
-impl<S> AnyStarter for Starter<S>
+impl<S: StartF> Factory<S> {
+    pub fn new(data: S::Data) -> Self {
+        Self {
+            data,
+            _s: PhantomData,
+        }
+    }
+}
+
+impl<S> AnyFactory for Factory<S>
 where
     S: StartF + 'static,
 {
