@@ -8,9 +8,9 @@ pub trait Actor {
     type Family: Family;
 
     /// Handle a message in-place, storing it as appropriate until processing.
-    fn reduce<'a>(
+    fn reduce(
         &mut self,
-        message: <Self::Family as Family>::Member<'a>,
+        message: <Self::Family as Family>::Member<'_>,
     ) -> Result<AfterReduce, Error>;
 
     /// Process reduced messages.

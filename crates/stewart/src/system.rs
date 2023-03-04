@@ -1,15 +1,13 @@
 use std::collections::VecDeque;
 
-use anyhow::{anyhow, Context};
+use anyhow::{bail, Context, Error};
 use family::{AnyOptionMut, Family};
-use thiserror::Error;
 use thunderdome::{Arena, Index};
-use tracing::{event, span, Level, Span};
+use tracing::{event, Level, Span};
 
 use crate::{
     dynamic::AnyActor,
     factory::{AnyFactory, Factory},
-    utils::UnreachableActor,
     ActorAddr, AfterProcess, AfterReduce, Start,
 };
 
@@ -17,31 +15,16 @@ use crate::{
 ///
 /// This executor bridges CPU threads into cooperative actor threads.
 /// It does not do any scheduling in itself, this is delegated to an actor.
+#[derive(Default)]
 pub struct System {
     actors: Arena<ActorEntry>,
     queue: VecDeque<Index>,
     deferred: Vec<DeferredAction>,
-    /// Dummy placeholder, keep one around to avoid re-allocating.
-    dummy_entry: Option<ActorEntry>,
 }
 
 impl System {
     pub fn new() -> Self {
-        let actors = Arena::new();
-        let queue = VecDeque::new();
-        let deferred = Vec::new();
-        let dummy_entry = ActorEntry {
-            span: span!(Level::ERROR, "unreachable"),
-            actor: Box::new(UnreachableActor),
-            queued: false,
-        };
-
-        Self {
-            actors,
-            queue,
-            deferred,
-            dummy_entry: Some(dummy_entry),
-        }
+        Self::default()
     }
 
     /// Queue starting an actor.
@@ -98,42 +81,26 @@ impl System {
         drop(enter);
     }
 
-    // TODO: Split running from system
-    pub fn run_until_idle(&mut self) -> Result<(), SystemError> {
-        loop {
-            self.run_deferred()?;
-
-            if let Some(index) = self.queue.pop_front() {
-                self.process_at(index)?;
-            } else {
-                break;
-            };
-        }
-
-        Ok(())
+    pub(crate) fn queue_next(&mut self) -> Option<Index> {
+        self.queue.pop_front()
     }
 
-    fn run_deferred(&mut self) -> Result<(), SystemError> {
-        while let Some(action) = self.deferred.pop() {
-            match action {
-                DeferredAction::Start(factory) => self.run_deferred_start(factory)?,
-            }
-        }
-
-        Ok(())
+    pub(crate) fn deferred_next(&mut self) -> Option<DeferredAction> {
+        self.deferred.pop()
     }
 
-    fn run_deferred_start(&mut self, factory: Box<dyn AnyFactory>) -> Result<(), SystemError> {
+    pub(crate) fn start_immediate(
+        &mut self,
+        factory: Box<dyn AnyFactory>,
+        dummy_entry: &mut Option<ActorEntry>,
+    ) -> Result<(), Error> {
         let span = factory.create_span();
         let entry = span.enter();
         event!(Level::TRACE, "starting actor");
 
         // Get an index for the actor by starting a dummy actor
-        let dummy_entry = self
-            .dummy_entry
-            .take()
-            .context("dummy entry already taken")?;
-        let index = self.actors.insert(dummy_entry);
+        let dummy_entry_val = dummy_entry.take().context("dummy entry already taken")?;
+        let index = self.actors.insert(dummy_entry_val);
 
         // Start the real actor
         let result = factory.start(self, index);
@@ -157,25 +124,26 @@ impl System {
             }
         };
 
-        let dummy_entry = result.context("actor unexpectedly disappeared")?;
-        self.dummy_entry = Some(dummy_entry);
+        let dummy_entry_val = result.context("actor unexpectedly disappeared")?;
+        *dummy_entry = Some(dummy_entry_val);
 
         Ok(())
     }
 
-    fn process_at(&mut self, index: Index) -> Result<(), SystemError> {
+    pub(crate) fn process_at(
+        &mut self,
+        index: Index,
+        dummy_entry: &mut Option<ActorEntry>,
+    ) -> Result<(), Error> {
         if !self.actors.contains(index) {
-            return Err(anyhow!("invalid id in schedule").into());
+            bail!("invalid id in schedule");
         }
 
         // Swap out for a dummy actor
-        let dummy_entry = self
-            .dummy_entry
-            .take()
-            .context("dummy entry already taken")?;
+        let dummy_entry_val = dummy_entry.take().context("dummy entry already taken")?;
         let mut entry = self
             .actors
-            .insert_at(index, dummy_entry)
+            .insert_at(index, dummy_entry_val)
             .context("actor unexpectedly disappeared")?;
 
         // Perform the actor's process step
@@ -187,11 +155,11 @@ impl System {
         drop(enter);
 
         // Re-insert the actor
-        let dummy_entry = self
+        let dummy_entry_val = self
             .actors
             .insert_at(index, entry)
             .context("actor unexpectedly disappeared")?;
-        self.dummy_entry = Some(dummy_entry);
+        *dummy_entry = Some(dummy_entry_val);
 
         // Handle the result
         match result {
@@ -202,15 +170,14 @@ impl System {
                 self.stop(index)?;
             }
             Err(error) => {
-                return Err(anyhow!("actor failed to process\n{:?}", error).into());
+                bail!("actor failed to process\n{:?}", error);
             }
         }
 
         Ok(())
     }
 
-    fn stop(&mut self, index: Index) -> Result<(), SystemError> {
-        // TODO: Soft error
+    fn stop(&mut self, index: Index) -> Result<(), Error> {
         let entry = self.actors.remove(index).context("actor didn't exist")?;
         let _entry = entry.span.enter();
         event!(Level::TRACE, "stopping actor");
@@ -219,18 +186,12 @@ impl System {
     }
 }
 
-struct ActorEntry {
-    span: Span,
-    actor: Box<dyn AnyActor>,
-    queued: bool,
+pub(crate) struct ActorEntry {
+    pub span: Span,
+    pub actor: Box<dyn AnyActor>,
+    pub queued: bool,
 }
 
-enum DeferredAction {
+pub(crate) enum DeferredAction {
     Start(Box<dyn AnyFactory>),
-}
-
-#[derive(Error, Debug)]
-pub enum SystemError {
-    #[error("unknown internal error, this is a bug in stewart")]
-    Internal(#[from] anyhow::Error),
 }

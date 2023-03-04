@@ -25,9 +25,9 @@ where
 {
     type Family = StaticFamily<<Self as StaticActor>::Message>;
 
-    fn reduce<'a>(
+    fn reduce(
         &mut self,
-        message: <Self::Family as Family>::Member<'a>,
+        message: <Self::Family as Family>::Member<'_>,
     ) -> Result<AfterReduce, Error> {
         self.reduce(message)
     }

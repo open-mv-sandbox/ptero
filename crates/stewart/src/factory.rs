@@ -33,10 +33,7 @@ where
 {
     fn create_span(&self) -> Span {
         let result = std::any::type_name::<S>().split("::").last();
-        let type_name = match result {
-            Some(value) => value,
-            None => "UnknownActor",
-        };
+        let type_name = result.unwrap_or("UnknownActor");
 
         let type_name_kebab = type_name.to_kebab_case();
         let id = type_name_kebab.trim_end_matches("-actor");

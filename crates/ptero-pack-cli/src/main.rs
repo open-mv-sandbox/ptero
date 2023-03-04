@@ -3,9 +3,9 @@ mod io;
 
 use anyhow::Error;
 use clap::{Parser, Subcommand};
-use stewart::System;
+use stewart::{Runner, System};
 use tracing::{event, Level};
-use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, EnvFilter, FmtSubscriber};
+use tracing_subscriber::{prelude::*, EnvFilter, FmtSubscriber};
 
 use crate::commands::{add::AddCommand, create::CreateCommand};
 
@@ -35,6 +35,7 @@ fn try_main() -> Result<(), Error> {
 
     // Set up the runtime
     let mut system = System::new();
+    let mut runner = Runner::new();
 
     // Start the command actor
     match args.command {
@@ -43,7 +44,7 @@ fn try_main() -> Result<(), Error> {
     };
 
     // Run the command until it's done
-    system.run_until_idle()?;
+    runner.run_until_idle(&mut system)?;
 
     // TODO: Stewart doesn't currently bubble up errors for us to catch, and we need those for the
     // correct error code.

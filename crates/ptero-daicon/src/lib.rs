@@ -48,7 +48,7 @@ impl Start for FindComponentActor {
     ) -> Result<FindComponentActor, Error> {
         // Start reading the header
         let read_header = ReadHeader {
-            package: data.package.clone(),
+            package: data.package,
             reply: address,
         };
         system.start::<ReadHeaderActor>(read_header);
@@ -76,7 +76,7 @@ impl StaticActor for FindComponentActor {
             match message {
                 FindComponentMessage::Header(location, header) => {
                     let read_entries = StartReadEntries {
-                        package: self.data.package.clone(),
+                        package: self.data.package,
                         header_location: location,
                         header,
                         reply: self.address,

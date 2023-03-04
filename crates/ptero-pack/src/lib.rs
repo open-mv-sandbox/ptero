@@ -89,7 +89,7 @@ impl Start for AddDataActor {
         index_entry.set_offset(data_start as u32);
         index_entry.set_size(data_len);
         let add_index = AddIndex {
-            package: data.package.clone(),
+            package: data.package,
             value: index_entry,
         };
         system.start::<AddIndexActor>(add_index);
@@ -139,7 +139,7 @@ impl Start for AddIndexActor {
     ) -> Result<Self, Error> {
         let find_component = FindComponent {
             target: INDEX_COMPONENT_UUID,
-            package: data.package.clone(),
+            package: data.package,
             reply: addr,
         };
         start_find_component(system, find_component);
@@ -194,7 +194,7 @@ fn create_table_data(entry: &IndexEntry) -> Result<Vec<u8>, Error> {
     group.set_length(1);
     data.write_all(&group)?;
 
-    data.write_all(&entry)?;
+    data.write_all(entry)?;
 
     Ok(data)
 }
