@@ -36,13 +36,13 @@ mod ping_actor {
     use std::sync::mpsc::Sender;
 
     use anyhow::Error;
-    use stewart::{Actor, ActorAddrF, AfterProcess, AfterReduce, Family, StartF, System};
+    use stewart::{Actor, ActorAddrF, AfterProcess, AfterReduce, Family, Start, System};
     use tracing::{event, Level};
 
     /// The start function uses the concrete actor internally.
     /// The actor itself is never public.
     pub fn start_ping(system: &mut System, data: PingData) {
-        system.start_f::<PingActor>(data);
+        system.start::<PingActor>(data);
     }
 
     pub struct PingData {
@@ -62,8 +62,8 @@ mod ping_actor {
         queue: Vec<String>,
     }
 
-    impl StartF for PingActor {
-        type Family = PingF;
+    impl Start for PingActor {
+        type Addr = ActorAddrF<PingF>;
         type Data = PingData;
 
         fn start(

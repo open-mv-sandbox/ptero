@@ -47,7 +47,7 @@ impl<'a> AnyMessage<'a> {
     pub fn new<'b, A>(slot: &'a mut Option<A::Message<'b>>) -> Self
     where
         'b: 'a,
-        A: AnyActorAddr + 'static,
+        A: AnyActorAddr,
     {
         let slot_ptr = NonNull::new(slot as *mut _ as *mut _).unwrap();
         let slot_ptr = unsafe { PtrMut::new(slot_ptr) };

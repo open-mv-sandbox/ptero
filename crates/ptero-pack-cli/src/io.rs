@@ -23,6 +23,7 @@ struct FileReadWriteActor {
 }
 
 impl Start for FileReadWriteActor {
+    type Addr = ActorAddr<ReadWrite>;
     type Data = FileReadWrite;
 
     fn start(

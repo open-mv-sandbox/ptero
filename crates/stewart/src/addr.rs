@@ -8,6 +8,9 @@ pub trait AnyActorAddr: 'static {
     type Message<'a>;
 
     /// For internal use only.
+    fn from_id(id: Index) -> Self;
+
+    /// For internal use only.
     fn id(&self) -> Index;
 }
 
@@ -15,15 +18,6 @@ pub struct ActorAddr<M> {
     id: Index,
     /// Intentionally !Send + !Sync
     _p: PhantomData<*const M>,
-}
-
-impl<M> ActorAddr<M> {
-    pub(crate) fn from_id(id: Index) -> Self {
-        Self {
-            id,
-            _p: PhantomData,
-        }
-    }
 }
 
 impl<M> Clone for ActorAddr<M> {
@@ -37,6 +31,13 @@ impl<M> Copy for ActorAddr<M> {}
 impl<M: 'static> AnyActorAddr for ActorAddr<M> {
     type Message<'a> = M;
 
+    fn from_id(id: Index) -> Self {
+        Self {
+            id,
+            _p: PhantomData,
+        }
+    }
+
     fn id(&self) -> Index {
         self.id
     }
@@ -49,15 +50,6 @@ pub struct ActorAddrF<F> {
     _p: PhantomData<*const F>,
 }
 
-impl<M> ActorAddrF<M> {
-    pub(crate) fn from_id(id: Index) -> Self {
-        Self {
-            id,
-            _p: PhantomData,
-        }
-    }
-}
-
 impl<F> Clone for ActorAddrF<F> {
     fn clone(&self) -> Self {
         *self
@@ -68,6 +60,13 @@ impl<F> Copy for ActorAddrF<F> {}
 
 impl<F: Family + 'static> AnyActorAddr for ActorAddrF<F> {
     type Message<'a> = F::Member<'a>;
+
+    fn from_id(id: Index) -> Self {
+        Self {
+            id,
+            _p: PhantomData,
+        }
+    }
 
     fn id(&self) -> Index {
         self.id

@@ -66,6 +66,7 @@ pub struct AddData {
 struct AddDataActor;
 
 impl Start for AddDataActor {
+    type Addr = ActorAddr<Unreachable>;
     type Data = AddData;
 
     fn start(
@@ -127,6 +128,7 @@ struct AddIndexActor {
 }
 
 impl Start for AddIndexActor {
+    type Addr = ActorAddr<FindComponentResult>;
     type Data = AddIndex;
 
     fn start(

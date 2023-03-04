@@ -1,6 +1,6 @@
 use anyhow::Error;
 
-use crate::{ActorAddr, ActorAddrF, Family, System};
+use crate::{AnyActorAddr, System};
 
 pub trait Actor {
     type Message<'a>;
@@ -26,22 +26,8 @@ pub enum AfterProcess {
 
 /// Starting interface for actors.
 pub trait Start: Actor + Sized {
+    type Addr: AnyActorAddr<Message<'static> = <Self as Actor>::Message<'static>>;
     type Data;
 
-    fn start(
-        system: &mut System,
-        addr: ActorAddr<<Self as Actor>::Message<'static>>,
-        data: Self::Data,
-    ) -> Result<Self, Error>;
-}
-
-pub trait StartF: Actor + Sized {
-    type Family: Family<Member<'static> = <Self as Actor>::Message<'static>>;
-    type Data;
-
-    fn start(
-        system: &mut System,
-        addr: ActorAddrF<Self::Family>,
-        data: Self::Data,
-    ) -> Result<Self, Error>;
+    fn start(system: &mut System, addr: Self::Addr, data: Self::Data) -> Result<Self, Error>;
 }

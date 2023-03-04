@@ -35,6 +35,7 @@ struct AddCommandActor {
 }
 
 impl Start for AddCommandActor {
+    type Addr = ActorAddr<ActorAddr<ReadWrite>>;
     type Data = AddCommand;
 
     fn start(

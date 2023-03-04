@@ -7,7 +7,7 @@ use crate::{
     dynamic::{AnyActor, AnyMessage},
     factory::DataFactory,
     utils::UnreachableActor,
-    AfterProcess, AfterReduce, AnyActorAddr, Start, StartF,
+    AfterProcess, AfterReduce, AnyActorAddr, Start,
 };
 
 // TODO: Change all unwrap/expect to soft errors
@@ -49,15 +49,6 @@ impl System {
         S: Start + 'static,
     {
         let factory = DataFactory::new::<S>(data);
-        let action = DeferredAction::Start(factory);
-        self.deferred.push(action);
-    }
-
-    pub fn start_f<S>(&mut self, data: S::Data)
-    where
-        S: StartF + 'static,
-    {
-        let factory = DataFactory::new_f::<S>(data);
         let action = DeferredAction::Start(factory);
         self.deferred.push(action);
     }

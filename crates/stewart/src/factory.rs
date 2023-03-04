@@ -5,7 +5,7 @@ use heck::ToKebabCase;
 use thunderdome::Index;
 use tracing::{span, Level, Span};
 
-use crate::{dynamic::AnyActor, ActorAddr, ActorAddrF, Start, StartF, System};
+use crate::{dynamic::AnyActor, AnyActorAddr, Start, System};
 
 pub struct DataFactory {
     starter: Box<dyn AnyStarter>,
@@ -17,19 +17,6 @@ impl DataFactory {
         S: Start + 'static,
     {
         let starter: Starter<S> = Starter {
-            data,
-            _s: PhantomData,
-        };
-        Self {
-            starter: Box::new(starter),
-        }
-    }
-
-    pub fn new_f<S>(data: S::Data) -> Self
-    where
-        S: StartF + 'static,
-    {
-        let starter: StarterF<S> = StarterF {
             data,
             _s: PhantomData,
         };
@@ -75,35 +62,7 @@ where
     }
 
     fn start(self: Box<Self>, system: &mut System, id: Index) -> Result<Box<dyn AnyActor>, Error> {
-        let addr = ActorAddr::from_id(id);
-        let actor = S::start(system, addr, self.data)?;
-        Ok(Box::new(actor))
-    }
-}
-
-struct StarterF<S: StartF> {
-    data: S::Data,
-    _s: PhantomData<AtomicPtr<S>>,
-}
-
-impl<S> AnyStarter for StarterF<S>
-where
-    S: StartF + 'static,
-{
-    fn create_span(&self) -> Span {
-        let result = std::any::type_name::<S>().split("::").last();
-        let type_name = match result {
-            Some(value) => value,
-            None => "Unknown",
-        };
-
-        let type_name_kebab = type_name.to_kebab_case();
-        let id = type_name_kebab.trim_end_matches("-actor");
-        span!(Level::INFO, "actor", id)
-    }
-
-    fn start(self: Box<Self>, system: &mut System, id: Index) -> Result<Box<dyn AnyActor>, Error> {
-        let addr = ActorAddrF::from_id(id);
+        let addr = S::Addr::from_id(id);
         let actor = S::start(system, addr, self.data)?;
         Ok(Box::new(actor))
     }
