@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use thunderdome::{Arena, Index};
-use tracing::{event, Level};
+use tracing::{event, span, Level, Span};
 
 use crate::{
     utils::UnreachableActor, ActorAddr, ActorId, AfterProcess, AfterReduce, AnyActor, AnyMessage,
@@ -28,6 +28,7 @@ impl System {
         let queue = VecDeque::new();
         let deferred = Vec::new();
         let dummy_entry = ActorEntry {
+            span: span!(Level::ERROR, "unreachable"),
             actor: Box::new(UnreachableActor),
             queued: false,
         };
@@ -70,6 +71,8 @@ impl System {
         };
 
         // Let the actor reduce the message
+        let enter = entry.span.enter();
+
         let mut message_slot = Some(message);
         let slot = AnyMessage::new::<P>(&mut message_slot);
         let result = entry.actor.reduce(slot);
@@ -90,8 +93,11 @@ impl System {
                 event!(Level::ERROR, "actor failed to reduce message\n{:?}", error);
             }
         }
+
+        drop(enter);
     }
 
+    // TODO: Split running from system
     pub fn run_until_idle(&mut self) {
         loop {
             self.run_deferred();
@@ -113,36 +119,39 @@ impl System {
     }
 
     fn run_deferred_start(&mut self, factory: Box<dyn Factory>) {
+        let span = factory.create_span();
+        let entry = span.enter();
         event!(Level::TRACE, "starting actor");
 
         // Get an index for the actor by starting a dummy actor
-        let dummy_entry = ActorEntry {
-            actor: Box::new(UnreachableActor),
-            queued: false,
-        };
+        let dummy_entry = self.dummy_entry.take().expect("dummy entry already taken");
         let index = self.actors.insert(dummy_entry);
 
         // Start the real actor
         let addr = ActorId(index);
         let result = factory.start(self, addr);
 
+        drop(entry);
+
         // Handle factory result
-        match result {
+        let result = match result {
             Ok(actor) => {
                 // Replace the placeholder
                 let entry = ActorEntry {
+                    span,
                     actor,
                     queued: false,
                 };
-                let actor = entry.actor.type_name();
-                self.actors.insert_at(index, entry);
-                event!(Level::DEBUG, actor, "started actor");
+                self.actors.insert_at(index, entry)
             }
             Err(error) => {
                 event!(Level::ERROR, "actor failed to start\n{:?}", error);
-                self.actors.remove(index);
+                self.actors.remove(index)
             }
-        }
+        };
+
+        let dummy_entry = result.expect("actor unexpectedly disappeared");
+        self.dummy_entry = Some(dummy_entry);
     }
 
     fn process_at(&mut self, index: Index) {
@@ -159,8 +168,12 @@ impl System {
             .expect("actor unexpectedly disappeared");
 
         // Perform the actor's process step
+        let enter = entry.span.enter();
+
         let result = entry.actor.process(self);
         entry.queued = false;
+
+        drop(enter);
 
         // Re-insert the actor
         let dummy_entry = self
@@ -184,14 +197,15 @@ impl System {
     }
 
     fn stop(&mut self, index: Index) {
-        event!(Level::TRACE, "stopping actor");
+        // TODO: Soft error
         let entry = self.actors.remove(index).expect("actor didn't exist");
-        let actor = entry.actor.type_name();
-        event!(Level::DEBUG, actor, "stopped actor");
+        let _entry = entry.span.enter();
+        event!(Level::TRACE, "stopping actor");
     }
 }
 
 struct ActorEntry {
+    span: Span,
     actor: Box<dyn AnyActor>,
     queued: bool,
 }
