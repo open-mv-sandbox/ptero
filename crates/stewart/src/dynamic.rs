@@ -6,7 +6,7 @@ use anyhow::Error;
 use bevy_ptr::PtrMut;
 use tracing::{event, Level};
 
-use crate::{Actor, AfterProcess, AfterReduce, AnyActorAddr, System};
+use crate::{Actor, AfterProcess, AfterReduce, Family, System};
 
 pub trait AnyActor {
     fn reduce(&mut self, message: AnyMessage) -> Result<AfterReduce, Error>;
@@ -44,16 +44,17 @@ pub struct AnyMessage<'a> {
 }
 
 impl<'a> AnyMessage<'a> {
-    pub fn new<'b, A>(slot: &'a mut Option<A::Message<'b>>) -> Self
+    pub fn new<'b, F>(slot: &'a mut Option<F::Member<'b>>) -> Self
     where
         'b: 'a,
-        A: AnyActorAddr,
+        F: Family,
+        F::Member<'static>: 'static,
     {
         let slot_ptr = NonNull::new(slot as *mut _ as *mut _).unwrap();
         let slot_ptr = unsafe { PtrMut::new(slot_ptr) };
 
         Self {
-            type_id: TypeId::of::<A::Message<'static>>(),
+            type_id: TypeId::of::<F::Member<'static>>(),
             slot_ptr,
         }
     }

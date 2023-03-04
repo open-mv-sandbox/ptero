@@ -18,7 +18,6 @@ pub fn start(system: &mut System, data: CreateCommand) {
 struct CreateCommandActor;
 
 impl Start for CreateCommandActor {
-    type Addr = ActorAddr<Unreachable>;
     type Data = CreateCommand;
 
     fn start(

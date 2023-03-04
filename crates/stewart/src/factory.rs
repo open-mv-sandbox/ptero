@@ -5,7 +5,7 @@ use heck::ToKebabCase;
 use thunderdome::Index;
 use tracing::{span, Level, Span};
 
-use crate::{dynamic::AnyActor, AnyActorAddr, Start, System};
+use crate::{dynamic::AnyActor, ActorAddrF, StartF, System};
 
 pub struct DataFactory {
     starter: Box<dyn AnyStarter>,
@@ -14,7 +14,7 @@ pub struct DataFactory {
 impl DataFactory {
     pub fn new<S>(data: S::Data) -> Self
     where
-        S: Start + 'static,
+        S: StartF + 'static,
     {
         let starter: Starter<S> = Starter {
             data,
@@ -40,14 +40,14 @@ trait AnyStarter {
     fn start(self: Box<Self>, system: &mut System, id: Index) -> Result<Box<dyn AnyActor>, Error>;
 }
 
-struct Starter<S: Start> {
+struct Starter<S: StartF> {
     data: S::Data,
     _s: PhantomData<AtomicPtr<S>>,
 }
 
 impl<S> AnyStarter for Starter<S>
 where
-    S: Start + 'static,
+    S: StartF + 'static,
 {
     fn create_span(&self) -> Span {
         let result = std::any::type_name::<S>().split("::").last();
@@ -62,7 +62,7 @@ where
     }
 
     fn start(self: Box<Self>, system: &mut System, id: Index) -> Result<Box<dyn AnyActor>, Error> {
-        let addr = S::Addr::from_id(id);
+        let addr = ActorAddrF::from_id(id);
         let actor = S::start(system, addr, self.data)?;
         Ok(Box::new(actor))
     }

@@ -10,9 +10,11 @@ mod factory;
 mod system;
 pub mod utils;
 
+use std::marker::PhantomData;
+
 pub use self::{
-    actor::{Actor, AfterProcess, AfterReduce, Start},
-    addr::{ActorAddr, ActorAddrF, AnyActorAddr},
+    actor::{Actor, AfterProcess, AfterReduce, Start, StartF},
+    addr::{ActorAddr, ActorAddrF},
     system::System,
 };
 
@@ -24,4 +26,12 @@ pub use self::{
 /// http://smallcultfollowing.com/babysteps/blog/2016/11/03/associated-type-constructors-part-2-family-traits/
 pub trait Family {
     type Member<'a>;
+}
+
+pub struct StaticFamily<T> {
+    _t: PhantomData<T>,
+}
+
+impl<T> Family for StaticFamily<T> {
+    type Member<'a> = T;
 }

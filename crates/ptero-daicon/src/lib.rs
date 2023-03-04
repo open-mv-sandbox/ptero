@@ -36,7 +36,6 @@ struct FindComponentActor {
 }
 
 impl Start for FindComponentActor {
-    type Addr = ActorAddr<FindComponentMessage>;
     type Data = FindComponent;
 
     fn start(
@@ -120,7 +119,6 @@ struct ReadHeaderActor {
 }
 
 impl Start for ReadHeaderActor {
-    type Addr = ActorAddr<ReadResult>;
     type Data = ReadHeader;
 
     fn start(
@@ -183,7 +181,6 @@ struct ReadEntriesActor {
 }
 
 impl Start for ReadEntriesActor {
-    type Addr = ActorAddr<ReadResult>;
     type Data = StartReadEntries;
 
     fn start(

@@ -4,10 +4,11 @@ use thunderdome::{Arena, Index};
 use tracing::{event, span, Level, Span};
 
 use crate::{
+    actor::StartF,
     dynamic::{AnyActor, AnyMessage},
     factory::DataFactory,
     utils::UnreachableActor,
-    AfterProcess, AfterReduce, AnyActorAddr, Start,
+    ActorAddrF, AfterProcess, AfterReduce, Family,
 };
 
 // TODO: Change all unwrap/expect to soft errors
@@ -46,7 +47,7 @@ impl System {
     /// Queue starting an actor.
     pub fn start<S>(&mut self, data: S::Data)
     where
-        S: Start + 'static,
+        S: StartF + 'static,
     {
         let factory = DataFactory::new::<S>(data);
         let action = DeferredAction::Start(factory);
@@ -54,9 +55,10 @@ impl System {
     }
 
     /// Handle a message, immediately sending it to the actor's reducer.
-    pub fn handle<'a, A>(&mut self, addr: A, message: A::Message<'a>)
+    pub fn handle<'a, F>(&mut self, addr: ActorAddrF<F>, message: F::Member<'a>)
     where
-        A: AnyActorAddr,
+        F: Family,
+        F::Member<'static>: 'static,
     {
         let index = addr.id();
 
@@ -73,7 +75,7 @@ impl System {
         let enter = entry.span.enter();
 
         let mut message_slot = Some(message);
-        let slot = AnyMessage::new::<A>(&mut message_slot);
+        let slot = AnyMessage::new::<F>(&mut message_slot);
         let result = entry.actor.reduce(slot);
 
         // Schedule process if necessary
