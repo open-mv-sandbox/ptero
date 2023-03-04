@@ -7,7 +7,6 @@ mod actor;
 mod addr;
 mod dynamic;
 mod factory;
-pub mod family;
 mod system;
 pub mod utils;
 

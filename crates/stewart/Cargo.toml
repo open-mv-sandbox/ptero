@@ -5,10 +5,10 @@ edition = "2021"
 
 [dependencies]
 anyhow.workspace = true
-bevy_ptr.workspace = true
 heck.workspace = true
 thunderdome.workspace = true
 tracing.workspace = true
+family.workspace = true
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

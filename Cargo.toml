@@ -4,7 +4,6 @@ resolver = "2"
 
 [workspace.dependencies]
 anyhow = "1.0.69"
-bevy_ptr = "0.9.1"
 bytemuck = "1.13.0"
 clap = "4.1.6"
 console_error_panic_hook = "0.1.6"
@@ -25,6 +24,7 @@ wgpu = "0.15.1"
 wrapmuck = "0.2.0"
 dacti-index = { path = "../dacti/crates/dacti-index" }
 dacti-viewer = { path = "./crates/dacti-viewer" }
+family = { path = "./crates/family" }
 ptero-daicon = { path = "./crates/ptero-daicon" }
 ptero-pack = { path = "./crates/ptero-pack" }
 stewart = { path = "./crates/stewart" }

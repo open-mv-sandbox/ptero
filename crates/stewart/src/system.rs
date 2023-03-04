@@ -1,12 +1,12 @@
 use std::collections::VecDeque;
 
+use family::{AnyOptionMut, Family};
 use thunderdome::{Arena, Index};
 use tracing::{event, span, Level, Span};
 
 use crate::{
-    dynamic::{AnyActor, AnyMessage},
+    dynamic::AnyActor,
     factory::{AnyFactory, Factory},
-    family::Family,
     utils::UnreachableActor,
     ActorAddr, AfterProcess, AfterReduce, Start,
 };
@@ -75,7 +75,7 @@ impl System {
         let enter = entry.span.enter();
 
         let mut message_slot = Some(message);
-        let slot = AnyMessage::new::<F>(&mut message_slot);
+        let slot = AnyOptionMut::new::<F>(&mut message_slot);
         let result = entry.actor.reduce(slot);
 
         // Schedule process if necessary

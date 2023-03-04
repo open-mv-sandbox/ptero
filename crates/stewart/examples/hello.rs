@@ -36,7 +36,8 @@ mod ping_actor {
     use std::sync::mpsc::Sender;
 
     use anyhow::Error;
-    use stewart::{family::Family, ActorAddr, Actor, AfterProcess, AfterReduce, Start, System};
+    use family::Family;
+    use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Start, System};
     use tracing::{event, Level};
 
     /// The start function uses the concrete actor internally.

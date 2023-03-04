@@ -1,11 +1,9 @@
 //! Small convenience utilities.
 
 use anyhow::{bail, Error};
+use family::{Family, StaticFamily};
 
-use crate::{
-    family::{Family, StaticFamily},
-    Actor, ActorAddr, AfterProcess, AfterReduce, System,
-};
+use crate::{Actor, ActorAddr, AfterProcess, AfterReduce, System};
 
 /// Convenience actor specialization that operates on messages with a static lifetime.
 ///

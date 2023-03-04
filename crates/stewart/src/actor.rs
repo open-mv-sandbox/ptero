@@ -1,6 +1,7 @@
 use anyhow::Error;
+use family::Family;
 
-use crate::{family::Family, ActorAddr, System};
+use crate::{ActorAddr, System};
 
 /// Active message handler.
 pub trait Actor {
