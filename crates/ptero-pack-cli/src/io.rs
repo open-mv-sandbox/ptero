@@ -5,11 +5,11 @@ use std::{
 
 use anyhow::{Context as ContextExt, Error};
 use ptero_daicon::io::{ReadResult, ReadWrite};
-use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Factory, System};
+use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Factory, Start, System};
 use tracing::{event, Level};
 
 #[derive(Factory)]
-#[factory(FileReadWriteActor::start)]
+#[factory(FileReadWriteActor)]
 pub struct FileReadWrite {
     pub path: String,
     pub reply: ActorAddr<ActorAddr<ReadWrite>>,
@@ -20,8 +20,10 @@ struct FileReadWriteActor {
     package_file: File,
 }
 
-impl FileReadWriteActor {
-    pub fn start(
+impl Start for FileReadWriteActor {
+    type Data = FileReadWrite;
+
+    fn start(
         system: &mut System,
         addr: ActorAddr<ReadWrite>,
         data: FileReadWrite,

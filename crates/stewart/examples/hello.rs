@@ -2,7 +2,9 @@ mod utils;
 
 use std::sync::mpsc::{channel, Sender};
 
-use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Error, Factory, Protocol, System};
+use stewart::{
+    Actor, ActorAddr, AfterProcess, AfterReduce, Error, Factory, Protocol, Start, System,
+};
 use tracing::{event, Level};
 
 fn main() {
@@ -31,7 +33,7 @@ fn main() {
 }
 
 #[derive(Factory)]
-#[factory(PingActor::start)]
+#[factory(PingActor)]
 struct PingData {
     on_start: Sender<ActorAddr<Ping<'static>>>,
 }
@@ -40,8 +42,10 @@ struct PingActor {
     queue: Vec<String>,
 }
 
-impl PingActor {
-    pub fn start(
+impl Start for PingActor {
+    type Data = PingData;
+
+    fn start(
         _system: &mut System,
         addr: ActorAddr<Ping<'static>>,
         data: PingData,

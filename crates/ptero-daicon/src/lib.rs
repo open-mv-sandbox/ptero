@@ -9,13 +9,13 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
-use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Factory, Protocol, System};
+use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Factory, Protocol, Start, System};
 use uuid::Uuid;
 
 use crate::io::{ReadResult, ReadWrite};
 
 #[derive(Factory)]
-#[factory(FindComponentActor::start)]
+#[factory(FindComponentActor)]
 pub struct FindComponent {
     pub target: Uuid,
     pub package: ActorAddr<ReadWrite>,
@@ -34,7 +34,9 @@ struct FindComponentActor {
     data: FindComponent,
 }
 
-impl FindComponentActor {
+impl Start for FindComponentActor {
+    type Data = FindComponent;
+
     fn start(
         system: &mut System,
         address: ActorAddr<FindComponentMessage>,
@@ -107,7 +109,7 @@ enum FindComponentMessage {
 }
 
 #[derive(Factory)]
-#[factory(ReadHeaderActor::start)]
+#[factory(ReadHeaderActor)]
 struct ReadHeader {
     package: ActorAddr<ReadWrite>,
     reply: ActorAddr<FindComponentMessage>,
@@ -118,7 +120,9 @@ struct ReadHeaderActor {
     reply: ActorAddr<FindComponentMessage>,
 }
 
-impl ReadHeaderActor {
+impl Start for ReadHeaderActor {
+    type Data = ReadHeader;
+
     fn start(
         system: &mut System,
         address: ActorAddr<ReadResult>,
@@ -166,7 +170,7 @@ impl Actor for ReadHeaderActor {
 }
 
 #[derive(Factory)]
-#[factory(ReadEntriesActor::start)]
+#[factory(ReadEntriesActor)]
 struct StartReadEntries {
     package: ActorAddr<ReadWrite>,
     header_location: u64,
@@ -180,7 +184,9 @@ struct ReadEntriesActor {
     reply: ActorAddr<FindComponentMessage>,
 }
 
-impl ReadEntriesActor {
+impl Start for ReadEntriesActor {
+    type Data = StartReadEntries;
+
     fn start(
         system: &mut System,
         address: ActorAddr<ReadResult>,

@@ -11,7 +11,9 @@ use dacti_index::{
 };
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{io::ReadWrite, FindComponent, FindComponentResult};
-use stewart::{utils::Unreachable, Actor, ActorAddr, AfterProcess, AfterReduce, Factory, System};
+use stewart::{
+    utils::Unreachable, Actor, ActorAddr, AfterProcess, AfterReduce, Factory, Start, System,
+};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -54,7 +56,7 @@ pub fn create_package(path: &str) -> Result<(), Error> {
 }
 
 #[derive(Factory)]
-#[factory(AddDataActor::start)]
+#[factory(AddDataActor)]
 pub struct AddData {
     pub package: ActorAddr<ReadWrite>,
     pub data: Vec<u8>,
@@ -63,8 +65,10 @@ pub struct AddData {
 
 struct AddDataActor;
 
-impl AddDataActor {
-    pub fn start(
+impl Start for AddDataActor {
+    type Data = AddData;
+
+    fn start(
         system: &mut System,
         _addr: ActorAddr<Unreachable>,
         data: AddData,
@@ -112,7 +116,7 @@ impl Actor for AddDataActor {
 }
 
 #[derive(Factory)]
-#[factory(AddIndexActor::start)]
+#[factory(AddIndexActor)]
 struct AddIndex {
     package: ActorAddr<ReadWrite>,
     value: IndexEntry,
@@ -124,8 +128,10 @@ struct AddIndexActor {
     value: IndexEntry,
 }
 
-impl AddIndexActor {
-    pub fn start(
+impl Start for AddIndexActor {
+    type Data = AddIndex;
+
+    fn start(
         system: &mut System,
         addr: ActorAddr<FindComponentResult>,
         data: AddIndex,

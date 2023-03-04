@@ -2,7 +2,7 @@ use anyhow::{Context, Error};
 use clap::Args;
 use ptero_daicon::io::ReadWrite;
 use ptero_pack::AddData;
-use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Factory, System};
+use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Factory, Start, System};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -10,7 +10,7 @@ use crate::io::FileReadWrite;
 
 /// Add files to a dacti package.
 #[derive(Factory, Args, Debug)]
-#[factory(AddCommandActor::start)]
+#[factory(AddCommandActor)]
 pub struct AddCommand {
     /// The path of the package to add files to.
     #[arg(short, long, value_name = "PATH")]
@@ -31,8 +31,10 @@ struct AddCommandActor {
     uuid: Uuid,
 }
 
-impl AddCommandActor {
-    pub fn start(
+impl Start for AddCommandActor {
+    type Data = AddCommand;
+
+    fn start(
         system: &mut System,
         addr: ActorAddr<ActorAddr<ReadWrite>>,
         data: AddCommand,

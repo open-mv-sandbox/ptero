@@ -1,11 +1,13 @@
 use anyhow::Error;
 use clap::Args;
-use stewart::{utils::Unreachable, Actor, ActorAddr, AfterProcess, AfterReduce, Factory, System};
+use stewart::{
+    utils::Unreachable, Actor, ActorAddr, AfterProcess, AfterReduce, Factory, Start, System,
+};
 use tracing::{event, Level};
 
 /// Create a new dacti package.
 #[derive(Factory, Args, Debug)]
-#[factory(CreateCommandActor::start)]
+#[factory(CreateCommandActor)]
 pub struct CreateCommand {
     /// The path to create the package at.
     #[arg(short, long, value_name = "PATH")]
@@ -14,8 +16,10 @@ pub struct CreateCommand {
 
 struct CreateCommandActor;
 
-impl CreateCommandActor {
-    pub fn start(
+impl Start for CreateCommandActor {
+    type Data = CreateCommand;
+
+    fn start(
         _system: &mut System,
         _addr: ActorAddr<Unreachable>,
         data: CreateCommand,
