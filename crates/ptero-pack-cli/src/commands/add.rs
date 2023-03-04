@@ -61,7 +61,7 @@ impl Start for AddCommandActor {
 }
 
 impl Actor for AddCommandActor {
-    type Message = ActorAddr<ReadWrite>;
+    type Message<'a> = ActorAddr<ReadWrite>;
 
     fn reduce(&mut self, message: ActorAddr<ReadWrite>) -> Result<AfterReduce, Error> {
         self.package = Some(message);

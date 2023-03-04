@@ -957,18 +957,9 @@ dependencies = [
  "anyhow",
  "bevy_ptr",
  "heck",
- "stewart-derive",
  "thunderdome",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "stewart-derive"
-version = "0.1.0"
-dependencies = [
- "quote",
- "syn",
 ]
 
 [[package]]

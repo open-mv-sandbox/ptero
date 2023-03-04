@@ -30,4 +30,3 @@ dacti-viewer = { path = "./crates/dacti-viewer" }
 ptero-daicon = { path = "./crates/ptero-daicon" }
 ptero-pack = { path = "./crates/ptero-pack" }
 stewart = { path = "./crates/stewart" }
-stewart-derive = { path = "./crates/stewart-derive" }

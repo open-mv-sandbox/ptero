@@ -36,32 +36,39 @@ mod ping_actor {
     use std::sync::mpsc::Sender;
 
     use anyhow::Error;
-    use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Family, Start, System};
+    use stewart::{Actor, ActorAddrF, AfterProcess, AfterReduce, Family, StartF, System};
     use tracing::{event, Level};
 
     /// The start function uses the concrete actor internally.
     /// The actor itself is never public.
     pub fn start_ping(system: &mut System, data: PingData) {
-        system.start::<PingActor>(data);
+        system.start_f::<PingActor>(data);
     }
 
     pub struct PingData {
-        pub on_start: Sender<ActorAddr<Ping<'static>>>,
+        pub on_start: Sender<ActorAddrF<PingF>>,
     }
 
-    #[derive(Family)]
     pub struct Ping<'a>(pub &'a str);
+
+    /// When creating a borrowed message family, you need to implement the family manually
+    pub struct PingF;
+
+    impl Family for PingF {
+        type Member<'a> = Ping<'a>;
+    }
 
     struct PingActor {
         queue: Vec<String>,
     }
 
-    impl Start for PingActor {
+    impl StartF for PingActor {
+        type Family = PingF;
         type Data = PingData;
 
         fn start(
             _system: &mut System,
-            addr: ActorAddr<Ping<'static>>,
+            addr: ActorAddrF<PingF>,
             data: PingData,
         ) -> Result<Self, Error> {
             event!(Level::DEBUG, "creating ping actor");
@@ -72,7 +79,7 @@ mod ping_actor {
     }
 
     impl Actor for PingActor {
-        type Message = Ping<'static>;
+        type Message<'a> = Ping<'a>;
 
         fn reduce(&mut self, message: Ping) -> Result<AfterReduce, Error> {
             event!(Level::DEBUG, "adding message");

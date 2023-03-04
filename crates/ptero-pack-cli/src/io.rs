@@ -46,7 +46,7 @@ impl Start for FileReadWriteActor {
 }
 
 impl Actor for FileReadWriteActor {
-    type Message = ReadWrite;
+    type Message<'a> = ReadWrite;
 
     fn reduce<'a>(&mut self, message: ReadWrite) -> Result<AfterReduce, Error> {
         self.queue.push(message);

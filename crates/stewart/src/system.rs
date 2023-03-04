@@ -7,7 +7,7 @@ use crate::{
     dynamic::{AnyActor, AnyMessage},
     factory::DataFactory,
     utils::UnreachableActor,
-    ActorAddr, AfterProcess, AfterReduce, Family, Start,
+    AfterProcess, AfterReduce, AnyActorAddr, Start, StartF,
 };
 
 // TODO: Change all unwrap/expect to soft errors
@@ -53,12 +53,20 @@ impl System {
         self.deferred.push(action);
     }
 
+    pub fn start_f<S>(&mut self, data: S::Data)
+    where
+        S: StartF + 'static,
+    {
+        let factory = DataFactory::new_f::<S>(data);
+        let action = DeferredAction::Start(factory);
+        self.deferred.push(action);
+    }
+
     /// Handle a message, immediately sending it to the actor's reducer.
-    pub fn handle<'a, F: Family + 'static>(
-        &mut self,
-        addr: ActorAddr<F>,
-        message: F::Member<'a>,
-    ) {
+    pub fn handle<'a, A>(&mut self, addr: A, message: A::Message<'a>)
+    where
+        A: AnyActorAddr,
+    {
         let index = addr.id();
 
         let entry = match self.actors.get_mut(index) {
@@ -74,7 +82,7 @@ impl System {
         let enter = entry.span.enter();
 
         let mut message_slot = Some(message);
-        let slot = AnyMessage::new::<F>(&mut message_slot);
+        let slot = AnyMessage::new::<A>(&mut message_slot);
         let result = entry.actor.reduce(slot);
 
         // Schedule process if necessary

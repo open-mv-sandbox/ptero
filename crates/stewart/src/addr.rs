@@ -4,36 +4,74 @@ use thunderdome::Index;
 
 use crate::Family;
 
-pub struct ActorAddr<F> {
-    id: Index,
-    /// Intentionally !Send + !Sync
-    _p: PhantomData<*const F>,
+pub trait AnyActorAddr: 'static {
+    type Message<'a>;
+
+    /// For internal use only.
+    fn id(&self) -> Index;
 }
 
-impl<F> ActorAddr<F> {
+pub struct ActorAddr<M> {
+    id: Index,
+    /// Intentionally !Send + !Sync
+    _p: PhantomData<*const M>,
+}
+
+impl<M> ActorAddr<M> {
     pub(crate) fn from_id(id: Index) -> Self {
         Self {
             id,
             _p: PhantomData,
         }
     }
-
-    pub(crate) fn id(&self) -> Index {
-        self.id
-    }
 }
 
-impl<F> Clone for ActorAddr<F> {
+impl<M> Clone for ActorAddr<M> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<F> Copy for ActorAddr<F> {}
+impl<M> Copy for ActorAddr<M> {}
 
-// TODO: Make derive macro smarter so we don't have to manually derive on generics
-impl<F> Family for ActorAddr<F> {
-    type Member<'a> = Self;
+impl<M: 'static> AnyActorAddr for ActorAddr<M> {
+    type Message<'a> = M;
+
+    fn id(&self) -> Index {
+        self.id
+    }
+}
+
+/// Family variant of address.
+pub struct ActorAddrF<F> {
+    id: Index,
+    /// Intentionally !Send + !Sync
+    _p: PhantomData<*const F>,
+}
+
+impl<M> ActorAddrF<M> {
+    pub(crate) fn from_id(id: Index) -> Self {
+        Self {
+            id,
+            _p: PhantomData,
+        }
+    }
+}
+
+impl<F> Clone for ActorAddrF<F> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<F> Copy for ActorAddrF<F> {}
+
+impl<F: Family + 'static> AnyActorAddr for ActorAddrF<F> {
+    type Message<'a> = F::Member<'a>;
+
+    fn id(&self) -> Index {
+        self.id
+    }
 }
 
 #[cfg(test)]

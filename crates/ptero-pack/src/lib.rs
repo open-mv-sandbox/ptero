@@ -103,7 +103,7 @@ impl Start for AddDataActor {
 }
 
 impl Actor for AddDataActor {
-    type Message = Unreachable;
+    type Message<'a> = Unreachable;
 
     fn reduce(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {
         unimplemented!()
@@ -150,7 +150,7 @@ impl Start for AddIndexActor {
 }
 
 impl Actor for AddIndexActor {
-    type Message = FindComponentResult;
+    type Message<'a> = FindComponentResult;
 
     fn reduce(&mut self, message: FindComponentResult) -> Result<AfterReduce, Error> {
         self.message = Some(message);

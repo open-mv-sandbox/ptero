@@ -9,7 +9,6 @@ bevy_ptr.workspace = true
 heck.workspace = true
 thunderdome.workspace = true
 tracing.workspace = true
-stewart-derive.workspace = true
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

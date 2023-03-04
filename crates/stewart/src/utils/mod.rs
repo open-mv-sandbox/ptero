@@ -1,6 +1,6 @@
 use anyhow::{bail, Error};
 
-use crate::{Actor, AfterProcess, AfterReduce, Family, System};
+use crate::{Actor, AfterProcess, AfterReduce, System};
 
 /// Should-be-unreachable placeholder actor.
 ///
@@ -10,7 +10,7 @@ use crate::{Actor, AfterProcess, AfterReduce, Family, System};
 pub struct UnreachableActor;
 
 impl Actor for UnreachableActor {
-    type Message = Unreachable;
+    type Message<'a> = Unreachable;
 
     fn reduce<'a>(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {
         unreachable!()
@@ -21,5 +21,4 @@ impl Actor for UnreachableActor {
     }
 }
 
-#[derive(Family)]
 pub enum Unreachable {}
