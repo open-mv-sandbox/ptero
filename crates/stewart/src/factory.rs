@@ -5,7 +5,7 @@ use heck::ToKebabCase;
 use thunderdome::Index;
 use tracing::{span, Level, Span};
 
-use crate::{dynamic::AnyActor, ActorAddrF, Start, System};
+use crate::{dynamic::AnyActor, ActorAddr, Start, System};
 
 pub trait AnyFactory {
     fn create_span(&self) -> Span;
@@ -35,7 +35,7 @@ where
         let result = std::any::type_name::<S>().split("::").last();
         let type_name = match result {
             Some(value) => value,
-            None => "Unknown",
+            None => "UnknownActor",
         };
 
         let type_name_kebab = type_name.to_kebab_case();
@@ -44,7 +44,7 @@ where
     }
 
     fn start(self: Box<Self>, system: &mut System, id: Index) -> Result<Box<dyn AnyActor>, Error> {
-        let addr = ActorAddrF::from_id(id);
+        let addr = ActorAddr::from_id(id);
         let actor = S::start(system, addr, self.data)?;
         Ok(Box::new(actor))
     }

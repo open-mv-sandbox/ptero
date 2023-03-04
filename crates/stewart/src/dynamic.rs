@@ -6,7 +6,7 @@ use anyhow::Error;
 use bevy_ptr::PtrMut;
 use tracing::{event, Level};
 
-use crate::{ActorF, AfterProcess, AfterReduce, Family, System};
+use crate::{family::Family, Actor, AfterProcess, AfterReduce, System};
 
 pub trait AnyActor {
     fn reduce(&mut self, message: AnyMessage) -> Result<AfterReduce, Error>;
@@ -16,7 +16,7 @@ pub trait AnyActor {
 
 impl<A> AnyActor for A
 where
-    A: ActorF,
+    A: Actor,
 {
     fn reduce(&mut self, message: AnyMessage) -> Result<AfterReduce, Error> {
         let message = match message.take::<A::Family>() {
@@ -29,11 +29,11 @@ where
             }
         };
 
-        ActorF::reduce(self, message)
+        Actor::reduce(self, message)
     }
 
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
-        ActorF::process(self, system)
+        Actor::process(self, system)
     }
 }
 

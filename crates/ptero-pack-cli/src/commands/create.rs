@@ -1,6 +1,9 @@
 use anyhow::Error;
 use clap::Args;
-use stewart::{utils::Unreachable, Actor, ActorAddr, AfterProcess, AfterReduce, Start, System};
+use stewart::{
+    utils::{ActorAddrS, StaticActor, Unreachable},
+    AfterProcess, AfterReduce, Start, System,
+};
 use tracing::{event, Level};
 
 /// Create a new dacti package.
@@ -22,7 +25,7 @@ impl Start for CreateCommandActor {
 
     fn start(
         _system: &mut System,
-        _addr: ActorAddr<Unreachable>,
+        _addr: ActorAddrS<Unreachable>,
         data: CreateCommand,
     ) -> Result<Self, Error> {
         event!(Level::INFO, "creating package");
@@ -33,7 +36,7 @@ impl Start for CreateCommandActor {
     }
 }
 
-impl Actor for CreateCommandActor {
+impl StaticActor for CreateCommandActor {
     type Message = Unreachable;
 
     fn reduce(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {

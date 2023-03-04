@@ -6,8 +6,9 @@ use tracing::{event, span, Level, Span};
 use crate::{
     dynamic::{AnyActor, AnyMessage},
     factory::{AnyFactory, Factory},
+    family::Family,
     utils::UnreachableActor,
-    ActorAddrF, AfterProcess, AfterReduce, Family, Start,
+    ActorAddr, AfterProcess, AfterReduce, Start,
 };
 
 // TODO: Change all unwrap/expect to soft errors
@@ -54,7 +55,7 @@ impl System {
     }
 
     /// Handle a message, immediately sending it to the actor's reducer.
-    pub fn handle<'a, F>(&mut self, addr: ActorAddrF<F>, message: F::Member<'a>)
+    pub fn handle<'a, F>(&mut self, addr: ActorAddr<F>, message: F::Member<'a>)
     where
         F: Family,
         F::Member<'static>: 'static,

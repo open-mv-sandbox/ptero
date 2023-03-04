@@ -1,11 +1,11 @@
 use anyhow::Error;
-use stewart::ActorAddr;
+use stewart::utils::ActorAddrS;
 
 pub enum ReadWrite {
     Read {
         start: u64,
         length: u64,
-        reply: ActorAddr<ReadResult>,
+        reply: ActorAddrS<ReadResult>,
     },
     Write {
         start: u64,

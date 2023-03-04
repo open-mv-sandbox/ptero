@@ -36,7 +36,7 @@ mod ping_actor {
     use std::sync::mpsc::Sender;
 
     use anyhow::Error;
-    use stewart::{ActorAddrF, ActorF, AfterProcess, AfterReduce, Family, Start, System};
+    use stewart::{family::Family, ActorAddr, Actor, AfterProcess, AfterReduce, Start, System};
     use tracing::{event, Level};
 
     /// The start function uses the concrete actor internally.
@@ -46,7 +46,7 @@ mod ping_actor {
     }
 
     pub struct PingData {
-        pub on_start: Sender<ActorAddrF<PingF>>,
+        pub on_start: Sender<ActorAddr<PingF>>,
     }
 
     pub struct Ping<'a>(pub &'a str);
@@ -67,7 +67,7 @@ mod ping_actor {
 
         fn start(
             _system: &mut System,
-            addr: ActorAddrF<PingF>,
+            addr: ActorAddr<PingF>,
             data: PingData,
         ) -> Result<Self, Error> {
             event!(Level::DEBUG, "creating ping actor");
@@ -77,7 +77,7 @@ mod ping_actor {
         }
     }
 
-    impl ActorF for PingActor {
+    impl Actor for PingActor {
         type Family = PingF;
 
         fn reduce(&mut self, message: Ping) -> Result<AfterReduce, Error> {

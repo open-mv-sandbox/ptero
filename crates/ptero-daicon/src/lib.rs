@@ -9,7 +9,10 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
-use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Start, System};
+use stewart::{
+    utils::{ActorAddrS, StaticActor},
+    AfterProcess, AfterReduce, Start, System,
+};
 use uuid::Uuid;
 
 use crate::io::{ReadResult, ReadWrite};
@@ -20,8 +23,8 @@ pub fn start_find_component(system: &mut System, data: FindComponent) {
 
 pub struct FindComponent {
     pub target: Uuid,
-    pub package: ActorAddr<ReadWrite>,
-    pub reply: ActorAddr<FindComponentResult>,
+    pub package: ActorAddrS<ReadWrite>,
+    pub reply: ActorAddrS<FindComponentResult>,
 }
 
 pub struct FindComponentResult {
@@ -31,7 +34,7 @@ pub struct FindComponentResult {
 
 struct FindComponentActor {
     queue: Vec<FindComponentMessage>,
-    address: ActorAddr<FindComponentMessage>,
+    address: ActorAddrS<FindComponentMessage>,
     data: FindComponent,
 }
 
@@ -40,7 +43,7 @@ impl Start for FindComponentActor {
 
     fn start(
         system: &mut System,
-        address: ActorAddr<FindComponentMessage>,
+        address: ActorAddrS<FindComponentMessage>,
         data: FindComponent,
     ) -> Result<FindComponentActor, Error> {
         // Start reading the header
@@ -58,7 +61,7 @@ impl Start for FindComponentActor {
     }
 }
 
-impl Actor for FindComponentActor {
+impl StaticActor for FindComponentActor {
     type Message = FindComponentMessage;
 
     fn reduce(&mut self, message: FindComponentMessage) -> Result<AfterReduce, Error> {
@@ -109,13 +112,13 @@ enum FindComponentMessage {
 }
 
 struct ReadHeader {
-    package: ActorAddr<ReadWrite>,
-    reply: ActorAddr<FindComponentMessage>,
+    package: ActorAddrS<ReadWrite>,
+    reply: ActorAddrS<FindComponentMessage>,
 }
 
 struct ReadHeaderActor {
     message: Option<Vec<u8>>,
-    reply: ActorAddr<FindComponentMessage>,
+    reply: ActorAddrS<FindComponentMessage>,
 }
 
 impl Start for ReadHeaderActor {
@@ -123,7 +126,7 @@ impl Start for ReadHeaderActor {
 
     fn start(
         system: &mut System,
-        address: ActorAddr<ReadResult>,
+        address: ActorAddrS<ReadResult>,
         data: ReadHeader,
     ) -> Result<Self, Error> {
         let msg = ReadWrite::Read {
@@ -140,7 +143,7 @@ impl Start for ReadHeaderActor {
     }
 }
 
-impl Actor for ReadHeaderActor {
+impl StaticActor for ReadHeaderActor {
     type Message = ReadResult;
 
     fn reduce(&mut self, message: ReadResult) -> Result<AfterReduce, Error> {
@@ -168,16 +171,16 @@ impl Actor for ReadHeaderActor {
 }
 
 struct StartReadEntries {
-    package: ActorAddr<ReadWrite>,
+    package: ActorAddrS<ReadWrite>,
     header_location: u64,
     header: ComponentTableHeader,
-    reply: ActorAddr<FindComponentMessage>,
+    reply: ActorAddrS<FindComponentMessage>,
 }
 
 struct ReadEntriesActor {
     message: Option<Vec<u8>>,
     header: ComponentTableHeader,
-    reply: ActorAddr<FindComponentMessage>,
+    reply: ActorAddrS<FindComponentMessage>,
 }
 
 impl Start for ReadEntriesActor {
@@ -185,7 +188,7 @@ impl Start for ReadEntriesActor {
 
     fn start(
         system: &mut System,
-        address: ActorAddr<ReadResult>,
+        address: ActorAddrS<ReadResult>,
         data: StartReadEntries,
     ) -> Result<Self, Error> {
         let msg = ReadWrite::Read {
@@ -203,7 +206,7 @@ impl Start for ReadEntriesActor {
     }
 }
 
-impl Actor for ReadEntriesActor {
+impl StaticActor for ReadEntriesActor {
     type Message = ReadResult;
 
     fn reduce(&mut self, message: ReadResult) -> Result<AfterReduce, Error> {

@@ -11,7 +11,10 @@ use dacti_index::{
 };
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{io::ReadWrite, start_find_component, FindComponent, FindComponentResult};
-use stewart::{utils::Unreachable, Actor, ActorAddr, AfterProcess, AfterReduce, Start, System};
+use stewart::{
+    utils::{ActorAddrS, StaticActor, Unreachable},
+    AfterProcess, AfterReduce, Start, System,
+};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -58,7 +61,7 @@ pub fn start_add_data(system: &mut System, data: AddData) {
 }
 
 pub struct AddData {
-    pub package: ActorAddr<ReadWrite>,
+    pub package: ActorAddrS<ReadWrite>,
     pub data: Vec<u8>,
     pub uuid: Uuid,
 }
@@ -70,7 +73,7 @@ impl Start for AddDataActor {
 
     fn start(
         system: &mut System,
-        _addr: ActorAddr<Unreachable>,
+        _addr: ActorAddrS<Unreachable>,
         data: AddData,
     ) -> Result<Self, Error> {
         event!(Level::DEBUG, "adding data to package");
@@ -102,7 +105,7 @@ impl Start for AddDataActor {
     }
 }
 
-impl Actor for AddDataActor {
+impl StaticActor for AddDataActor {
     type Message = Unreachable;
 
     fn reduce(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {
@@ -116,13 +119,13 @@ impl Actor for AddDataActor {
 }
 
 struct AddIndex {
-    package: ActorAddr<ReadWrite>,
+    package: ActorAddrS<ReadWrite>,
     value: IndexEntry,
 }
 
 struct AddIndexActor {
     message: Option<FindComponentResult>,
-    package: ActorAddr<ReadWrite>,
+    package: ActorAddrS<ReadWrite>,
     value: IndexEntry,
 }
 
@@ -131,7 +134,7 @@ impl Start for AddIndexActor {
 
     fn start(
         system: &mut System,
-        addr: ActorAddr<FindComponentResult>,
+        addr: ActorAddrS<FindComponentResult>,
         data: AddIndex,
     ) -> Result<Self, Error> {
         let find_component = FindComponent {
@@ -149,7 +152,7 @@ impl Start for AddIndexActor {
     }
 }
 
-impl Actor for AddIndexActor {
+impl StaticActor for AddIndexActor {
     type Message = FindComponentResult;
 
     fn reduce(&mut self, message: FindComponentResult) -> Result<AfterReduce, Error> {
