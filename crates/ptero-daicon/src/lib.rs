@@ -59,7 +59,7 @@ impl Start for FindComponentActor {
 }
 
 impl Actor for FindComponentActor {
-    type Message<'a> = FindComponentMessage;
+    type Message = FindComponentMessage;
 
     fn reduce(&mut self, message: FindComponentMessage) -> Result<AfterReduce, Error> {
         self.queue.push(message);
@@ -141,7 +141,7 @@ impl Start for ReadHeaderActor {
 }
 
 impl Actor for ReadHeaderActor {
-    type Message<'a> = ReadResult;
+    type Message = ReadResult;
 
     fn reduce(&mut self, message: ReadResult) -> Result<AfterReduce, Error> {
         self.message = Some(message.0?);
@@ -204,7 +204,7 @@ impl Start for ReadEntriesActor {
 }
 
 impl Actor for ReadEntriesActor {
-    type Message<'a> = ReadResult;
+    type Message = ReadResult;
 
     fn reduce(&mut self, message: ReadResult) -> Result<AfterReduce, Error> {
         self.message = Some(message.0?);

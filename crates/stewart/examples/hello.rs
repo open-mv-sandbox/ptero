@@ -36,7 +36,7 @@ mod ping_actor {
     use std::sync::mpsc::Sender;
 
     use anyhow::Error;
-    use stewart::{Actor, ActorAddrF, AfterProcess, AfterReduce, Family, StartF, System};
+    use stewart::{ActorAddrF, ActorF, AfterProcess, AfterReduce, Family, Start, System};
     use tracing::{event, Level};
 
     /// The start function uses the concrete actor internally.
@@ -62,8 +62,7 @@ mod ping_actor {
         queue: Vec<String>,
     }
 
-    impl StartF for PingActor {
-        type Family = PingF;
+    impl Start for PingActor {
         type Data = PingData;
 
         fn start(
@@ -78,8 +77,8 @@ mod ping_actor {
         }
     }
 
-    impl Actor for PingActor {
-        type Message<'a> = Ping<'a>;
+    impl ActorF for PingActor {
+        type Family = PingF;
 
         fn reduce(&mut self, message: Ping) -> Result<AfterReduce, Error> {
             event!(Level::DEBUG, "adding message");

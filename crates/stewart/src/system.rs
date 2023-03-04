@@ -4,11 +4,10 @@ use thunderdome::{Arena, Index};
 use tracing::{event, span, Level, Span};
 
 use crate::{
-    actor::StartF,
     dynamic::{AnyActor, AnyMessage},
     factory::{AnyFactory, Factory},
     utils::UnreachableActor,
-    ActorAddrF, AfterProcess, AfterReduce, Family,
+    ActorAddrF, AfterProcess, AfterReduce, Family, Start,
 };
 
 // TODO: Change all unwrap/expect to soft errors
@@ -47,7 +46,7 @@ impl System {
     /// Queue starting an actor.
     pub fn start<S>(&mut self, data: S::Data)
     where
-        S: StartF + 'static,
+        S: Start + 'static,
     {
         let factory = Factory::<S>::new(data);
         let action = DeferredAction::Start(Box::new(factory));

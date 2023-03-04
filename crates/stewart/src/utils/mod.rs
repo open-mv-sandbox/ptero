@@ -10,7 +10,7 @@ use crate::{Actor, AfterProcess, AfterReduce, System};
 pub struct UnreachableActor;
 
 impl Actor for UnreachableActor {
-    type Message<'a> = Unreachable;
+    type Message = Unreachable;
 
     fn reduce<'a>(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {
         unreachable!()

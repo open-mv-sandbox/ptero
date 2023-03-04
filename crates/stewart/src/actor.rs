@@ -1,15 +1,46 @@
 use anyhow::Error;
 
-use crate::{ActorAddr, ActorAddrF, StaticFamily, System};
+use crate::{ActorAddrF, Family, StaticFamily, System};
 
 pub trait Actor {
-    type Message<'a>;
+    type Message: 'static;
 
     /// Handle a message in-place, storing it as appropriate until processing.
-    fn reduce<'a>(&mut self, message: Self::Message<'a>) -> Result<AfterReduce, Error>;
+    fn reduce(&mut self, message: Self::Message) -> Result<AfterReduce, Error>;
 
     /// Process reduced messages.
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error>;
+}
+
+pub trait ActorF {
+    type Family: Family;
+
+    /// Handle a message in-place, storing it as appropriate until processing.
+    fn reduce<'a>(
+        &mut self,
+        message: <Self::Family as Family>::Member<'a>,
+    ) -> Result<AfterReduce, Error>;
+
+    /// Process reduced messages.
+    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error>;
+}
+
+impl<A> ActorF for A
+where
+    A: Actor,
+{
+    type Family = StaticFamily<<Self as Actor>::Message>;
+
+    fn reduce<'a>(
+        &mut self,
+        message: <Self::Family as Family>::Member<'a>,
+    ) -> Result<AfterReduce, Error> {
+        self.reduce(message)
+    }
+
+    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
+        self.process(system)
+    }
 }
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
@@ -25,40 +56,12 @@ pub enum AfterProcess {
 }
 
 /// Starting interface for actors.
-pub trait Start: Actor + Sized {
+pub trait Start: ActorF + Sized {
     type Data;
 
     fn start(
         system: &mut System,
-        addr: ActorAddr<<Self as Actor>::Message<'static>>,
+        addr: ActorAddrF<<Self as ActorF>::Family>,
         data: Self::Data,
     ) -> Result<Self, Error>;
-}
-
-/// Starting interface for actors with a custom family.
-pub trait StartF: Actor + Sized {
-    type Family;
-    type Data;
-
-    fn start(
-        system: &mut System,
-        addr: ActorAddrF<Self::Family>,
-        data: Self::Data,
-    ) -> Result<Self, Error>;
-}
-
-impl<S> StartF for S
-where
-    S: Start,
-{
-    type Family = StaticFamily<Self::Message<'static>>;
-    type Data = <Self as Start>::Data;
-
-    fn start(
-        system: &mut System,
-        addr: ActorAddrF<Self::Family>,
-        data: Self::Data,
-    ) -> Result<Self, Error> {
-        Start::start(system, addr, data)
-    }
 }

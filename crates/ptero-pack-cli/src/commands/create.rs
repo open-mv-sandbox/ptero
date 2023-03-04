@@ -34,9 +34,9 @@ impl Start for CreateCommandActor {
 }
 
 impl Actor for CreateCommandActor {
-    type Message<'a> = Unreachable;
+    type Message = Unreachable;
 
-    fn reduce<'a>(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {
         unimplemented!()
     }
 

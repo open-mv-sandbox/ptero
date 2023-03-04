@@ -6,7 +6,7 @@ use anyhow::Error;
 use bevy_ptr::PtrMut;
 use tracing::{event, Level};
 
-use crate::{Actor, AfterProcess, AfterReduce, Family, System};
+use crate::{ActorF, AfterProcess, AfterReduce, Family, System};
 
 pub trait AnyActor {
     fn reduce(&mut self, message: AnyMessage) -> Result<AfterReduce, Error>;
@@ -16,11 +16,10 @@ pub trait AnyActor {
 
 impl<A> AnyActor for A
 where
-    A: Actor,
-    A::Message<'static>: 'static,
+    A: ActorF,
 {
     fn reduce(&mut self, message: AnyMessage) -> Result<AfterReduce, Error> {
-        let message = match message.take::<A>() {
+        let message = match message.take::<A::Family>() {
             Some(message) => message,
             None => {
                 // This is not an error with the actor, but with the sending actor
@@ -30,16 +29,16 @@ where
             }
         };
 
-        Actor::reduce(self, message)
+        ActorF::reduce(self, message)
     }
 
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
-        Actor::process(self, system)
+        ActorF::process(self, system)
     }
 }
 
 pub struct AnyMessage<'a> {
-    type_id: TypeId,
+    family_id: TypeId,
     slot_ptr: PtrMut<'a>,
 }
 
@@ -48,29 +47,27 @@ impl<'a> AnyMessage<'a> {
     where
         'b: 'a,
         F: Family,
-        F::Member<'static>: 'static,
     {
         let slot_ptr = NonNull::new(slot as *mut _ as *mut _).unwrap();
         let slot_ptr = unsafe { PtrMut::new(slot_ptr) };
 
         Self {
-            type_id: TypeId::of::<F::Member<'static>>(),
+            family_id: TypeId::of::<F>(),
             slot_ptr,
         }
     }
 
-    pub fn take<A>(self) -> Option<A::Message<'a>>
+    pub fn take<F>(self) -> Option<F::Member<'a>>
     where
-        A: Actor,
-        A::Message<'static>: 'static,
+        F: Family,
     {
         // Make sure the protocol matches, which should give us a matching reference value
-        if self.type_id != TypeId::of::<A::Message<'static>>() {
+        if self.family_id != TypeId::of::<F>() {
             return None;
         }
 
         // Very unsafe, very bad, downcast the message
-        let slot = unsafe { self.slot_ptr.deref_mut::<Option<A::Message<'a>>>() };
+        let slot = unsafe { self.slot_ptr.deref_mut::<Option<F::Member<'a>>>() };
 
         // Take the value out
         slot.take()

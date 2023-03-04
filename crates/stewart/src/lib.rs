@@ -13,7 +13,7 @@ pub mod utils;
 use std::marker::PhantomData;
 
 pub use self::{
-    actor::{Actor, AfterProcess, AfterReduce, Start, StartF},
+    actor::{Actor, ActorF, AfterProcess, AfterReduce, Start},
     addr::{ActorAddr, ActorAddrF},
     system::System,
 };
@@ -23,15 +23,16 @@ pub use self::{
 /// The family pattern implements "associated type constructors".
 ///
 /// See this post for more information:
-/// http://smallcultfollowing.com/babysteps/blog/2016/11/03/associated-type-constructors-part-2-family-traits/
-pub trait Family {
+/// <http://smallcultfollowing.com/babysteps/blog/2016/11/03/associated-type-constructors-part-2-family-traits/>
+pub trait Family: 'static {
     type Member<'a>;
 }
 
+/// Generic family for types where every member has the same static lifetime.
 pub struct StaticFamily<T> {
     _t: PhantomData<T>,
 }
 
-impl<T> Family for StaticFamily<T> {
+impl<T: 'static> Family for StaticFamily<T> {
     type Member<'a> = T;
 }
