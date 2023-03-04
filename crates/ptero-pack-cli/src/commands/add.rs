@@ -1,16 +1,15 @@
 use anyhow::{Context, Error};
 use clap::Args;
 use ptero_daicon::io::ReadWrite;
-use ptero_pack::AddData;
-use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Factory, Start, System};
+use ptero_pack::{start_add_data, AddData};
+use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Start, System};
 use tracing::{event, Level};
 use uuid::Uuid;
 
-use crate::io::FileReadWrite;
+use crate::io::{start_read_write_file, FileReadWrite};
 
 /// Add files to a dacti package.
-#[derive(Factory, Args, Debug)]
-#[factory(AddCommandActor)]
+#[derive(Args, Debug)]
 pub struct AddCommand {
     /// The path of the package to add files to.
     #[arg(short, long, value_name = "PATH")]
@@ -23,6 +22,10 @@ pub struct AddCommand {
     /// The UUID to assign the input file.
     #[arg(short, long, value_name = "UUID")]
     uuid: Uuid,
+}
+
+pub fn start(system: &mut System, data: AddCommand) {
+    system.start::<AddCommandActor>(data);
 }
 
 struct AddCommandActor {
@@ -47,7 +50,7 @@ impl Start for AddCommandActor {
             path: data.package,
             reply: addr,
         };
-        system.start(start_file);
+        start_read_write_file(system, start_file);
 
         Ok(AddCommandActor {
             package: None,
@@ -74,7 +77,7 @@ impl Actor for AddCommandActor {
             data: input,
             uuid,
         };
-        system.start(add_data);
+        start_add_data(system, add_data);
 
         Ok(AfterProcess::Nothing)
     }

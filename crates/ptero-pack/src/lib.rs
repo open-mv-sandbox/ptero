@@ -10,10 +10,8 @@ use dacti_index::{
     IndexEntry, IndexGroupEncoding, IndexGroupHeader, IndexHeader, INDEX_COMPONENT_UUID,
 };
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
-use ptero_daicon::{io::ReadWrite, FindComponent, FindComponentResult};
-use stewart::{
-    utils::Unreachable, Actor, ActorAddr, AfterProcess, AfterReduce, Factory, Start, System,
-};
+use ptero_daicon::{io::ReadWrite, start_find_component, FindComponent, FindComponentResult};
+use stewart::{utils::Unreachable, Actor, ActorAddr, AfterProcess, AfterReduce, Start, System};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -55,8 +53,10 @@ pub fn create_package(path: &str) -> Result<(), Error> {
     Ok(())
 }
 
-#[derive(Factory)]
-#[factory(AddDataActor)]
+pub fn start_add_data(system: &mut System, data: AddData) {
+    system.start::<AddDataActor>(data);
+}
+
 pub struct AddData {
     pub package: ActorAddr<ReadWrite>,
     pub data: Vec<u8>,
@@ -89,7 +89,7 @@ impl Start for AddDataActor {
             package: data.package.clone(),
             value: index_entry,
         };
-        system.start(add_index);
+        system.start::<AddIndexActor>(add_index);
 
         // Write the file to the package
         let write = ReadWrite::Write {
@@ -115,8 +115,6 @@ impl Actor for AddDataActor {
     }
 }
 
-#[derive(Factory)]
-#[factory(AddIndexActor)]
 struct AddIndex {
     package: ActorAddr<ReadWrite>,
     value: IndexEntry,
@@ -141,7 +139,7 @@ impl Start for AddIndexActor {
             package: data.package.clone(),
             reply: addr,
         };
-        system.start(find_component);
+        start_find_component(system, find_component);
 
         Ok(Self {
             message: None,

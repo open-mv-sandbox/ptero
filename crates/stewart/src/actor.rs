@@ -1,6 +1,6 @@
 use anyhow::Error;
 
-use crate::System;
+use crate::{ActorAddr, System};
 
 pub trait Actor {
     type Protocol: Protocol;
@@ -29,4 +29,15 @@ pub enum AfterProcess {
 
 pub trait Protocol {
     type Message<'a>;
+}
+
+/// Starting interface for actors.
+pub trait Start: Actor + Sized {
+    type Data;
+
+    fn start(
+        system: &mut System,
+        addr: ActorAddr<<Self as Actor>::Protocol>,
+        data: Self::Data,
+    ) -> Result<Self, Error>;
 }

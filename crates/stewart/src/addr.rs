@@ -5,20 +5,20 @@ use thunderdome::Index;
 use crate::Protocol;
 
 pub struct ActorAddr<P> {
-    id: ActorId,
+    id: Index,
     /// Intentionally !Send + !Sync
     _p: PhantomData<*const P>,
 }
 
 impl<P> ActorAddr<P> {
-    pub fn from_id(raw: ActorId) -> Self {
+    pub(crate) fn from_id(id: Index) -> Self {
         Self {
-            id: raw,
+            id,
             _p: PhantomData,
         }
     }
 
-    pub(crate) fn id(&self) -> ActorId {
+    pub(crate) fn id(&self) -> Index {
         self.id
     }
 }
@@ -35,9 +35,6 @@ impl<M> Copy for ActorAddr<M> {}
 impl<T> Protocol for ActorAddr<T> {
     type Message<'a> = Self;
 }
-
-#[derive(Clone, Copy)]
-pub struct ActorId(pub(crate) Index);
 
 #[cfg(test)]
 mod tests {

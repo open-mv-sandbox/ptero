@@ -4,8 +4,10 @@ use thunderdome::{Arena, Index};
 use tracing::{event, span, Level, Span};
 
 use crate::{
-    utils::UnreachableActor, ActorAddr, ActorId, AfterProcess, AfterReduce, AnyActor, AnyMessage,
-    Factory, Protocol,
+    dynamic::{AnyActor, AnyMessage},
+    factory::DataFactory,
+    utils::UnreachableActor,
+    ActorAddr, AfterProcess, AfterReduce, Protocol, Start,
 };
 
 // TODO: Change all unwrap/expect to soft errors
@@ -42,13 +44,11 @@ impl System {
     }
 
     /// Queue starting an actor.
-    pub fn start(&mut self, factory: impl Factory + 'static) {
-        let factory = Box::new(factory);
-        self.start_boxed(factory);
-    }
-
-    /// Queue starting a boxed actor.
-    pub fn start_boxed(&mut self, factory: Box<dyn Factory>) {
+    pub fn start<S>(&mut self, data: S::Data)
+    where
+        S: Start + 'static,
+    {
+        let factory = DataFactory::new::<S>(data);
         let action = DeferredAction::Start(factory);
         self.deferred.push(action);
     }
@@ -59,7 +59,7 @@ impl System {
         addr: ActorAddr<P>,
         message: P::Message<'a>,
     ) {
-        let index = addr.id().0;
+        let index = addr.id();
 
         let entry = match self.actors.get_mut(index) {
             Some(actor) => actor,
@@ -118,7 +118,7 @@ impl System {
         }
     }
 
-    fn run_deferred_start(&mut self, factory: Box<dyn Factory>) {
+    fn run_deferred_start(&mut self, factory: DataFactory) {
         let span = factory.create_span();
         let entry = span.enter();
         event!(Level::TRACE, "starting actor");
@@ -128,8 +128,7 @@ impl System {
         let index = self.actors.insert(dummy_entry);
 
         // Start the real actor
-        let addr = ActorId(index);
-        let result = factory.start(self, addr);
+        let result = factory.start(self, index);
 
         drop(entry);
 
@@ -211,5 +210,5 @@ struct ActorEntry {
 }
 
 enum DeferredAction {
-    Start(Box<dyn Factory>),
+    Start(DataFactory),
 }

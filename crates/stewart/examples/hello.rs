@@ -1,11 +1,10 @@
 mod utils;
 
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::channel;
 
-use stewart::{
-    Actor, ActorAddr, AfterProcess, AfterReduce, Error, Factory, Protocol, Start, System,
-};
-use tracing::{event, Level};
+use stewart::System;
+
+use crate::ping_actor::{start_ping, Ping, PingData};
 
 fn main() {
     utils::init_logging();
@@ -14,7 +13,7 @@ fn main() {
 
     // Start the PingActor, note that it will not actually start until the system runs
     let (sender, receiver) = channel();
-    system.start(PingData { on_start: sender });
+    start_ping(&mut system, PingData { on_start: sender });
     system.run_until_idle();
 
     // The PingActor should at this point have responded with an address
@@ -32,55 +31,67 @@ fn main() {
     system.run_until_idle();
 }
 
-#[derive(Factory)]
-#[factory(PingActor)]
-struct PingData {
-    on_start: Sender<ActorAddr<Ping<'static>>>,
-}
+/// To demonstrate encapsulation, an inner module is used here.
+mod ping_actor {
+    use std::sync::mpsc::Sender;
 
-struct PingActor {
-    queue: Vec<String>,
-}
+    use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Error, Protocol, Start, System};
+    use tracing::{event, Level};
 
-impl Start for PingActor {
-    type Data = PingData;
-
-    fn start(
-        _system: &mut System,
-        addr: ActorAddr<Ping<'static>>,
-        data: PingData,
-    ) -> Result<Self, Error> {
-        event!(Level::DEBUG, "creating ping actor");
-        data.on_start.send(addr).unwrap();
-
-        Ok(Self { queue: Vec::new() })
-    }
-}
-
-impl Actor for PingActor {
-    type Protocol = Ping<'static>;
-
-    fn reduce(&mut self, message: Ping) -> Result<AfterReduce, Error> {
-        event!(Level::DEBUG, "adding message");
-
-        self.queue.push(message.0.to_string());
-
-        Ok(AfterReduce::Process)
+    /// The start function uses the concrete actor internally.
+    /// The actor itself is never public.
+    pub fn start_ping(system: &mut System, data: PingData) {
+        system.start::<PingActor>(data);
     }
 
-    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
-        event!(Level::DEBUG, "handling queued messages");
+    pub struct PingData {
+        pub on_start: Sender<ActorAddr<Ping<'static>>>,
+    }
 
-        for entry in self.queue.drain(..) {
-            event!(Level::INFO, "Hello, {}!", entry);
+    #[derive(Protocol, Debug)]
+    pub struct Ping<'a>(pub &'a str);
+
+    struct PingActor {
+        queue: Vec<String>,
+    }
+
+    impl Start for PingActor {
+        type Data = PingData;
+
+        fn start(
+            _system: &mut System,
+            addr: ActorAddr<Ping<'static>>,
+            data: PingData,
+        ) -> Result<Self, Error> {
+            event!(Level::DEBUG, "creating ping actor");
+            data.on_start.send(addr).unwrap();
+
+            Ok(Self { queue: Vec::new() })
+        }
+    }
+
+    impl Actor for PingActor {
+        type Protocol = Ping<'static>;
+
+        fn reduce(&mut self, message: Ping) -> Result<AfterReduce, Error> {
+            event!(Level::DEBUG, "adding message");
+
+            self.queue.push(message.0.to_string());
+
+            Ok(AfterReduce::Process)
         }
 
-        // We only listen to one wave of messages then stop immediately.
-        // Note though that the runtime could call this at any point after `reduce`, and messages
-        // may be dropped as a result.
-        Ok(AfterProcess::Stop)
+        fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
+            event!(Level::DEBUG, "handling queued messages");
+
+            for entry in self.queue.drain(..) {
+                event!(Level::INFO, "Hello, {}!", entry);
+            }
+
+            // We only listen to one wave of messages then stop immediately.
+            // Note though that the runtime could call this at any point after `reduce`, and messages
+            // may be dropped as a result.
+            Ok(AfterProcess::Stop)
+        }
     }
 }
-
-#[derive(Protocol, Debug)]
-struct Ping<'a>(&'a str);

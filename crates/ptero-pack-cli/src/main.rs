@@ -2,7 +2,7 @@ mod commands;
 mod io;
 
 use clap::{Parser, Subcommand};
-use stewart::{Factory, System};
+use stewart::System;
 use tracing::Level;
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, EnvFilter, FmtSubscriber};
 
@@ -25,13 +25,12 @@ fn main() {
     let mut system = System::new();
 
     // Start the command actor
-    let command: Box<dyn Factory> = match args.command {
-        Command::Create(command) => Box::new(command),
-        Command::Add(command) => Box::new(command),
+    match args.command {
+        Command::Create(command) => commands::create::start(&mut system, command),
+        Command::Add(command) => commands::add::start(&mut system, command),
     };
 
     // Run the command until it's done
-    system.start_boxed(command);
     system.run_until_idle();
 
     // TODO: Stewart doesn't currently bubble up errors for us to catch, and we need those for the

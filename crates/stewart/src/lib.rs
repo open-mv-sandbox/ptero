@@ -5,20 +5,18 @@
 
 mod actor;
 mod addr;
-pub mod dynamic;
+mod dynamic;
 mod factory;
 mod system;
 pub mod utils;
 
 pub use self::{
-    actor::{Actor, AfterProcess, AfterReduce, Protocol},
-    addr::{ActorAddr, ActorId},
-    dynamic::{AnyActor, AnyMessage},
-    factory::{Factory, Start},
+    actor::{Actor, AfterProcess, AfterReduce, Protocol, Start},
+    addr::ActorAddr,
     system::System,
 };
 pub use anyhow::Error;
-pub use stewart_derive::{Factory, Protocol};
+pub use stewart_derive::Protocol;
 
 /// Re-exported for macro generation.
 pub use tracing;

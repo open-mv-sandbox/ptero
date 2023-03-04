@@ -9,13 +9,15 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
-use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Factory, Protocol, Start, System};
+use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Protocol, Start, System};
 use uuid::Uuid;
 
 use crate::io::{ReadResult, ReadWrite};
 
-#[derive(Factory)]
-#[factory(FindComponentActor)]
+pub fn start_find_component(system: &mut System, data: FindComponent) {
+    system.start::<FindComponentActor>(data);
+}
+
 pub struct FindComponent {
     pub target: Uuid,
     pub package: ActorAddr<ReadWrite>,
@@ -47,7 +49,7 @@ impl Start for FindComponentActor {
             package: data.package.clone(),
             reply: address,
         };
-        system.start(read_header);
+        system.start::<ReadHeaderActor>(read_header);
 
         Ok(FindComponentActor {
             queue: Vec::new(),
@@ -77,7 +79,7 @@ impl Actor for FindComponentActor {
                         header,
                         reply: self.address,
                     };
-                    system.start(read_entries);
+                    system.start::<ReadEntriesActor>(read_entries);
 
                     // TODO: Follow extensions
                 }
@@ -108,8 +110,6 @@ enum FindComponentMessage {
     Entries(ComponentTableHeader, Vec<ComponentEntry>),
 }
 
-#[derive(Factory)]
-#[factory(ReadHeaderActor)]
 struct ReadHeader {
     package: ActorAddr<ReadWrite>,
     reply: ActorAddr<FindComponentMessage>,
@@ -169,8 +169,6 @@ impl Actor for ReadHeaderActor {
     }
 }
 
-#[derive(Factory)]
-#[factory(ReadEntriesActor)]
 struct StartReadEntries {
     package: ActorAddr<ReadWrite>,
     header_location: u64,

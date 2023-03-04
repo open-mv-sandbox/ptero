@@ -1,28 +1,69 @@
+use std::{marker::PhantomData, sync::atomic::AtomicPtr};
+
 use anyhow::Error;
+use heck::ToKebabCase;
+use thunderdome::Index;
 use tracing::{span, Level, Span};
 
-use crate::{Actor, ActorAddr, ActorId, AnyActor, System};
+use crate::{dynamic::AnyActor, ActorAddr, Start, System};
 
-pub trait Factory {
-    /// Create a tracing span to be used in log messages.
-    fn create_span(&self) -> Span {
-        span!(Level::INFO, "unknown")
-    }
-
-    /// Consume the factory and start the actor.
-    fn start(self: Box<Self>, system: &mut System, id: ActorId)
-        -> Result<Box<dyn AnyActor>, Error>;
+pub struct DataFactory {
+    starter: Box<dyn AnyStarter>,
 }
 
-/// Starting interface for actors.
-///
-/// This trait is optional, and mainly used by the `Factory` trait's derive macro.
-pub trait Start: Actor + Sized {
-    type Data;
+impl DataFactory {
+    pub fn new<S>(data: S::Data) -> Self
+    where
+        S: Start + 'static,
+    {
+        let starter: Starter<S> = Starter {
+            data,
+            _s: PhantomData,
+        };
+        Self {
+            starter: Box::new(starter),
+        }
+    }
 
-    fn start(
-        system: &mut System,
-        addr: ActorAddr<<Self as Actor>::Protocol>,
-        data: Self::Data,
-    ) -> Result<Self, Error>;
+    pub fn create_span(&self) -> Span {
+        self.starter.create_span()
+    }
+
+    pub fn start(self, system: &mut System, id: Index) -> Result<Box<dyn AnyActor>, Error> {
+        self.starter.start(system, id)
+    }
+}
+
+trait AnyStarter {
+    fn create_span(&self) -> Span;
+
+    fn start(self: Box<Self>, system: &mut System, id: Index) -> Result<Box<dyn AnyActor>, Error>;
+}
+
+struct Starter<S: Start> {
+    data: S::Data,
+    _s: PhantomData<AtomicPtr<S>>,
+}
+
+impl<S> AnyStarter for Starter<S>
+where
+    S: Start + 'static,
+{
+    fn create_span(&self) -> Span {
+        let result = std::any::type_name::<S>().split("::").last();
+        let type_name = match result {
+            Some(value) => value,
+            None => "Unknown",
+        };
+
+        let type_name_kebab = type_name.to_kebab_case();
+        let id = type_name_kebab.trim_end_matches("-actor");
+        span!(Level::INFO, "actor", id)
+    }
+
+    fn start(self: Box<Self>, system: &mut System, id: Index) -> Result<Box<dyn AnyActor>, Error> {
+        let addr = ActorAddr::from_id(id);
+        let actor = S::start(system, addr, self.data)?;
+        Ok(Box::new(actor))
+    }
 }
