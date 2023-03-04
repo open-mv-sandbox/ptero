@@ -955,6 +955,7 @@ dependencies = [
  "anyhow",
  "family",
  "heck",
+ "thiserror",
  "thunderdome",
  "tracing",
  "tracing-subscriber",

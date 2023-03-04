@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 
+use anyhow::{anyhow, Context};
 use family::{AnyOptionMut, Family};
+use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, span, Level, Span};
 
@@ -10,8 +12,6 @@ use crate::{
     utils::UnreachableActor,
     ActorAddr, AfterProcess, AfterReduce, Start,
 };
-
-// TODO: Change all unwrap/expect to soft errors
 
 /// Thread-local cooperative multitasking actor scheduler.
 ///
@@ -99,33 +99,40 @@ impl System {
     }
 
     // TODO: Split running from system
-    pub fn run_until_idle(&mut self) {
+    pub fn run_until_idle(&mut self) -> Result<(), SystemError> {
         loop {
-            self.run_deferred();
+            self.run_deferred()?;
 
             if let Some(index) = self.queue.pop_front() {
-                self.process_at(index);
+                self.process_at(index)?;
             } else {
-                return;
+                break;
             };
         }
+
+        Ok(())
     }
 
-    fn run_deferred(&mut self) {
+    fn run_deferred(&mut self) -> Result<(), SystemError> {
         while let Some(action) = self.deferred.pop() {
             match action {
-                DeferredAction::Start(factory) => self.run_deferred_start(factory),
+                DeferredAction::Start(factory) => self.run_deferred_start(factory)?,
             }
         }
+
+        Ok(())
     }
 
-    fn run_deferred_start(&mut self, factory: Box<dyn AnyFactory>) {
+    fn run_deferred_start(&mut self, factory: Box<dyn AnyFactory>) -> Result<(), SystemError> {
         let span = factory.create_span();
         let entry = span.enter();
         event!(Level::TRACE, "starting actor");
 
         // Get an index for the actor by starting a dummy actor
-        let dummy_entry = self.dummy_entry.take().expect("dummy entry already taken");
+        let dummy_entry = self
+            .dummy_entry
+            .take()
+            .context("dummy entry already taken")?;
         let index = self.actors.insert(dummy_entry);
 
         // Start the real actor
@@ -150,22 +157,26 @@ impl System {
             }
         };
 
-        let dummy_entry = result.expect("actor unexpectedly disappeared");
+        let dummy_entry = result.context("actor unexpectedly disappeared")?;
         self.dummy_entry = Some(dummy_entry);
+
+        Ok(())
     }
 
-    fn process_at(&mut self, index: Index) {
+    fn process_at(&mut self, index: Index) -> Result<(), SystemError> {
         if !self.actors.contains(index) {
-            event!(Level::ERROR, "invalid id in schedule");
-            return;
+            return Err(anyhow!("invalid id in schedule").into());
         }
 
         // Swap out for a dummy actor
-        let dummy_entry = self.dummy_entry.take().expect("dummy entry already taken");
+        let dummy_entry = self
+            .dummy_entry
+            .take()
+            .context("dummy entry already taken")?;
         let mut entry = self
             .actors
             .insert_at(index, dummy_entry)
-            .expect("actor unexpectedly disappeared");
+            .context("actor unexpectedly disappeared")?;
 
         // Perform the actor's process step
         let enter = entry.span.enter();
@@ -179,7 +190,7 @@ impl System {
         let dummy_entry = self
             .actors
             .insert_at(index, entry)
-            .expect("actor unexpectedly disappeared");
+            .context("actor unexpectedly disappeared")?;
         self.dummy_entry = Some(dummy_entry);
 
         // Handle the result
@@ -188,19 +199,23 @@ impl System {
                 // Nothing to do
             }
             Ok(AfterProcess::Stop) => {
-                self.stop(index);
+                self.stop(index)?;
             }
             Err(error) => {
-                event!(Level::ERROR, "actor failed to process\n{:?}", error);
+                return Err(anyhow!("actor failed to process\n{:?}", error).into());
             }
         }
+
+        Ok(())
     }
 
-    fn stop(&mut self, index: Index) {
+    fn stop(&mut self, index: Index) -> Result<(), SystemError> {
         // TODO: Soft error
-        let entry = self.actors.remove(index).expect("actor didn't exist");
+        let entry = self.actors.remove(index).context("actor didn't exist")?;
         let _entry = entry.span.enter();
         event!(Level::TRACE, "stopping actor");
+
+        Ok(())
     }
 }
 
@@ -212,4 +227,10 @@ struct ActorEntry {
 
 enum DeferredAction {
     Start(Box<dyn AnyFactory>),
+}
+
+#[derive(Error, Debug)]
+pub enum SystemError {
+    #[error("unknown internal error, this is a bug in stewart")]
+    Internal(#[from] anyhow::Error),
 }

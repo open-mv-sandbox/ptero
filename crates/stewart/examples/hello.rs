@@ -2,11 +2,12 @@ mod utils;
 
 use std::sync::mpsc::channel;
 
+use anyhow::Error;
 use stewart::System;
 
 use crate::ping_actor::{start_ping, Ping, PingData};
 
-fn main() {
+fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut system = System::new();
@@ -14,7 +15,7 @@ fn main() {
     // Start the PingActor, note that it will not actually start until the system runs
     let (sender, receiver) = channel();
     start_ping(&mut system, PingData { on_start: sender });
-    system.run_until_idle();
+    system.run_until_idle()?;
 
     // The PingActor should at this point have responded with an address
     let addr = receiver.try_recv().expect("PingActor didn't report start");
@@ -28,7 +29,9 @@ fn main() {
     system.handle(addr, Ping(data.as_str()));
 
     // Let the system process the messages we just sent
-    system.run_until_idle();
+    system.run_until_idle()?;
+
+    Ok(())
 }
 
 /// To demonstrate encapsulation, an inner module is used here.

@@ -7,6 +7,7 @@ edition = "2021"
 anyhow.workspace = true
 heck.workspace = true
 thunderdome.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
 family.workspace = true
 

@@ -13,5 +13,5 @@ pub mod utils;
 pub use self::{
     actor::{Actor, AfterProcess, AfterReduce, Start},
     addr::ActorAddr,
-    system::System,
+    system::{System, SystemError},
 };

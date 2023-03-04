@@ -1,9 +1,10 @@
 mod commands;
 mod io;
 
+use anyhow::Error;
 use clap::{Parser, Subcommand};
 use stewart::System;
-use tracing::Level;
+use tracing::{event, Level};
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, EnvFilter, FmtSubscriber};
 
 use crate::commands::{add::AddCommand, create::CreateCommand};
@@ -18,6 +19,17 @@ fn main() {
         .with(filter);
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
+    // Run main
+    let result = try_main();
+
+    // Report any otherwise unhandled errors
+    if let Err(error) = result {
+        event!(Level::ERROR, "failed:\n{:?}", error);
+        std::process::exit(1);
+    }
+}
+
+fn try_main() -> Result<(), Error> {
     // Parse command line args
     let args = CliArgs::parse();
 
@@ -31,14 +43,11 @@ fn main() {
     };
 
     // Run the command until it's done
-    system.run_until_idle();
+    system.run_until_idle()?;
 
     // TODO: Stewart doesn't currently bubble up errors for us to catch, and we need those for the
     // correct error code.
-    /*if let Err(error) = result {
-        event!(Level::ERROR, "failed:\n{:?}", error);
-        std::process::exit(1);
-    }*/
+    Ok(())
 }
 
 /// Pterodactil CLI toolkit for working with dacti packages.
