@@ -8,6 +8,7 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
+use bytemuck::{bytes_of_mut, from_bytes, Zeroable};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
 use stewart::{
     utils::{ActorAddrS, StaticActor},
@@ -161,7 +162,7 @@ impl StaticActor for ReadHeaderActor {
 
         // Read the header data
         let header_location = 8;
-        let header = ComponentTableHeader::from_bytes(&data[8..]).clone();
+        let header = from_bytes::<ComponentTableHeader>(&data[8..]).clone();
 
         let msg = FindComponentMessage::Header(header_location, header);
         system.handle(self.reply, msg);
@@ -192,7 +193,7 @@ impl Start for ReadEntriesActor {
         data: StartReadEntries,
     ) -> Result<Self, Error> {
         let msg = ReadWrite::Read {
-            start: data.header_location + ComponentTableHeader::bytes_len() as u64,
+            start: data.header_location + size_of::<ComponentTableHeader>() as u64,
             length: (data.header.length() as usize * size_of::<ComponentEntry>()) as u64,
             reply: address,
         };
@@ -223,7 +224,7 @@ impl StaticActor for ReadEntriesActor {
         // TODO: Direct cast?
         for _ in 0..self.header.length() {
             let mut entry = ComponentEntry::zeroed();
-            data.read_exact(&mut entry)?;
+            data.read_exact(bytes_of_mut(&mut entry))?;
             entries.push(entry);
         }
 

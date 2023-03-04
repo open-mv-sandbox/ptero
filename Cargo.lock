@@ -289,14 +289,13 @@ dependencies = [
 
 [[package]]
 name = "daicon"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3624f64c6c732c2511fced6207d47f6ba8329a3c749999b06bd72b278b9fa2f2"
+checksum = "fcde5862d9017b65fcc8e81330219043f9246456fb62ef788b76a41adf8a5adf"
 dependencies = [
  "bytemuck",
  "thiserror",
  "uuid",
- "wrapmuck",
 ]
 
 [[package]]
@@ -781,6 +780,7 @@ name = "ptero-daicon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "daicon",
  "stewart",
  "uuid",
@@ -791,6 +791,7 @@ name = "ptero-pack"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "dacti-index",
  "daicon",
  "ptero-daicon",

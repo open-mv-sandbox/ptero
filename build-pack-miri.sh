@@ -1,9 +1,8 @@
 #!/bin/bash
 set -e
 
-cargo build
-
-export CMD="./target/debug/ptero-pack"
+export MIRIFLAGS="-Zmiri-disable-isolation"
+export CMD="cargo +nightly miri run --"
 export PACK="--package ./packages/dacti-example-web/public/viewer-builtins.dacti-pack"
 
 $CMD create $PACK

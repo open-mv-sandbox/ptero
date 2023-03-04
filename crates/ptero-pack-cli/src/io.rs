@@ -73,6 +73,7 @@ impl StaticActor for FileReadWriteActor {
                     reply,
                 } => {
                     let mut buffer = vec![0u8; length as usize];
+
                     self.package_file.seek(SeekFrom::Start(start))?;
                     self.package_file.read_exact(&mut buffer)?;
                     system.handle(reply, ReadResult(Ok(buffer)));

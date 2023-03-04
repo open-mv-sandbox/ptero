@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{Context as ContextExt, Error};
+use bytemuck::{bytes_of, from_bytes, from_bytes_mut, Zeroable};
 use dacti_index::{
     IndexEntry, IndexGroupEncoding, IndexGroupHeader, IndexHeader, INDEX_COMPONENT_UUID,
 };
@@ -37,16 +38,16 @@ pub fn create_package(path: &str) -> Result<(), Error> {
     // Write the component table
     let mut header = ComponentTableHeader::zeroed();
     header.set_length(1);
-    package.write_all(&header)?;
+    package.write_all(bytes_of(&header))?;
 
     let mut entry = ComponentEntry::zeroed();
     entry.set_type_id(INDEX_COMPONENT_UUID);
 
-    let region = RegionData::from_bytes_mut(entry.data_mut());
+    let region = from_bytes_mut::<RegionData>(entry.data_mut());
     region.set_relative_offset(indices_offset);
     region.set_size(IndexHeader::bytes_len() as u32);
 
-    package.write_all(&entry)?;
+    package.write_all(bytes_of(&entry))?;
 
     // Write an empty indices table
     package.seek(SeekFrom::Start(indices_offset as u64))?;
@@ -163,7 +164,7 @@ impl StaticActor for AddIndexActor {
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
         let message = self.message.take().context("incorrect state")?;
 
-        let region = RegionData::from_bytes(message.entry.data());
+        let region = from_bytes::<RegionData>(message.entry.data());
         let component_offset = region.offset(message.header.entries_offset());
 
         // TODO: Find a free slot rather than just assuming there's no groups and files yet
