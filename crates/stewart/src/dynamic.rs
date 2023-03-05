@@ -1,13 +1,13 @@
 //! Helper types for storing and calling actors dynamically.
 
-use anyhow::Error;
-use family::any::AnyFamilyMember;
+use anyhow::{Context, Error};
+use family::any::AnyOption;
 use tracing::{event, Level};
 
 use crate::{Actor, AfterProcess, AfterReduce, System};
 
 pub trait AnyActor {
-    fn reduce(&mut self, message: Box<dyn AnyFamilyMember + '_>) -> Result<AfterReduce, Error>;
+    fn reduce(&mut self, message: &mut dyn AnyOption) -> Result<AfterReduce, Error>;
 
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error>;
 }
@@ -16,7 +16,7 @@ impl<A> AnyActor for A
 where
     A: Actor,
 {
-    fn reduce(&mut self, message: Box<dyn AnyFamilyMember + '_>) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, message: &mut dyn AnyOption) -> Result<AfterReduce, Error> {
         let message = match message.downcast::<A::Family>() {
             Some(message) => message,
             None => {
@@ -27,6 +27,7 @@ where
             }
         };
 
+        let message = message.take().context("message was already taken")?;
         Actor::reduce(self, message.0)
     }
 

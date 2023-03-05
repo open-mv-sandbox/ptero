@@ -58,8 +58,8 @@ impl System {
         let enter = entry.span.enter();
 
         let message = message.into();
-        let message = Box::new(FamilyMember::<F>(message));
-        let result = entry.actor.reduce(message);
+        let mut message = Some(FamilyMember::<F>(message));
+        let result = entry.actor.reduce(&mut message);
 
         // Schedule process if necessary
         match result {
