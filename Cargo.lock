@@ -261,10 +261,10 @@ dependencies = [
 [[package]]
 name = "dacti-index"
 version = "0.1.0"
+source = "git+https://github.com/open-mv-sandbox/dacti.git?rev=018ae55#018ae55ab540f9e8261cb4d489c156da93733a80"
 dependencies = [
  "bytemuck",
  "uuid",
- "wrapmuck",
 ]
 
 [[package]]
@@ -322,6 +322,8 @@ dependencies = [
 [[package]]
 name = "family"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef2f5e34398ed41e8860c5f425d797b5ea3fdd6ef267d4f22dd7555629f44e6d"
 
 [[package]]
 name = "foreign-types"
@@ -1435,13 +1437,3 @@ name = "windows_x86_64_msvc"
 version = "0.42.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "447660ad36a13288b1db4d4248e857b510e8c3a225c822ba4fb748c0aafecffd"
-
-[[package]]
-name = "wrapmuck"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39252e9c38b98e0fbc9c51bcfb81ac36a857b944f27884253a7d5e65334ae764"
-dependencies = [
- "quote",
- "syn",
-]

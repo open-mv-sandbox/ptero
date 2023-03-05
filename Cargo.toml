@@ -8,6 +8,7 @@ bytemuck = "1.13.0"
 clap = "4.1.6"
 console_error_panic_hook = "0.1.6"
 daicon = "0.3.0"
+family = "0.1.0"
 heck = "0.4.1"
 js-sys = "0.3.61"
 raw-window-handle = "0.5.0"
@@ -22,10 +23,8 @@ web-sys = "0.3.61"
 wasm-bindgen = "0.2.63"
 wasm-bindgen-futures = "0.4.34"
 wgpu = "0.15.1"
-wrapmuck = "0.2.0"
-dacti-index = { path = "../dacti/crates/dacti-index" }
+dacti-index = { git = "https://github.com/open-mv-sandbox/dacti.git", rev = "018ae55" }
 dacti-viewer = { path = "./crates/dacti-viewer" }
-family = { path = "./crates/family" }
 ptero-daicon = { path = "./crates/ptero-daicon" }
 ptero-pack = { path = "./crates/ptero-pack" }
 stewart = { path = "./crates/stewart" }

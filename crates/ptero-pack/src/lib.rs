@@ -3,6 +3,7 @@
 use std::{
     fs::OpenOptions,
     io::{Seek, SeekFrom, Write},
+    mem::size_of,
 };
 
 use anyhow::{Context as ContextExt, Error};
@@ -45,14 +46,14 @@ pub fn create_package(path: &str) -> Result<(), Error> {
 
     let region = from_bytes_mut::<RegionData>(entry.data_mut());
     region.set_relative_offset(indices_offset);
-    region.set_size(IndexHeader::bytes_len() as u32);
+    region.set_size(size_of::<IndexHeader>() as u32);
 
     package.write_all(bytes_of(&entry))?;
 
     // Write an empty indices table
     package.seek(SeekFrom::Start(indices_offset as u64))?;
     let header = IndexHeader::zeroed();
-    package.write_all(&header)?;
+    package.write_all(bytes_of(&header))?;
 
     Ok(())
 }
@@ -184,14 +185,14 @@ fn create_table_data(entry: &IndexEntry) -> Result<Vec<u8>, Error> {
     // Find the current location of the index component
     let mut header = IndexHeader::zeroed();
     header.set_groups(1);
-    data.write_all(&header)?;
+    data.write_all(bytes_of(&header))?;
 
     let mut group = IndexGroupHeader::zeroed();
     group.set_encoding(IndexGroupEncoding::None);
     group.set_length(1);
-    data.write_all(&group)?;
+    data.write_all(bytes_of(&group))?;
 
-    data.write_all(entry)?;
+    data.write_all(bytes_of(entry))?;
 
     Ok(data)
 }

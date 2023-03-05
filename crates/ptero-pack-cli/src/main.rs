@@ -32,6 +32,7 @@ fn main() {
 fn try_main() -> Result<(), Error> {
     // Parse command line args
     let args = CliArgs::parse();
+    event!(Level::INFO, "running command");
 
     // Set up the runtime
     let mut system = System::new();
