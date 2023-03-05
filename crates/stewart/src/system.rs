@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use anyhow::{bail, Context, Error};
-use family::{any::AnyOptionMut, Family};
+use family::{any::FamilyMember, Family};
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
@@ -57,9 +57,9 @@ impl System {
         // Let the actor reduce the message
         let enter = entry.span.enter();
 
-        let mut message_slot = Some(message.into());
-        let slot = AnyOptionMut::new::<F>(&mut message_slot);
-        let result = entry.actor.reduce(slot);
+        let message = message.into();
+        let message = Box::new(FamilyMember::<F>(message));
+        let result = entry.actor.reduce(message);
 
         // Schedule process if necessary
         match result {

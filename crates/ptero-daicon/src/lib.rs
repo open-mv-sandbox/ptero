@@ -229,7 +229,7 @@ impl Actor for ReadEntriesActor {
         }
 
         // Reply with the read data
-        let msg = FindComponentMessage::Entries(self.header.clone(), entries);
+        let msg = FindComponentMessage::Entries(self.header, entries);
         system.handle(self.reply, msg);
 
         Ok(AfterProcess::Stop)

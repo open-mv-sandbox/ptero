@@ -1,101 +1,54 @@
 //! Dynamic type casting support for families.
 //!
 //! Rust std's `Any` type is limited to only work on `'static` types.
-//! The limitations added by the family pattern allow it to do more safe casting.
+//! The limitations added by the family pattern allow it to do downcasting with borrowed types.
 
-use std::{any::TypeId, marker::PhantomData, ptr::NonNull};
+use std::any::TypeId;
 
 use crate::Family;
 
-// TODO: Replace `AnyOptionMut` below, with a family AnyMember caster.
+/// Marker newtype for a specific family's member.
+///
+/// Since members can be part of multiple families, this marker restricts to just one for dynamic
+/// type casting.
+pub struct FamilyMember<'a, F>(pub F::Member<'a>)
+where
+    F: Family;
 
-/// Mutable reference to an `Option` that can contain any `Family::Member`, checked at runtime.
+/// Dynamic upcast for `FamilyMember`.
 ///
-/// ```
-/// # use family::*;
-/// # enum StrFamily {}
-/// # impl Family for StrFamily { type Member<'a> = &'a str; }
-/// #
-/// let value = String::from("some value");
-/// let mut option = Some(value.as_str());
-/// let option_mut = AnyOptionMut::new::<StrFamily>(&mut option);
-///
-/// // Dynamically downcast back to the option
-/// let result = option_mut.downcast::<StrFamily>();
-/// assert!(result.is_some());
-/// let taken = result.unwrap().take();
-/// assert!(taken.is_some());
-///
-/// // Afterwards, we can take the option back again
-/// assert!(option.is_none());
-/// ```
-///
-/// ```compile_fail
-/// # use family::*;
-/// # enum StrFamily {}
-/// # impl Family for StrFamily { type Member<'a> = &'a str; }
-/// #
-/// let value = String::from("some value");
-/// let mut option = Some(value.as_str());
-/// let option_mut = AnyOptionMut::new::<StrFamily>(&mut option);
-///
-/// // Option is no longer valid
-/// drop(option);
-///
-/// // So this fails to compile
-/// option_mut.downcast::<StrFamily>();
-/// ```
-///
-/// ```compile_fail
-/// # use family::*;
-/// # enum StrFamily {}
-/// # impl Family for StrFamily { type Member<'a> = &'a str; }
-/// #
-/// let value = String::from("some value");
-/// let mut option = Some(value.as_str());
-/// let option_mut = AnyOptionMut::new::<StrFamily>(&mut option);
-///
-/// let result = option_mut.downcast::<StrFamily>();
-///
-/// // Option is no longer valid
-/// drop(option);
-///
-/// // So this fails to compile
-/// assert!(result.is_some());
-/// ```
-pub struct AnyOptionMut<'a> {
-    family_id: TypeId,
-    slot_ptr: NonNull<u8>,
-    _a: PhantomData<&'a mut u32>,
+/// # Safety
+/// While calling this is safe, implementing this isn't, as `family_id` is used to check
+/// downcasting.
+pub unsafe trait AnyFamilyMember {
+    /// Get the `TypeId` of the family this is a member of.
+    fn family_id(&self) -> TypeId;
 }
 
-impl<'a> AnyOptionMut<'a> {
-    /// Create a new mutable reference to an option with a family member.
-    pub fn new<'b, F>(slot: &'a mut Option<F::Member<'b>>) -> Self
-    where
-        'b: 'a,
-        F: Family,
-    {
-        let slot_ptr = NonNull::new(slot).unwrap().cast();
-
-        Self {
-            family_id: TypeId::of::<F>(),
-            slot_ptr,
-            _a: PhantomData,
-        }
+unsafe impl<'a, F> AnyFamilyMember for FamilyMember<'a, F>
+where
+    F: Family,
+{
+    fn family_id(&self) -> TypeId {
+        TypeId::of::<F>()
     }
+}
 
-    pub fn downcast<F>(self) -> Option<&'a mut Option<F::Member<'a>>>
+impl<'a> dyn 'a + AnyFamilyMember {
+    pub fn downcast<F>(self: Box<Self>) -> Option<Box<FamilyMember<'a, F>>>
     where
         F: Family,
     {
-        // Make sure the family matches, which should give us a matching reference value
-        if self.family_id != TypeId::of::<F>() {
+        // Check that the family ID matches
+        if TypeId::of::<F>() != self.family_id() {
             return None;
         }
 
-        // Very unsafe, very bad, downcast the inner option
-        let mut slot_ptr_typed: NonNull<Option<F::Member<'a>>> = self.slot_ptr.cast();
-        Some(unsafe { slot_ptr_typed.as_mut() })
+        // The ID matches, so this *should* be sound
+        // Lifetimes are enforced by 'a
+        let raw = Box::into_raw(self) as *mut FamilyMember<'a, F>;
+        let new = unsafe { Box::from_raw(raw) };
+
+        Some(new)
     }
 }
