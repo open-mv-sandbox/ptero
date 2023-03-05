@@ -106,8 +106,8 @@ mod ping_actor {
             }
 
             // We only listen to one wave of messages then stop immediately.
-            // Note though that the runtime could call this at any point after `reduce`, and messages
-            // may be dropped as a result.
+            // Note though that the runtime could call this at any point after `reduce`, and
+            // messages may be dropped as a result.
             Ok(AfterProcess::Stop)
         }
     }

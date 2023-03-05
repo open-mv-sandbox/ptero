@@ -321,9 +321,9 @@ dependencies = [
 
 [[package]]
 name = "family"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef2f5e34398ed41e8860c5f425d797b5ea3fdd6ef267d4f22dd7555629f44e6d"
+checksum = "432d8e3d0cbc833c05c5576996754dbcb61648f43b6489531541838e101945b7"
 
 [[package]]
 name = "foreign-types"
