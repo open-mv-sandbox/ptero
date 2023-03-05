@@ -1,7 +1,7 @@
 //! Helper types for storing and calling actors dynamically.
 
 use anyhow::Error;
-use family::AnyOptionMut;
+use family::any::AnyOptionMut;
 use tracing::{event, Level};
 
 use crate::{Actor, AfterProcess, AfterReduce, System};

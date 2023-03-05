@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context as ContextExt, Error};
 use ptero_daicon::io::ReadWrite;
 use stewart::{
-    utils::{ActorAddrS, StaticActor},
+    utils::{ActorAddrT, ActorT},
     AfterProcess, AfterReduce, Start, System,
 };
 use tracing::{event, Level};
@@ -17,7 +17,7 @@ pub fn start_read_write_file(system: &mut System, data: FileReadWrite) {
 
 pub struct FileReadWrite {
     pub path: String,
-    pub reply: ActorAddrS<ActorAddrS<ReadWrite>>,
+    pub reply: ActorAddrT<ActorAddrT<ReadWrite>>,
 }
 
 struct FileReadWriteActor {
@@ -31,7 +31,7 @@ impl Start for FileReadWriteActor {
 
     fn start(
         system: &mut System,
-        addr: ActorAddrS<ReadWrite>,
+        addr: ActorAddrT<ReadWrite>,
         data: FileReadWrite,
     ) -> Result<Self, Error> {
         let package_file = OpenOptions::new()
@@ -50,7 +50,7 @@ impl Start for FileReadWriteActor {
     }
 }
 
-impl StaticActor for FileReadWriteActor {
+impl ActorT for FileReadWriteActor {
     type Message = ReadWrite;
 
     fn reduce<'a>(&mut self, message: ReadWrite) -> Result<AfterReduce, Error> {

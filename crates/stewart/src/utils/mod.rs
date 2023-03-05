@@ -1,15 +1,15 @@
 //! Small convenience utilities.
 
 use anyhow::{bail, Error};
-use family::{Family, StaticFamily};
+use family::{utils::FamilyT, Family};
 
 use crate::{Actor, ActorAddr, AfterProcess, AfterReduce, System};
 
 /// Convenience actor specialization that operates on messages with a static lifetime.
 ///
-/// Automatically implements `Actor`, wrapping `Message` with `StaticFamily`.
-/// Workaround for a lack of HKT support in Rust.
-pub trait StaticActor {
+/// Automatically implements `Actor`, wrapping `Message` with `FamilyT`.
+/// See `family::utils` module for more information.
+pub trait ActorT {
     type Message: 'static;
 
     /// Handle a message in-place, storing it as appropriate until processing.
@@ -21,15 +21,15 @@ pub trait StaticActor {
 
 impl<A> Actor for A
 where
-    A: StaticActor,
+    A: ActorT,
 {
-    type Family = StaticFamily<<Self as StaticActor>::Message>;
+    type Family = FamilyT<<Self as ActorT>::Message>;
 
     fn reduce(
         &mut self,
         message: <Self::Family as Family>::Member<'_>,
     ) -> Result<AfterReduce, Error> {
-        self.reduce(message)
+        self.reduce(message.0)
     }
 
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
@@ -37,27 +37,26 @@ where
     }
 }
 
-/// Convenience alias for addresses of static actors.
-pub type ActorAddrS<T> = ActorAddr<StaticFamily<T>>;
+/// Convenience alias for addresses of `ActorT`.
+pub type ActorAddrT<T> = ActorAddr<FamilyT<T>>;
 
 /// Should-be-unreachable placeholder actor.
 ///
 /// Impossible to reduce, will raise an error if processed.
 /// This actor can be used as a cheap placeholder when you need an actor in a slot that you'll
 /// later replace with a 'real' actor.
-pub struct UnreachableActor;
+pub struct VoidActor;
 
-impl StaticActor for UnreachableActor {
-    type Message = Unreachable;
+impl ActorT for VoidActor {
+    type Message = Void;
 
-    fn reduce<'a>(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {
+    fn reduce<'a>(&mut self, _message: Void) -> Result<AfterReduce, Error> {
         unreachable!()
     }
 
     fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
-        bail!("attempted to process UnreachableActor")
+        bail!("attempted to process void actor")
     }
 }
 
-/// Impossible to create type.
-pub enum Unreachable {}
+pub use void::Void;

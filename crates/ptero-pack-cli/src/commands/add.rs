@@ -3,7 +3,7 @@ use clap::Args;
 use ptero_daicon::io::ReadWrite;
 use ptero_pack::{start_add_data, AddData};
 use stewart::{
-    utils::{ActorAddrS, StaticActor},
+    utils::{ActorAddrT, ActorT},
     AfterProcess, AfterReduce, Start, System,
 };
 use tracing::{event, Level};
@@ -32,7 +32,7 @@ pub fn start(system: &mut System, data: AddCommand) {
 }
 
 struct AddCommandActor {
-    package: Option<ActorAddrS<ReadWrite>>,
+    package: Option<ActorAddrT<ReadWrite>>,
     input: Vec<u8>,
     uuid: Uuid,
 }
@@ -42,7 +42,7 @@ impl Start for AddCommandActor {
 
     fn start(
         system: &mut System,
-        addr: ActorAddrS<ActorAddrS<ReadWrite>>,
+        addr: ActorAddrT<ActorAddrT<ReadWrite>>,
         data: AddCommand,
     ) -> Result<Self, Error> {
         event!(Level::INFO, "adding file to package");
@@ -63,10 +63,10 @@ impl Start for AddCommandActor {
     }
 }
 
-impl StaticActor for AddCommandActor {
-    type Message = ActorAddrS<ReadWrite>;
+impl ActorT for AddCommandActor {
+    type Message = ActorAddrT<ReadWrite>;
 
-    fn reduce(&mut self, message: ActorAddrS<ReadWrite>) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, message: ActorAddrT<ReadWrite>) -> Result<AfterReduce, Error> {
         self.package = Some(message);
         Ok(AfterReduce::Process)
     }

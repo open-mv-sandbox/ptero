@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use anyhow::{bail, Context, Error};
-use family::{AnyOptionMut, Family};
+use family::{any::AnyOptionMut, Family};
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
@@ -38,7 +38,7 @@ impl System {
     }
 
     /// Handle a message, immediately sending it to the actor's reducer.
-    pub fn handle<'a, F>(&mut self, addr: ActorAddr<F>, message: F::Member<'a>)
+    pub fn handle<'a, F>(&mut self, addr: ActorAddr<F>, message: impl Into<F::Member<'a>>)
     where
         F: Family,
         F::Member<'static>: 'static,
@@ -57,7 +57,7 @@ impl System {
         // Let the actor reduce the message
         let enter = entry.span.enter();
 
-        let mut message_slot = Some(message);
+        let mut message_slot = Some(message.into());
         let slot = AnyOptionMut::new::<F>(&mut message_slot);
         let result = entry.actor.reduce(slot);
 

@@ -3,7 +3,7 @@ use tracing::{span, Level};
 
 use crate::{
     system::{ActorEntry, DeferredAction},
-    utils::UnreachableActor,
+    utils::VoidActor,
     System,
 };
 
@@ -17,7 +17,7 @@ impl Runner {
     pub fn new() -> Self {
         let dummy_entry = ActorEntry {
             span: span!(Level::ERROR, "unreachable"),
-            actor: Box::new(UnreachableActor),
+            actor: Box::new(VoidActor),
             queued: false,
         };
 

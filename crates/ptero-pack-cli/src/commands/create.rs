@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use stewart::{
-    utils::{ActorAddrS, StaticActor, Unreachable},
+    utils::{ActorAddrT, ActorT, Void},
     AfterProcess, AfterReduce, Start, System,
 };
 use tracing::{event, Level};
@@ -25,7 +25,7 @@ impl Start for CreateCommandActor {
 
     fn start(
         _system: &mut System,
-        _addr: ActorAddrS<Unreachable>,
+        _addr: ActorAddrT<Void>,
         data: CreateCommand,
     ) -> Result<Self, Error> {
         event!(Level::INFO, "creating package");
@@ -36,10 +36,10 @@ impl Start for CreateCommandActor {
     }
 }
 
-impl StaticActor for CreateCommandActor {
-    type Message = Unreachable;
+impl ActorT for CreateCommandActor {
+    type Message = Void;
 
-    fn reduce(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, _message: Void) -> Result<AfterReduce, Error> {
         unimplemented!()
     }
 

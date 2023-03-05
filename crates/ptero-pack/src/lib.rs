@@ -13,7 +13,7 @@ use dacti_index::{
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{io::ReadWrite, start_find_component, FindComponent, FindComponentResult};
 use stewart::{
-    utils::{ActorAddrS, StaticActor, Unreachable},
+    utils::{ActorAddrT, ActorT, Void},
     AfterProcess, AfterReduce, Start, System,
 };
 use tracing::{event, Level};
@@ -62,7 +62,7 @@ pub fn start_add_data(system: &mut System, data: AddData) {
 }
 
 pub struct AddData {
-    pub package: ActorAddrS<ReadWrite>,
+    pub package: ActorAddrT<ReadWrite>,
     pub data: Vec<u8>,
     pub uuid: Uuid,
 }
@@ -72,11 +72,7 @@ struct AddDataActor;
 impl Start for AddDataActor {
     type Data = AddData;
 
-    fn start(
-        system: &mut System,
-        _addr: ActorAddrS<Unreachable>,
-        data: AddData,
-    ) -> Result<Self, Error> {
+    fn start(system: &mut System, _addr: ActorAddrT<Void>, data: AddData) -> Result<Self, Error> {
         event!(Level::DEBUG, "adding data to package");
 
         // The first 64kb is reserved for components and indices
@@ -106,10 +102,10 @@ impl Start for AddDataActor {
     }
 }
 
-impl StaticActor for AddDataActor {
-    type Message = Unreachable;
+impl ActorT for AddDataActor {
+    type Message = Void;
 
-    fn reduce(&mut self, _message: Unreachable) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, _message: Void) -> Result<AfterReduce, Error> {
         unimplemented!()
     }
 
@@ -120,13 +116,13 @@ impl StaticActor for AddDataActor {
 }
 
 struct AddIndex {
-    package: ActorAddrS<ReadWrite>,
+    package: ActorAddrT<ReadWrite>,
     value: IndexEntry,
 }
 
 struct AddIndexActor {
     message: Option<FindComponentResult>,
-    package: ActorAddrS<ReadWrite>,
+    package: ActorAddrT<ReadWrite>,
     value: IndexEntry,
 }
 
@@ -135,7 +131,7 @@ impl Start for AddIndexActor {
 
     fn start(
         system: &mut System,
-        addr: ActorAddrS<FindComponentResult>,
+        addr: ActorAddrT<FindComponentResult>,
         data: AddIndex,
     ) -> Result<Self, Error> {
         let find_component = FindComponent {
@@ -153,7 +149,7 @@ impl Start for AddIndexActor {
     }
 }
 
-impl StaticActor for AddIndexActor {
+impl ActorT for AddIndexActor {
     type Message = FindComponentResult;
 
     fn reduce(&mut self, message: FindComponentResult) -> Result<AfterReduce, Error> {
