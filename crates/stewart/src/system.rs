@@ -3,13 +3,9 @@ use std::collections::VecDeque;
 use anyhow::{bail, Context, Error};
 use family::{any::FamilyMember, Family};
 use thunderdome::{Arena, Index};
-use tracing::{event, Level, Span};
+use tracing::{event, span, Level, Span};
 
-use crate::{
-    dynamic::AnyActor,
-    factory::{AnyFactory, Factory},
-    ActorAddr, AfterProcess, AfterReduce, Start,
-};
+use crate::{dynamic::AnyActor, Actor, ActorAddr, AfterProcess, AfterReduce};
 
 /// Thread-local cooperative multitasking actor scheduler.
 ///
@@ -28,12 +24,29 @@ impl System {
     }
 
     /// Queue starting an actor.
-    pub fn start<S>(&mut self, data: S::Data)
+    pub fn start<F, A>(&mut self, id: &'static str, start: F)
     where
-        S: Start + 'static,
+        F: FnOnce(&mut System, ActorAddr<A::Family>) -> Result<A, Error> + 'static,
+        A: Actor + 'static,
     {
-        let factory = Factory::<S>::new(data);
-        let action = DeferredAction::Start(Box::new(factory));
+        let start = move |system: &mut System, index: Index| {
+            // Create a tracing span for the actor
+            let span = span!(Level::INFO, "actor", id);
+            let entry = span.enter();
+
+            // Convert the index to an addr
+            let addr = ActorAddr::from_id(index);
+
+            // Run the starting function
+            event!(Level::TRACE, "starting actor");
+            let actor = (start)(system, addr)?;
+            let actor: Box<dyn AnyActor> = Box::new(actor);
+
+            drop(entry);
+            Ok((span, actor))
+        };
+
+        let action = DeferredAction::Start(Box::new(start));
         self.deferred.push(action);
     }
 
@@ -91,25 +104,19 @@ impl System {
 
     pub(crate) fn start_immediate(
         &mut self,
-        factory: Box<dyn AnyFactory>,
+        start: DeferredStart,
         dummy_entry: &mut Option<ActorEntry>,
     ) -> Result<(), Error> {
-        let span = factory.create_span();
-        let entry = span.enter();
-        event!(Level::TRACE, "starting actor");
-
         // Get an index for the actor by starting a dummy actor
         let dummy_entry_val = dummy_entry.take().context("dummy entry already taken")?;
         let index = self.actors.insert(dummy_entry_val);
 
         // Start the real actor
-        let result = factory.start(self, index);
-
-        drop(entry);
+        let result = (start)(self, index);
 
         // Handle factory result
         let result = match result {
-            Ok(actor) => {
+            Ok((span, actor)) => {
                 // Replace the placeholder
                 let entry = ActorEntry {
                     span,
@@ -186,12 +193,15 @@ impl System {
     }
 }
 
-pub(crate) struct ActorEntry {
+pub struct ActorEntry {
     pub span: Span,
     pub actor: Box<dyn AnyActor>,
     pub queued: bool,
 }
 
-pub(crate) enum DeferredAction {
-    Start(Box<dyn AnyFactory>),
+pub enum DeferredAction {
+    Start(DeferredStart),
 }
+
+pub type DeferredStart =
+    Box<dyn FnOnce(&mut System, Index) -> Result<(Span, Box<dyn AnyActor>), Error>>;

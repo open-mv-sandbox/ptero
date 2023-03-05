@@ -14,8 +14,8 @@ use dacti_index::{
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{io::ReadWrite, start_find_component, FindComponent, FindComponentResult};
 use stewart::{
-    utils::{ActorAddrT, ActorT, Void},
-    AfterProcess, AfterReduce, Start, System,
+    utils::{ActorAddrT, ActorT, SystemExt, Void},
+    AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
 use uuid::Uuid;
@@ -59,7 +59,7 @@ pub fn create_package(path: &str) -> Result<(), Error> {
 }
 
 pub fn start_add_data(system: &mut System, data: AddData) {
-    system.start::<AddDataActor>(data);
+    system.start_with("pp-add-data", data, AddDataActor::start);
 }
 
 pub struct AddData {
@@ -70,9 +70,7 @@ pub struct AddData {
 
 struct AddDataActor;
 
-impl Start for AddDataActor {
-    type Data = AddData;
-
+impl AddDataActor {
     fn start(system: &mut System, _addr: ActorAddrT<Void>, data: AddData) -> Result<Self, Error> {
         event!(Level::DEBUG, "adding data to package");
 
@@ -90,7 +88,7 @@ impl Start for AddDataActor {
             package: data.package,
             value: index_entry,
         };
-        system.start::<AddIndexActor>(add_index);
+        system.start_with("pp-add-index", add_index, AddIndexActor::start);
 
         // Write the file to the package
         let write = ReadWrite::Write {
@@ -127,9 +125,7 @@ struct AddIndexActor {
     value: IndexEntry,
 }
 
-impl Start for AddIndexActor {
-    type Data = AddIndex;
-
+impl AddIndexActor {
     fn start(
         system: &mut System,
         addr: ActorAddrT<FindComponentResult>,

@@ -1,6 +1,7 @@
 //! Pterodactil implementation of the "Daicon" format.
 
 pub mod io;
+mod manager;
 
 use std::{
     io::{Cursor, Read},
@@ -11,15 +12,17 @@ use anyhow::{bail, Context, Error};
 use bytemuck::{bytes_of_mut, Zeroable};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
 use stewart::{
-    utils::{ActorAddrT, ActorT},
-    Actor, ActorAddr, AfterProcess, AfterReduce, Start, System,
+    utils::{ActorAddrT, ActorT, SystemExt},
+    Actor, ActorAddr, AfterProcess, AfterReduce, System,
 };
 use uuid::Uuid;
 
 use crate::io::{ReadResult, ReadResultF, ReadWrite};
 
+pub use self::manager::{start_file_manager, FileManagerData, FileOp};
+
 pub fn start_find_component(system: &mut System, data: FindComponent) {
-    system.start::<FindComponentActor>(data);
+    system.start_with("pd-find-component", data, FindComponentActor::start);
 }
 
 pub struct FindComponent {
@@ -39,9 +42,7 @@ struct FindComponentActor {
     data: FindComponent,
 }
 
-impl Start for FindComponentActor {
-    type Data = FindComponent;
-
+impl FindComponentActor {
     fn start(
         system: &mut System,
         address: ActorAddrT<FindComponentMessage>,
@@ -52,7 +53,7 @@ impl Start for FindComponentActor {
             package: data.package,
             reply: address,
         };
-        system.start::<ReadHeaderActor>(read_header);
+        system.start_with("pd-read-header", read_header, ReadHeaderActor::start);
 
         Ok(FindComponentActor {
             queue: Vec::new(),
@@ -82,7 +83,7 @@ impl ActorT for FindComponentActor {
                         header,
                         reply: self.address,
                     };
-                    system.start::<ReadEntriesActor>(read_entries);
+                    system.start_with("pd-read-entries", read_entries, ReadEntriesActor::start);
 
                     // TODO: Follow extensions
                 }
@@ -122,9 +123,7 @@ struct ReadHeaderActor {
     reply: ActorAddrT<FindComponentMessage>,
 }
 
-impl Start for ReadHeaderActor {
-    type Data = ReadHeader;
-
+impl ReadHeaderActor {
     fn start(
         system: &mut System,
         address: ActorAddr<ReadResultF>,
@@ -185,9 +184,7 @@ struct ReadEntriesActor {
     reply: ActorAddrT<FindComponentMessage>,
 }
 
-impl Start for ReadEntriesActor {
-    type Data = StartReadEntries;
-
+impl ReadEntriesActor {
     fn start(
         system: &mut System,
         address: ActorAddr<ReadResultF>,

@@ -6,13 +6,12 @@
 mod actor;
 mod addr;
 mod dynamic;
-mod factory;
 mod runner;
 mod system;
 pub mod utils;
 
 pub use self::{
-    actor::{Actor, AfterProcess, AfterReduce, Start},
+    actor::{Actor, AfterProcess, AfterReduce},
     addr::ActorAddr,
     runner::{Runner, RunnerError},
     system::System,

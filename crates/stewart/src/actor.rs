@@ -1,7 +1,7 @@
 use anyhow::Error;
 use family::Family;
 
-use crate::{ActorAddr, System};
+use crate::System;
 
 /// Active message handler.
 pub trait Actor {
@@ -27,15 +27,4 @@ pub enum AfterReduce {
 pub enum AfterProcess {
     Nothing,
     Stop,
-}
-
-/// Starting interface for actors.
-pub trait Start: Actor + Sized {
-    type Data;
-
-    fn start(
-        system: &mut System,
-        addr: ActorAddr<<Self as Actor>::Family>,
-        data: Self::Data,
-    ) -> Result<Self, Error>;
 }

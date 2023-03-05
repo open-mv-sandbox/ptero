@@ -1,8 +1,8 @@
 use anyhow::Error;
 use clap::Args;
 use stewart::{
-    utils::{ActorAddrT, ActorT, Void},
-    AfterProcess, AfterReduce, Start, System,
+    utils::{ActorAddrT, ActorT, SystemExt, Void},
+    AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
 
@@ -15,14 +15,12 @@ pub struct CreateCommand {
 }
 
 pub fn start(system: &mut System, data: CreateCommand) {
-    system.start::<CreateCommandActor>(data);
+    system.start_with("ppcli-create", data, CreateCommandActor::start);
 }
 
 struct CreateCommandActor;
 
-impl Start for CreateCommandActor {
-    type Data = CreateCommand;
-
+impl CreateCommandActor {
     fn start(
         _system: &mut System,
         _addr: ActorAddrT<Void>,

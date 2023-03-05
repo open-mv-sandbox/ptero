@@ -3,8 +3,8 @@ use clap::Args;
 use ptero_daicon::io::ReadWrite;
 use ptero_pack::{start_add_data, AddData};
 use stewart::{
-    utils::{ActorAddrT, ActorT},
-    AfterProcess, AfterReduce, Start, System,
+    utils::{ActorAddrT, ActorT, SystemExt},
+    AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
 use uuid::Uuid;
@@ -28,7 +28,7 @@ pub struct AddCommand {
 }
 
 pub fn start(system: &mut System, data: AddCommand) {
-    system.start::<AddCommandActor>(data);
+    system.start_with("ppcli-add", data, AddCommandActor::start);
 }
 
 struct AddCommandActor {
@@ -37,9 +37,7 @@ struct AddCommandActor {
     uuid: Uuid,
 }
 
-impl Start for AddCommandActor {
-    type Data = AddCommand;
-
+impl AddCommandActor {
     fn start(
         system: &mut System,
         addr: ActorAddrT<ActorAddrT<ReadWrite>>,

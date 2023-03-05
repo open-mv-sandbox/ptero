@@ -5,7 +5,7 @@ use std::sync::mpsc::channel;
 use anyhow::Error;
 use stewart::{Runner, System};
 
-use crate::ping_actor::{start_ping, Ping, PingData};
+use crate::ping_actor::{start_ping, Ping};
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
@@ -15,7 +15,7 @@ fn main() -> Result<(), Error> {
 
     // Start the PingActor, note that it will not actually start until the system runs
     let (sender, receiver) = channel();
-    start_ping(&mut system, PingData { on_start: sender });
+    start_ping(&mut system, sender);
     runner.run_until_idle(&mut system)?;
 
     // The PingActor should at this point have responded with an address
@@ -41,17 +41,13 @@ mod ping_actor {
 
     use anyhow::Error;
     use family::{Family, Member};
-    use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Start, System};
+    use stewart::{utils::SystemExt, Actor, ActorAddr, AfterProcess, AfterReduce, System};
     use tracing::{event, Level};
 
     /// The start function uses the concrete actor internally.
     /// The actor itself is never public.
-    pub fn start_ping(system: &mut System, data: PingData) {
-        system.start::<PingActor>(data);
-    }
-
-    pub struct PingData {
-        pub on_start: Sender<ActorAddr<PingF>>,
+    pub fn start_ping(system: &mut System, on_ready: Sender<ActorAddr<PingF>>) {
+        system.start_with("ping", on_ready, PingActor::start);
     }
 
     pub struct Ping<'a>(pub &'a str);
@@ -72,16 +68,14 @@ mod ping_actor {
         queue: Vec<String>,
     }
 
-    impl Start for PingActor {
-        type Data = PingData;
-
+    impl PingActor {
         fn start(
             _system: &mut System,
             addr: ActorAddr<PingF>,
-            data: PingData,
+            on_ready: Sender<ActorAddr<PingF>>,
         ) -> Result<Self, Error> {
             event!(Level::DEBUG, "creating ping actor");
-            data.on_start.send(addr).unwrap();
+            on_ready.send(addr).unwrap();
 
             Ok(Self { queue: Vec::new() })
         }

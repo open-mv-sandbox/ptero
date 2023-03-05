@@ -6,13 +6,13 @@ use std::{
 use anyhow::{Context as ContextExt, Error};
 use ptero_daicon::io::ReadWrite;
 use stewart::{
-    utils::{ActorAddrT, ActorT},
-    AfterProcess, AfterReduce, Start, System,
+    utils::{ActorAddrT, ActorT, SystemExt},
+    AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
 
 pub fn start_read_write_file(system: &mut System, data: FileReadWrite) {
-    system.start::<FileReadWriteActor>(data);
+    system.start_with("ppcli-rwfile", data, FileReadWriteActor::start);
 }
 
 pub struct FileReadWrite {
@@ -26,9 +26,7 @@ struct FileReadWriteActor {
     scratch_buffer: Vec<u8>,
 }
 
-impl Start for FileReadWriteActor {
-    type Data = FileReadWrite;
-
+impl FileReadWriteActor {
     fn start(
         system: &mut System,
         addr: ActorAddrT<ReadWrite>,
