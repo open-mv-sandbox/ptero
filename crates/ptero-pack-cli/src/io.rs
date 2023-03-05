@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as ContextExt, Error};
-use ptero_daicon::io::{ReadResult, ReadWrite};
+use ptero_daicon::io::ReadWrite;
 use stewart::{
     utils::{ActorAddrS, StaticActor},
     AfterProcess, AfterReduce, Start, System,
@@ -23,6 +23,7 @@ pub struct FileReadWrite {
 struct FileReadWriteActor {
     queue: Vec<ReadWrite>,
     package_file: File,
+    scratch_buffer: Vec<u8>,
 }
 
 impl Start for FileReadWriteActor {
@@ -44,6 +45,7 @@ impl Start for FileReadWriteActor {
         Ok(Self {
             queue: Vec::new(),
             package_file,
+            scratch_buffer: Vec::new(),
         })
     }
 }
@@ -72,11 +74,11 @@ impl StaticActor for FileReadWriteActor {
                     length,
                     reply,
                 } => {
-                    let mut buffer = vec![0u8; length as usize];
+                    self.scratch_buffer.resize(length as usize, 0);
 
                     self.package_file.seek(SeekFrom::Start(start))?;
-                    self.package_file.read_exact(&mut buffer)?;
-                    system.handle(reply, ReadResult(Ok(buffer)));
+                    self.package_file.read_exact(&mut self.scratch_buffer)?;
+                    system.handle(reply, Ok(self.scratch_buffer.as_slice()));
                 }
                 ReadWrite::Write { start, data } => {
                     self.package_file.seek(SeekFrom::Start(start))?;

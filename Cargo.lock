@@ -782,6 +782,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "daicon",
+ "family",
  "stewart",
  "uuid",
 ]
@@ -805,6 +806,7 @@ name = "ptero-pack-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "clap",
  "ptero-daicon",
  "ptero-pack",

@@ -7,5 +7,6 @@ edition = "2021"
 anyhow.workspace = true
 bytemuck.workspace = true
 daicon.workspace = true
+family.workspace = true
 stewart.workspace = true
 uuid.workspace = true

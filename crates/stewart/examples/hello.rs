@@ -57,7 +57,7 @@ mod ping_actor {
     pub struct Ping<'a>(pub &'a str);
 
     /// When creating a borrowed message family, you need to implement the family manually
-    pub struct PingF;
+    pub enum PingF {}
 
     impl Family for PingF {
         type Member<'a> = Ping<'a>;

@@ -8,11 +8,12 @@ use std::{
 };
 
 use anyhow::{bail, Context, Error};
-use bytemuck::{bytes_of_mut, from_bytes, Zeroable};
+use bytemuck::{bytes_of_mut, Zeroable};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
+use io::ReadResultF;
 use stewart::{
     utils::{ActorAddrS, StaticActor},
-    AfterProcess, AfterReduce, Start, System,
+    Actor, ActorAddr, AfterProcess, AfterReduce, Start, System,
 };
 use uuid::Uuid;
 
@@ -118,7 +119,7 @@ struct ReadHeader {
 }
 
 struct ReadHeaderActor {
-    message: Option<Vec<u8>>,
+    header: ComponentTableHeader,
     reply: ActorAddrS<FindComponentMessage>,
 }
 
@@ -127,7 +128,7 @@ impl Start for ReadHeaderActor {
 
     fn start(
         system: &mut System,
-        address: ActorAddrS<ReadResult>,
+        address: ActorAddr<ReadResultF>,
         data: ReadHeader,
     ) -> Result<Self, Error> {
         let msg = ReadWrite::Read {
@@ -138,33 +139,34 @@ impl Start for ReadHeaderActor {
         system.handle(data.package, msg);
 
         Ok(ReadHeaderActor {
-            message: None,
+            header: ComponentTableHeader::zeroed(),
             reply: data.reply,
         })
     }
 }
 
-impl StaticActor for ReadHeaderActor {
-    type Message = ReadResult;
+impl Actor for ReadHeaderActor {
+    type Family = ReadResultF;
 
     fn reduce(&mut self, message: ReadResult) -> Result<AfterReduce, Error> {
-        self.message = Some(message.0?);
-        Ok(AfterReduce::Process)
-    }
-
-    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
-        let data = self.message.take().context("incorrect state")?;
+        let data = message?;
 
         // Validate signature
         if &data[0..8] != SIGNATURE {
             bail!("invalid package signature");
         }
 
+        // Copy the data
+        bytes_of_mut(&mut self.header).copy_from_slice(&data[8..]);
+
+        Ok(AfterReduce::Process)
+    }
+
+    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
         // Read the header data
         let header_location = 8;
-        let header = from_bytes::<ComponentTableHeader>(&data[8..]).clone();
 
-        let msg = FindComponentMessage::Header(header_location, header);
+        let msg = FindComponentMessage::Header(header_location, self.header);
         system.handle(self.reply, msg);
 
         Ok(AfterProcess::Stop)
@@ -189,7 +191,7 @@ impl Start for ReadEntriesActor {
 
     fn start(
         system: &mut System,
-        address: ActorAddrS<ReadResult>,
+        address: ActorAddr<ReadResultF>,
         data: StartReadEntries,
     ) -> Result<Self, Error> {
         let msg = ReadWrite::Read {
@@ -207,11 +209,11 @@ impl Start for ReadEntriesActor {
     }
 }
 
-impl StaticActor for ReadEntriesActor {
-    type Message = ReadResult;
+impl Actor for ReadEntriesActor {
+    type Family = ReadResultF;
 
     fn reduce(&mut self, message: ReadResult) -> Result<AfterReduce, Error> {
-        self.message = Some(message.0?);
+        self.message = Some(message?.to_vec());
         Ok(AfterReduce::Process)
     }
 
@@ -221,7 +223,6 @@ impl StaticActor for ReadEntriesActor {
         let mut entries = Vec::new();
         let mut data = Cursor::new(data);
 
-        // TODO: Direct cast?
         for _ in 0..self.header.length() {
             let mut entry = ComponentEntry::zeroed();
             data.read_exact(bytes_of_mut(&mut entry))?;

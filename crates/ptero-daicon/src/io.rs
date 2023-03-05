@@ -1,11 +1,12 @@
 use anyhow::Error;
-use stewart::utils::ActorAddrS;
+use family::Family;
+use stewart::ActorAddr;
 
 pub enum ReadWrite {
     Read {
         start: u64,
         length: u64,
-        reply: ActorAddrS<ReadResult>,
+        reply: ActorAddr<ReadResultF>,
     },
     Write {
         start: u64,
@@ -22,6 +23,10 @@ impl ReadWrite {
     }
 }
 
-// TODO: Figure out a better way than passing small vectors
-// With the new stewart version we actually can do that now
-pub struct ReadResult(pub Result<Vec<u8>, Error>);
+pub type ReadResult<'a> = Result<&'a [u8], Error>;
+
+pub enum ReadResultF {}
+
+impl Family for ReadResultF {
+    type Member<'a> = ReadResult<'a>;
+}
