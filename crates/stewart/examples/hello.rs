@@ -40,7 +40,7 @@ mod ping_actor {
     use std::sync::mpsc::Sender;
 
     use anyhow::Error;
-    use family::Family;
+    use family::{Family, Member};
     use stewart::{Actor, ActorAddr, AfterProcess, AfterReduce, Start, System};
     use tracing::{event, Level};
 
@@ -56,12 +56,17 @@ mod ping_actor {
 
     pub struct Ping<'a>(pub &'a str);
 
-    /// When creating a borrowed message family, you need to implement the family manually
+    // When creating a borrowed message, you need to implement the family manually
+
     pub enum PingF {}
 
     impl Family for PingF {
         type Member<'a> = Ping<'a>;
     }
+
+    impl<'a> Member<PingF> for Ping<'a> {}
+
+    // The actor implementation below remains entirely private to the module
 
     struct PingActor {
         queue: Vec<String>,

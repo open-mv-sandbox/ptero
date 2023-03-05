@@ -1,5 +1,5 @@
 use anyhow::Error;
-use family::Family;
+use family::{Family, Member};
 use stewart::ActorAddr;
 
 pub enum ReadWrite {
@@ -30,3 +30,5 @@ pub enum ReadResultF {}
 impl Family for ReadResultF {
     type Member<'a> = ReadResult<'a>;
 }
+
+impl<'a> Member<ReadResultF> for ReadResult<'a> {}

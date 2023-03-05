@@ -78,7 +78,8 @@ impl ActorT for FileReadWriteActor {
 
                     self.package_file.seek(SeekFrom::Start(start))?;
                     self.package_file.read_exact(&mut self.scratch_buffer)?;
-                    system.handle(reply, Ok(self.scratch_buffer.as_slice()));
+                    let msg = Ok(self.scratch_buffer.as_slice());
+                    system.handle(reply, msg);
                 }
                 ReadWrite::Write { start, data } => {
                     self.package_file.seek(SeekFrom::Start(start))?;

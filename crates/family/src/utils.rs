@@ -18,9 +18,7 @@ impl<T: 'static> Family for FamilyT<T> {
 /// Newtype wrapper for static members that don't themselves implement `Member`.
 pub struct MemberT<T>(pub T);
 
-impl<T: 'static> Member for MemberT<T> {
-    type Family = FamilyT<T>;
-}
+impl<T: 'static> Member<FamilyT<T>> for MemberT<T> {}
 
 impl<T> From<T> for MemberT<T> {
     fn from(value: T) -> Self {
