@@ -14,7 +14,7 @@ use dacti_index::{
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{io::ReadWriteCmd, FileManagerCmd, FindComponentResult};
 use stewart::{
-    utils::{AddrT, ActorT, SystemExt, Void},
+    utils::{ActorT, AddrT, SystemExt, Void},
     AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
@@ -58,8 +58,9 @@ pub fn create_package(path: &str) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn start_add_data(system: &mut System, data: AddData) {
-    system.start_with("pp-add-data", data, AddDataActor::start);
+pub fn start_add_data(system: &mut System, data: AddData) -> Result<(), Error> {
+    system.start_with("pp-add-data", data, AddDataActor::start)?;
+    Ok(())
 }
 
 pub struct AddData {
@@ -90,7 +91,7 @@ impl AddDataActor {
             file_manager: data.file_manager,
             value: index_entry,
         };
-        system.start_with("pp-add-index", add_index, AddIndexActor::start);
+        system.start_with("pp-add-index", add_index, AddIndexActor::start)?;
 
         // Write the file to the package
         let write = ReadWriteCmd::Write {

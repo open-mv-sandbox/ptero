@@ -3,22 +3,24 @@ use std::marker::PhantomData;
 use thunderdome::Index;
 
 /// Address for sending messages to an actor.
+///
+/// Addresses are intentionally !Send + !Sync. In most cases sending an addr between threads
+/// is a mistake, as they're only valid for one `System`, and `System` is !Send + !Sync.
 pub struct Addr<F> {
-    id: Index,
-    /// Intentionally !Send + !Sync
+    index: Index,
     _p: PhantomData<*const F>,
 }
 
 impl<F> Addr<F> {
-    pub(crate) fn from_id(id: Index) -> Self {
+    pub(crate) fn from_index(index: Index) -> Self {
         Self {
-            id,
+            index,
             _p: PhantomData,
         }
     }
 
-    pub(crate) fn id(&self) -> Index {
-        self.id
+    pub(crate) fn index(&self) -> Index {
+        self.index
     }
 }
 

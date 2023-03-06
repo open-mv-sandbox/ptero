@@ -11,8 +11,12 @@ use stewart::{
 };
 use tracing::{event, Level};
 
-pub fn start_file_read_write(system: &mut System, path: String) -> AddrT<ReadWriteCmd> {
-    system.start_with("ppcli-rwfile", path, FileReadWriteActor::start)
+pub fn start_file_read_write(
+    system: &mut System,
+    path: String,
+) -> Result<AddrT<ReadWriteCmd>, Error> {
+    let addr = system.start_with("ppcli-rwfile", path, FileReadWriteActor::start)?;
+    Ok(addr)
 }
 
 struct FileReadWriteActor {
@@ -51,13 +55,13 @@ impl ActorT for FileReadWriteActor {
 
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
         event!(
-            Level::DEBUG,
+            Level::INFO,
             count = self.queue.len(),
             "processing operations"
         );
 
         for message in self.queue.drain(..) {
-            event!(Level::DEBUG, "performing {}", message.kind());
+            event!(Level::INFO, "performing {}", message.kind());
 
             match message {
                 ReadWriteCmd::Read {

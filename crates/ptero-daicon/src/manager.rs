@@ -10,12 +10,14 @@ use uuid::Uuid;
 use crate::{io::ReadWriteCmd, start_find_component, FindComponent};
 
 /// Start a daicon file manager.
-pub fn start_file_manager(system: &mut System, data: FileManagerData) {
-    system.start_with("pd-file-manager", data, FileManagerActor::start);
+pub fn start_file_manager(system: &mut System, data: FileManagerData) -> Result<(), Error> {
+    // TODO: Make it so we can immediately return the inner API addr
+    system.start_with("pd-file-manager", data, FileManagerActor::start)?;
+    Ok(())
 }
 
-pub struct FileManagerData {
-    pub on_ready: AddrT<AddrT<FileManagerCmd>>,
+pub struct FileManagerData<'a> {
+    pub on_ready: &'a mut Option<AddrT<FileManagerCmd>>,
     pub read_write: AddrT<ReadWriteCmd>,
 }
 
@@ -43,8 +45,8 @@ impl FileManagerActor {
         addr: AddrT<Message>,
         data: FileManagerData,
     ) -> Result<Self, anyhow::Error> {
-        let api_addr = start_map(system, |c| Message::Command(c), addr);
-        system.handle(data.on_ready, api_addr)?;
+        let api_addr = start_map(system, |c| Message::Command(c), addr)?;
+        *data.on_ready = Some(api_addr);
 
         Ok(FileManagerActor {
             read_write: data.read_write,
@@ -73,7 +75,7 @@ impl ActorT for FileManagerActor {
                             package: self.read_write,
                             reply: on_result,
                         };
-                        start_find_component(system, data);
+                        start_find_component(system, data)?;
                     }
                 },
             }

@@ -5,13 +5,14 @@ use crate::{AfterProcess, AfterReduce, System};
 use crate::utils::{ActorT, AddrT, SystemExt};
 
 /// Start actor that maps a value into another one.
-pub fn start_map<F, A, B>(system: &mut System, map: F, target: AddrT<B>) -> AddrT<A>
+pub fn start_map<F, A, B>(system: &mut System, map: F, target: AddrT<B>) -> Result<AddrT<A>, Error>
 where
     F: FnMut(A) -> B + 'static,
     A: 'static,
     B: 'static,
 {
-    system.start_with("map", (map, target), MapActor::start)
+    let addr = system.start_with("map", (map, target), MapActor::start)?;
+    Ok(addr)
 }
 
 struct MapActor<F, A, B> {

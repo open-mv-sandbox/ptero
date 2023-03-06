@@ -21,8 +21,9 @@ use crate::io::{ReadResult, ReadResultF, ReadWriteCmd};
 
 pub use self::manager::{start_file_manager, FileManagerCmd, FileManagerData, FindComponentResult};
 
-fn start_find_component(system: &mut System, data: FindComponent) {
-    system.start_with("pd-find-component", data, FindComponentActor::start);
+fn start_find_component(system: &mut System, data: FindComponent) -> Result<(), Error> {
+    system.start_with("pd-find-component", data, FindComponentActor::start)?;
+    Ok(())
 }
 
 struct FindComponent {
@@ -48,7 +49,7 @@ impl FindComponentActor {
             package: data.package,
             reply: address,
         };
-        system.start_with("pd-read-header", read_header, ReadHeaderActor::start);
+        system.start_with("pd-read-header", read_header, ReadHeaderActor::start)?;
 
         Ok(FindComponentActor {
             queue: Vec::new(),
@@ -78,7 +79,7 @@ impl ActorT for FindComponentActor {
                         header,
                         reply: self.address,
                     };
-                    system.start_with("pd-read-entries", read_entries, ReadEntriesActor::start);
+                    system.start_with("pd-read-entries", read_entries, ReadEntriesActor::start)?;
 
                     // TODO: Follow extensions
                 }

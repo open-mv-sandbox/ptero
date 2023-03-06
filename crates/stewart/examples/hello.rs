@@ -10,9 +10,8 @@ fn main() -> Result<(), Error> {
 
     let mut system = System::new();
 
-    // Start the PingActor, note that it will not actually start until the system runs
-    let addr = start_ping(&mut system);
-    system.run_until_idle()?;
+    // Start the PingActor
+    let addr = start_ping(&mut system)?;
 
     // Now that we have an address, send it some data
     system.handle(addr, Ping("World"))?;
@@ -37,8 +36,9 @@ mod ping_actor {
 
     /// The start function uses the concrete actor internally.
     /// The actor itself is never public.
-    pub fn start_ping(system: &mut System) -> Addr<PingF> {
-        system.start("ping", PingActor::start)
+    pub fn start_ping(system: &mut System) -> Result<Addr<PingF>, Error> {
+        let addr = system.start("ping", PingActor::start)?;
+        Ok(addr)
     }
 
     pub struct Ping<'a>(pub &'a str);

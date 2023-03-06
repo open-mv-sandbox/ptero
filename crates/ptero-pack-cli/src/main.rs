@@ -43,8 +43,8 @@ fn try_main(args: CliArgs) -> Result<(), Error> {
 
     // Start the command actor
     match args.command {
-        Command::Create(command) => commands::create::start(&mut system, command),
-        Command::Add(command) => commands::add::start(&mut system, command),
+        Command::Create(command) => commands::create::start(&mut system, command)?,
+        Command::Add(command) => commands::add::start(&mut system, command)?,
     };
 
     // Run the command until it's done

@@ -1,6 +1,6 @@
-use anyhow::{Context, Error};
+use anyhow::Error;
 use clap::Args;
-use ptero_daicon::{io::ReadWriteCmd, FileManagerCmd, FileManagerData};
+use ptero_daicon::FileManagerData;
 use ptero_pack::{start_add_data, AddData};
 use stewart::{
     utils::{ActorT, AddrT, SystemExt},
@@ -27,64 +27,51 @@ pub struct AddCommand {
     uuid: Uuid,
 }
 
-pub fn start(system: &mut System, data: AddCommand) {
-    system.start_with("ppcli-add", data, AddCommandActor::start);
+pub fn start(system: &mut System, data: AddCommand) -> Result<(), Error> {
+    system.start_with("ppcli-add", data, AddCommandActor::start)?;
+    Ok(())
 }
 
-struct AddCommandActor {
-    message: Option<AddrT<FileManagerCmd>>,
-    read_write: AddrT<ReadWriteCmd>,
-    input: Vec<u8>,
-    uuid: Uuid,
-}
+struct AddCommandActor {}
 
 impl AddCommandActor {
-    fn start(
-        system: &mut System,
-        addr: AddrT<AddrT<FileManagerCmd>>,
-        data: AddCommand,
-    ) -> Result<Self, Error> {
+    fn start(system: &mut System, _addr: AddrT<()>, data: AddCommand) -> Result<Self, Error> {
         event!(Level::INFO, "adding file to package");
 
         // Start the file actor
         let input = std::fs::read(&data.input)?;
-        let read_write = start_file_read_write(system, data.package);
+        let read_write = start_file_read_write(system, data.package)?;
 
         // Start the file manager actor
+        let mut file_manager_addr = None;
         let file_manager = FileManagerData {
-            on_ready: addr,
+            on_ready: &mut file_manager_addr,
             read_write,
         };
-        ptero_daicon::start_file_manager(system, file_manager);
+        ptero_daicon::start_file_manager(system, file_manager)?;
 
-        Ok(AddCommandActor {
-            message: None,
-            read_write,
-            input,
+        // Start the add data command
+        let add_data = AddData {
+            file: read_write,
+            file_manager: file_manager_addr.unwrap(),
+            data: input,
             uuid: data.uuid,
-        })
+        };
+        start_add_data(system, add_data)?;
+
+        Ok(AddCommandActor {})
     }
 }
 
 impl ActorT for AddCommandActor {
-    type Message = AddrT<FileManagerCmd>;
+    type Message = ();
 
-    fn reduce(&mut self, message: AddrT<FileManagerCmd>) -> Result<AfterReduce, Error> {
-        self.message = Some(message);
+    fn reduce(&mut self, _message: ()) -> Result<AfterReduce, Error> {
         Ok(AfterReduce::Process)
     }
 
-    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
-        let message = self.message.take().context("incorrect state")?;
-
-        let add_data = AddData {
-            file: self.read_write,
-            file_manager: message,
-            data: self.input.clone(),
-            uuid: self.uuid,
-        };
-        start_add_data(system, add_data);
-
+    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
+        // TODO: Handle success/failure
         Ok(AfterProcess::Nothing)
     }
 }

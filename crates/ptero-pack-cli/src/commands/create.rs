@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use stewart::{
-    utils::{AddrT, ActorT, SystemExt, Void},
+    utils::{ActorT, AddrT, SystemExt, Void},
     AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
@@ -14,18 +14,15 @@ pub struct CreateCommand {
     package: String,
 }
 
-pub fn start(system: &mut System, data: CreateCommand) {
-    system.start_with("ppcli-create", data, CreateCommandActor::start);
+pub fn start(system: &mut System, data: CreateCommand) -> Result<(), Error> {
+    system.start_with("ppcli-create", data, CreateCommandActor::start)?;
+    Ok(())
 }
 
 struct CreateCommandActor;
 
 impl CreateCommandActor {
-    fn start(
-        _system: &mut System,
-        _addr: AddrT<Void>,
-        data: CreateCommand,
-    ) -> Result<Self, Error> {
+    fn start(_system: &mut System, _addr: AddrT<Void>, data: CreateCommand) -> Result<Self, Error> {
         event!(Level::INFO, "creating package");
 
         ptero_pack::create_package(&data.package)?;
