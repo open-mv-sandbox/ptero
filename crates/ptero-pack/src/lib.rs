@@ -12,7 +12,8 @@ use dacti_index::{
     IndexEntry, IndexGroupEncoding, IndexGroupHeader, IndexHeader, INDEX_COMPONENT_UUID,
 };
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
-use ptero_daicon::{io::ReadWriteCmd, FileManagerCmd, FindComponentResult};
+use ptero_daicon::{FileManagerCmd, FindComponentResult};
+use ptero_io::ReadWriteCmd;
 use stewart::{
     utils::{ActorT, AddrT},
     AfterProcess, AfterReduce, System,

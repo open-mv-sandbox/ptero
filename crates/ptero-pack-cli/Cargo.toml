@@ -16,4 +16,5 @@ tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 uuid.workspace = true
 ptero-daicon.workspace = true
+ptero-io.workspace = true
 ptero-pack.workspace = true

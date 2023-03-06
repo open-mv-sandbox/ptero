@@ -1,5 +1,6 @@
 use anyhow::Error;
 use daicon::{ComponentEntry, ComponentTableHeader};
+use ptero_io::ReadWriteCmd;
 use stewart::{
     utils::{start_map, ActorT, AddrT},
     AfterProcess, AfterReduce, System,
@@ -7,7 +8,7 @@ use stewart::{
 use tracing::{event, Level};
 use uuid::Uuid;
 
-use crate::{io::ReadWriteCmd, start_find_component, FindComponentData};
+use crate::{start_find_component, FindComponentData};
 
 /// Start a daicon file manager.
 pub fn start_file_manager(

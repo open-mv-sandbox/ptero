@@ -4,13 +4,15 @@ use std::{
 };
 
 use anyhow::{Context as ContextExt, Error};
-use ptero_daicon::io::ReadWriteCmd;
 use stewart::{
     utils::{ActorT, AddrT},
     AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
 
+use crate::ReadWriteCmd;
+
+/// Start a file actor implementation of the `ReadWriteCmd` message.
 pub fn start_file_read_write(
     system: &mut System,
     path: String,

@@ -785,9 +785,20 @@ dependencies = [
  "bytemuck",
  "daicon",
  "family",
+ "ptero-io",
  "stewart",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "ptero-io"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "family",
+ "stewart",
+ "tracing",
 ]
 
 [[package]]
@@ -799,6 +810,7 @@ dependencies = [
  "dacti-index",
  "daicon",
  "ptero-daicon",
+ "ptero-io",
  "stewart",
  "tracing",
  "uuid",
@@ -812,6 +824,7 @@ dependencies = [
  "bytemuck",
  "clap",
  "ptero-daicon",
+ "ptero-io",
  "ptero-pack",
  "stewart",
  "tracing",

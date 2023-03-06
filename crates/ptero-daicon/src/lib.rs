@@ -1,6 +1,5 @@
 //! Pterodactil implementation of the "Daicon" format.
 
-pub mod io;
 mod manager;
 
 use std::{
@@ -11,13 +10,12 @@ use std::{
 use anyhow::{bail, Context, Error};
 use bytemuck::{bytes_of_mut, Zeroable};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
+use ptero_io::{ReadResult, ReadResultF, ReadWriteCmd};
 use stewart::{
     utils::{ActorT, AddrT},
     Actor, AfterProcess, AfterReduce, System,
 };
 use uuid::Uuid;
-
-use crate::io::{ReadResult, ReadResultF, ReadWriteCmd};
 
 pub use self::manager::{start_file_manager, FileManagerCmd, FindComponentResult};
 

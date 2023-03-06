@@ -5,7 +5,7 @@ use stewart::{utils::ActorT, AfterProcess, AfterReduce, System};
 use tracing::{event, Level};
 use uuid::Uuid;
 
-use crate::io::start_file_read_write;
+use ptero_io::start_file_read_write;
 
 /// Add files to a dacti package.
 #[derive(Args, Debug)]

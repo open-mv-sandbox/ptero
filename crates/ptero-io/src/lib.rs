@@ -1,6 +1,10 @@
+mod file;
+
 use anyhow::Error;
 use family::{Family, Member};
 use stewart::Addr;
+
+pub use self::file::start_file_read_write;
 
 /// Read or write command.
 pub enum ReadWriteCmd {
