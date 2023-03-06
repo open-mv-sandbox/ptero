@@ -40,7 +40,7 @@ impl FileManagerActor {
         system: &mut System,
         read_write: AddrT<ReadWriteCmd>,
     ) -> Result<AddrT<FileManagerCmd>, anyhow::Error> {
-        let addr = system.create("pd-file-manager");
+        let addr = system.create("ptero-daicon:file-manager");
 
         let api_addr = start_map(system, |c| Message::Command(c), addr)?;
 

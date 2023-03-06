@@ -10,7 +10,6 @@ heck.workspace = true
 thunderdome.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-void.workspace = true
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

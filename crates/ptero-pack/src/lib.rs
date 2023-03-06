@@ -14,7 +14,7 @@ use dacti_index::{
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{io::ReadWriteCmd, FileManagerCmd, FindComponentResult};
 use stewart::{
-    utils::{ActorT, AddrT, Void},
+    utils::{ActorT, AddrT},
     AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
@@ -107,9 +107,9 @@ impl AddDataActor {
 }
 
 impl ActorT for AddDataActor {
-    type Message = Void;
+    type Message = ();
 
-    fn reduce(&mut self, _message: Void) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, _message: ()) -> Result<AfterReduce, Error> {
         unimplemented!()
     }
 

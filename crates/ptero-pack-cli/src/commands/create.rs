@@ -1,9 +1,6 @@
 use anyhow::Error;
 use clap::Args;
-use stewart::{
-    utils::{ActorT, Void},
-    AfterProcess, AfterReduce, System,
-};
+use stewart::{utils::ActorT, AfterProcess, AfterReduce, System};
 use tracing::{event, Level};
 
 /// Create a new dacti package.
@@ -34,9 +31,9 @@ impl CreateCommandActor {
 }
 
 impl ActorT for CreateCommandActor {
-    type Message = Void;
+    type Message = ();
 
-    fn reduce(&mut self, _message: Void) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, _message: ()) -> Result<AfterReduce, Error> {
         unimplemented!()
     }
 
