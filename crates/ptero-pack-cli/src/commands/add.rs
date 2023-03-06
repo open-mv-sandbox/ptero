@@ -1,15 +1,15 @@
 use anyhow::{Context, Error};
 use clap::Args;
-use ptero_daicon::io::ReadWrite;
+use ptero_daicon::{io::ReadWriteCmd, FileManagerCmd, FileManagerData};
 use ptero_pack::{start_add_data, AddData};
 use stewart::{
-    utils::{ActorAddrT, ActorT, SystemExt},
+    utils::{ActorT, AddrT, SystemExt},
     AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
 use uuid::Uuid;
 
-use crate::io::{start_read_write_file, FileReadWrite};
+use crate::io::start_file_read_write;
 
 /// Add files to a dacti package.
 #[derive(Args, Debug)]
@@ -32,7 +32,8 @@ pub fn start(system: &mut System, data: AddCommand) {
 }
 
 struct AddCommandActor {
-    package: Option<ActorAddrT<ReadWrite>>,
+    message: Option<AddrT<FileManagerCmd>>,
+    read_write: AddrT<ReadWriteCmd>,
     input: Vec<u8>,
     uuid: Uuid,
 }
@@ -40,21 +41,25 @@ struct AddCommandActor {
 impl AddCommandActor {
     fn start(
         system: &mut System,
-        addr: ActorAddrT<ActorAddrT<ReadWrite>>,
+        addr: AddrT<AddrT<FileManagerCmd>>,
         data: AddCommand,
     ) -> Result<Self, Error> {
         event!(Level::INFO, "adding file to package");
 
+        // Start the file actor
         let input = std::fs::read(&data.input)?;
+        let read_write = start_file_read_write(system, data.package);
 
-        let start_file = FileReadWrite {
-            path: data.package,
-            reply: addr,
+        // Start the file manager actor
+        let file_manager = FileManagerData {
+            on_ready: addr,
+            read_write,
         };
-        start_read_write_file(system, start_file);
+        ptero_daicon::start_file_manager(system, file_manager);
 
         Ok(AddCommandActor {
-            package: None,
+            message: None,
+            read_write,
             input,
             uuid: data.uuid,
         })
@@ -62,21 +67,21 @@ impl AddCommandActor {
 }
 
 impl ActorT for AddCommandActor {
-    type Message = ActorAddrT<ReadWrite>;
+    type Message = AddrT<FileManagerCmd>;
 
-    fn reduce(&mut self, message: ActorAddrT<ReadWrite>) -> Result<AfterReduce, Error> {
-        self.package = Some(message);
+    fn reduce(&mut self, message: AddrT<FileManagerCmd>) -> Result<AfterReduce, Error> {
+        self.message = Some(message);
         Ok(AfterReduce::Process)
     }
 
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
-        let package = self.package.take().context("incorrect state")?;
+        let message = self.message.take().context("incorrect state")?;
 
-        let (input, uuid) = (self.input.clone(), self.uuid);
         let add_data = AddData {
-            package,
-            data: input,
-            uuid,
+            file: self.read_write,
+            file_manager: message,
+            data: self.input.clone(),
+            uuid: self.uuid,
         };
         start_add_data(system, add_data);
 

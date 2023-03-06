@@ -786,6 +786,7 @@ dependencies = [
  "daicon",
  "family",
  "stewart",
+ "tracing",
  "uuid",
 ]
 

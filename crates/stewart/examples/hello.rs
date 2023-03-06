@@ -1,9 +1,7 @@
 mod utils;
 
-use std::sync::mpsc::channel;
-
 use anyhow::Error;
-use stewart::{Runner, System};
+use stewart::System;
 
 use crate::ping_actor::{start_ping, Ping};
 
@@ -11,43 +9,36 @@ fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut system = System::new();
-    let mut runner = Runner::new();
 
     // Start the PingActor, note that it will not actually start until the system runs
-    let (sender, receiver) = channel();
-    start_ping(&mut system, sender);
-    runner.run_until_idle(&mut system)?;
-
-    // The PingActor should at this point have responded with an address
-    let addr = receiver.try_recv().expect("PingActor didn't report start");
+    let addr = start_ping(&mut system);
+    system.run_until_idle()?;
 
     // Now that we have an address, send it some data
-    system.handle(addr, Ping("World"));
-    system.handle(addr, Ping("Actors"));
+    system.handle(addr, Ping("World"))?;
+    system.handle(addr, Ping("Actors"))?;
 
     // You can also use temporary borrows!
     let data = String::from("Borrowed");
-    system.handle(addr, Ping(data.as_str()));
+    system.handle(addr, Ping(data.as_str()))?;
 
     // Let the system process the messages we just sent
-    runner.run_until_idle(&mut system)?;
+    system.run_until_idle()?;
 
     Ok(())
 }
 
 /// To demonstrate encapsulation, an inner module is used here.
 mod ping_actor {
-    use std::sync::mpsc::Sender;
-
     use anyhow::Error;
     use family::{Family, Member};
-    use stewart::{utils::SystemExt, Actor, ActorAddr, AfterProcess, AfterReduce, System};
+    use stewart::{Actor, Addr, AfterProcess, AfterReduce, System};
     use tracing::{event, Level};
 
     /// The start function uses the concrete actor internally.
     /// The actor itself is never public.
-    pub fn start_ping(system: &mut System, on_ready: Sender<ActorAddr<PingF>>) {
-        system.start_with("ping", on_ready, PingActor::start);
+    pub fn start_ping(system: &mut System) -> Addr<PingF> {
+        system.start("ping", PingActor::start)
     }
 
     pub struct Ping<'a>(pub &'a str);
@@ -69,13 +60,8 @@ mod ping_actor {
     }
 
     impl PingActor {
-        fn start(
-            _system: &mut System,
-            addr: ActorAddr<PingF>,
-            on_ready: Sender<ActorAddr<PingF>>,
-        ) -> Result<Self, Error> {
+        fn start(_system: &mut System, _addr: Addr<PingF>) -> Result<Self, Error> {
             event!(Level::DEBUG, "creating ping actor");
-            on_ready.send(addr).unwrap();
 
             Ok(Self { queue: Vec::new() })
         }
@@ -87,6 +73,8 @@ mod ping_actor {
         fn reduce(&mut self, message: Ping) -> Result<AfterReduce, Error> {
             event!(Level::DEBUG, "adding message");
 
+            // Because "Ping" is a borrowed value, you have to decide how to most efficiently
+            // queue it yourself in your actor.
             self.queue.push(message.0.to_string());
 
             Ok(AfterReduce::Process)
@@ -95,6 +83,7 @@ mod ping_actor {
         fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
             event!(Level::DEBUG, "handling queued messages");
 
+            // Process the messages previously queued
             for entry in self.queue.drain(..) {
                 event!(Level::INFO, "Hello, {}!", entry);
             }

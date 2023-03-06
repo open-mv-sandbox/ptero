@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use stewart::{
-    utils::{ActorAddrT, ActorT, SystemExt, Void},
+    utils::{AddrT, ActorT, SystemExt, Void},
     AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
@@ -23,7 +23,7 @@ struct CreateCommandActor;
 impl CreateCommandActor {
     fn start(
         _system: &mut System,
-        _addr: ActorAddrT<Void>,
+        _addr: AddrT<Void>,
         data: CreateCommand,
     ) -> Result<Self, Error> {
         event!(Level::INFO, "creating package");

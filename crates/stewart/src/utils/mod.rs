@@ -1,11 +1,13 @@
 //! Small convenience utilities.
 
 mod family;
+mod map;
 mod system;
 mod void;
 
 pub use self::{
-    family::{ActorAddrT, ActorT},
+    family::{AddrT, ActorT},
+    map::start_map,
     system::SystemExt,
     void::VoidActor,
 };

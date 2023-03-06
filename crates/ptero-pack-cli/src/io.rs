@@ -4,41 +4,34 @@ use std::{
 };
 
 use anyhow::{Context as ContextExt, Error};
-use ptero_daicon::io::ReadWrite;
+use ptero_daicon::io::ReadWriteCmd;
 use stewart::{
-    utils::{ActorAddrT, ActorT, SystemExt},
+    utils::{ActorT, AddrT, SystemExt},
     AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
 
-pub fn start_read_write_file(system: &mut System, data: FileReadWrite) {
-    system.start_with("ppcli-rwfile", data, FileReadWriteActor::start);
-}
-
-pub struct FileReadWrite {
-    pub path: String,
-    pub reply: ActorAddrT<ActorAddrT<ReadWrite>>,
+pub fn start_file_read_write(system: &mut System, path: String) -> AddrT<ReadWriteCmd> {
+    system.start_with("ppcli-rwfile", path, FileReadWriteActor::start)
 }
 
 struct FileReadWriteActor {
-    queue: Vec<ReadWrite>,
+    queue: Vec<ReadWriteCmd>,
     package_file: File,
     scratch_buffer: Vec<u8>,
 }
 
 impl FileReadWriteActor {
     fn start(
-        system: &mut System,
-        addr: ActorAddrT<ReadWrite>,
-        data: FileReadWrite,
+        _system: &mut System,
+        _addr: AddrT<ReadWriteCmd>,
+        path: String,
     ) -> Result<Self, Error> {
         let package_file = OpenOptions::new()
             .read(true)
             .write(true)
-            .open(data.path)
+            .open(path)
             .context("failed to open target package for writing")?;
-
-        system.handle(data.reply, addr);
 
         Ok(Self {
             queue: Vec::new(),
@@ -49,9 +42,9 @@ impl FileReadWriteActor {
 }
 
 impl ActorT for FileReadWriteActor {
-    type Message = ReadWrite;
+    type Message = ReadWriteCmd;
 
-    fn reduce<'a>(&mut self, message: ReadWrite) -> Result<AfterReduce, Error> {
+    fn reduce<'a>(&mut self, message: ReadWriteCmd) -> Result<AfterReduce, Error> {
         self.queue.push(message);
         Ok(AfterReduce::Process)
     }
@@ -67,7 +60,7 @@ impl ActorT for FileReadWriteActor {
             event!(Level::DEBUG, "performing {}", message.kind());
 
             match message {
-                ReadWrite::Read {
+                ReadWriteCmd::Read {
                     start,
                     length,
                     reply,
@@ -77,9 +70,9 @@ impl ActorT for FileReadWriteActor {
                     self.package_file.seek(SeekFrom::Start(start))?;
                     self.package_file.read_exact(&mut self.scratch_buffer)?;
                     let msg = Ok(self.scratch_buffer.as_slice());
-                    system.handle(reply, msg);
+                    system.handle(reply, msg)?;
                 }
-                ReadWrite::Write { start, data } => {
+                ReadWriteCmd::Write { start, data } => {
                     self.package_file.seek(SeekFrom::Start(start))?;
                     self.package_file.write_all(&data)?;
                 }

@@ -1,12 +1,13 @@
 use anyhow::Error;
 use family::{Family, Member};
-use stewart::ActorAddr;
+use stewart::Addr;
 
-pub enum ReadWrite {
+/// Read or write command.
+pub enum ReadWriteCmd {
     Read {
         start: u64,
         length: u64,
-        reply: ActorAddr<ReadResultF>,
+        reply: Addr<ReadResultF>,
     },
     Write {
         start: u64,
@@ -14,11 +15,11 @@ pub enum ReadWrite {
     },
 }
 
-impl ReadWrite {
+impl ReadWriteCmd {
     pub fn kind(&self) -> &'static str {
         match self {
-            ReadWrite::Read { .. } => "read",
-            ReadWrite::Write { .. } => "write",
+            ReadWriteCmd::Read { .. } => "read",
+            ReadWriteCmd::Write { .. } => "write",
         }
     }
 }

@@ -1,11 +1,12 @@
 use std::collections::VecDeque;
 
-use anyhow::{bail, Context, Error};
+use anyhow::{anyhow, Context, Error};
 use family::{any::FamilyMember, Family};
+use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, span, Level, Span};
 
-use crate::{dynamic::AnyActor, Actor, ActorAddr, AfterProcess, AfterReduce};
+use crate::{dynamic::AnyActor, Actor, Addr, AfterProcess, AfterReduce};
 
 /// Thread-local cooperative multitasking actor scheduler.
 ///
@@ -13,9 +14,9 @@ use crate::{dynamic::AnyActor, Actor, ActorAddr, AfterProcess, AfterReduce};
 /// It does not do any scheduling in itself, this is delegated to an actor.
 #[derive(Default)]
 pub struct System {
-    actors: Arena<ActorEntry>,
+    addresses: Arena<AddrEntry>,
     queue: VecDeque<Index>,
-    deferred: Vec<DeferredAction>,
+    deferred: VecDeque<DeferredAction>,
 }
 
 impl System {
@@ -24,55 +25,67 @@ impl System {
     }
 
     /// Queue starting an actor.
-    pub fn start<F, A>(&mut self, id: &'static str, start: F)
+    ///
+    /// The actor's address is immediately returned, but will not be valid for sending until after
+    /// the actor has actually been started.
+    ///
+    /// Actors are started in the same order `start` is called. This means if an actor's start
+    /// function includes starting more actors, these child actors do not become available for
+    /// sending message to, until after the parent actor's start is done.
+    ///
+    /// TODO: Allow pre-starting children by separating ID allocation and start.
+    pub fn start<F, A>(&mut self, id: &'static str, start: F) -> Addr<A::Family>
     where
-        F: FnOnce(&mut System, ActorAddr<A::Family>) -> Result<A, Error> + 'static,
+        F: FnOnce(&mut System, Addr<A::Family>) -> Result<A, Error> + 'static,
         A: Actor + 'static,
     {
-        let start = move |system: &mut System, index: Index| {
-            // Create a tracing span for the actor
-            let span = span!(Level::INFO, "actor", id);
-            let entry = span.enter();
+        // Allocate an address for the actor
+        let index = self.addresses.insert(AddrEntry::Empty);
+        let addr = Addr::from_id(index);
 
-            // Convert the index to an addr
-            let addr = ActorAddr::from_id(index);
-
-            // Run the starting function
-            event!(Level::TRACE, "starting actor");
+        // Wrap the factory into a dynamic one
+        let factory = move |system: &mut System| {
             let actor = (start)(system, addr)?;
             let actor: Box<dyn AnyActor> = Box::new(actor);
-
-            drop(entry);
-            Ok((span, actor))
+            Ok(actor)
         };
 
-        let action = DeferredAction::Start(Box::new(start));
-        self.deferred.push(action);
+        // Queue the start
+        let factory = Box::new(factory);
+        let action = DeferredAction::Start { id, index, factory };
+        self.deferred.push_back(action);
+
+        addr
     }
 
     /// Handle a message, immediately sending it to the actor's reducer.
-    pub fn handle<'a, F>(&mut self, addr: ActorAddr<F>, message: impl Into<F::Member<'a>>)
+    pub fn handle<'a, F>(
+        &mut self,
+        addr: Addr<F>,
+        message: impl Into<F::Member<'a>>,
+    ) -> Result<(), Error>
     where
         F: Family,
         F::Member<'static>: 'static,
     {
         let index = addr.id();
 
-        let entry = match self.actors.get_mut(index) {
-            Some(actor) => actor,
-            None => {
-                // TODO: What to do with addressing error?
-                event!(Level::ERROR, "failed to find actor for system address");
-                return;
-            }
-        };
+        let address_entry = self
+            .addresses
+            .get_mut(index)
+            // TODO: What to do with addressing error?
+            .ok_or(anyhow!("failed to find actor for address"))?;
+        let actor_entry = address_entry
+            .as_actor()
+            // TODO: What to do with addressing error?
+            .ok_or(anyhow!("actor is not currently available"))?;
 
         // Let the actor reduce the message
-        let enter = entry.span.enter();
+        let _enter = actor_entry.span.enter();
 
         let message = message.into();
         let mut message = Some(FamilyMember::<F>(message));
-        let result = entry.actor.reduce(&mut message);
+        let result = actor_entry.actor.reduce(&mut message);
 
         // Schedule process if necessary
         match result {
@@ -80,9 +93,9 @@ impl System {
                 // Nothing to do
             }
             Ok(AfterReduce::Process) => {
-                if !entry.queued {
+                if !actor_entry.queued {
                     self.queue.push_back(index);
-                    entry.queued = true;
+                    actor_entry.queued = true;
                 }
             }
             Err(error) => {
@@ -91,117 +104,149 @@ impl System {
             }
         }
 
-        drop(enter);
+        Ok(())
     }
 
-    pub(crate) fn queue_next(&mut self) -> Option<Index> {
-        self.queue.pop_front()
+    /// Run all queued actor processing tasks, until none remain.
+    ///
+    /// Running a process task may spawn new process tasks, so this is not guaranteed to ever
+    /// return.
+    pub fn run_until_idle(&mut self) -> Result<(), ProcessError> {
+        loop {
+            // Run all deferred actions
+            while let Some(action) = self.deferred.pop_front() {
+                match action {
+                    DeferredAction::Start { id, index, factory } => {
+                        self.start_immediate(id, index, factory)?
+                    }
+                }
+            }
+
+            // Run the next queue entry
+            if let Some(index) = self.queue.pop_front() {
+                self.process_at(index)?;
+            } else {
+                break;
+            };
+        }
+
+        Ok(())
     }
 
-    pub(crate) fn deferred_next(&mut self) -> Option<DeferredAction> {
-        self.deferred.pop()
-    }
-
-    pub(crate) fn start_immediate(
+    fn start_immediate(
         &mut self,
-        start: DeferredStart,
-        dummy_entry: &mut Option<ActorEntry>,
+        id: &'static str,
+        index: Index,
+        factory: StartFactory,
     ) -> Result<(), Error> {
-        // Get an index for the actor by starting a dummy actor
-        let dummy_entry_val = dummy_entry.take().context("dummy entry already taken")?;
-        let index = self.actors.insert(dummy_entry_val);
+        // Create a tracing span for the actor
+        let span = span!(Level::ERROR, "actor", id);
+        let enter = span.enter();
+        event!(Level::INFO, "starting actor");
 
-        // Start the real actor
-        let result = (start)(self, index);
+        // Run the actor factory
+        let result = (factory)(self);
+        drop(enter);
 
         // Handle factory result
         let result = match result {
-            Ok((span, actor)) => {
+            Ok(actor) => {
                 // Replace the placeholder
                 let entry = ActorEntry {
                     span,
                     actor,
                     queued: false,
                 };
-                self.actors.insert_at(index, entry)
+                self.addresses.insert_at(index, AddrEntry::Actor(entry))
             }
             Err(error) => {
                 event!(Level::ERROR, "actor failed to start\n{:?}", error);
-                self.actors.remove(index)
+                self.addresses.remove(index)
             }
         };
 
-        let dummy_entry_val = result.context("actor unexpectedly disappeared")?;
-        *dummy_entry = Some(dummy_entry_val);
+        result.context("address entry unexpectedly disappeared")?;
 
         Ok(())
     }
 
-    pub(crate) fn process_at(
-        &mut self,
-        index: Index,
-        dummy_entry: &mut Option<ActorEntry>,
-    ) -> Result<(), Error> {
-        if !self.actors.contains(index) {
-            bail!("invalid id in schedule");
-        }
+    fn process_at(&mut self, index: Index) -> Result<(), Error> {
+        let address_entry = self
+            .addresses
+            .get_mut(index)
+            .ok_or(anyhow!("invalid id in schedule"))?;
 
-        // Swap out for a dummy actor
-        let dummy_entry_val = dummy_entry.take().context("dummy entry already taken")?;
-        let mut entry = self
-            .actors
-            .insert_at(index, dummy_entry_val)
-            .context("actor unexpectedly disappeared")?;
+        let mut address_entry = std::mem::replace(address_entry, AddrEntry::Empty);
+        let actor_entry = address_entry
+            .as_actor()
+            // TODO: This isn't an internal error and should be better expressed
+            .ok_or(anyhow!("actor not currently present"))?;
 
         // Perform the actor's process step
-        let enter = entry.span.enter();
+        let enter = actor_entry.span.enter();
 
-        let result = entry.actor.process(self);
-        entry.queued = false;
-
-        drop(enter);
-
-        // Re-insert the actor
-        let dummy_entry_val = self
-            .actors
-            .insert_at(index, entry)
-            .context("actor unexpectedly disappeared")?;
-        *dummy_entry = Some(dummy_entry_val);
+        let result = actor_entry.actor.process(self);
+        actor_entry.queued = false;
 
         // Handle the result
-        match result {
-            Ok(AfterProcess::Nothing) => {
-                // Nothing to do
-            }
-            Ok(AfterProcess::Stop) => {
-                self.stop(index)?;
-            }
+        let after = match result {
+            Ok(after) => after,
             Err(error) => {
-                bail!("actor failed to process\n{:?}", error);
+                event!(Level::ERROR, "actor failed to process\n{:?}", error);
+                AfterProcess::Nothing
             }
+        };
+
+        // Stop the actor if we have to
+        if after == AfterProcess::Stop {
+            event!(Level::INFO, "stopping actor");
+            drop(enter);
+            drop(address_entry);
+            self.addresses.remove(index);
+            return Ok(());
         }
 
-        Ok(())
-    }
-
-    fn stop(&mut self, index: Index) -> Result<(), Error> {
-        let entry = self.actors.remove(index).context("actor didn't exist")?;
-        let _entry = entry.span.enter();
-        event!(Level::TRACE, "stopping actor");
+        // Return the actor
+        drop(enter);
+        self.addresses.insert_at(index, address_entry);
 
         Ok(())
     }
 }
 
-pub struct ActorEntry {
+enum AddrEntry {
+    Empty,
+    Actor(ActorEntry),
+}
+
+impl AddrEntry {
+    fn as_actor(&mut self) -> Option<&mut ActorEntry> {
+        if let AddrEntry::Actor(actor) = self {
+            Some(actor)
+        } else {
+            None
+        }
+    }
+}
+
+struct ActorEntry {
     pub span: Span,
     pub actor: Box<dyn AnyActor>,
     pub queued: bool,
 }
 
-pub enum DeferredAction {
-    Start(DeferredStart),
+enum DeferredAction {
+    Start {
+        id: &'static str,
+        index: Index,
+        factory: StartFactory,
+    },
 }
 
-pub type DeferredStart =
-    Box<dyn FnOnce(&mut System, Index) -> Result<(Span, Box<dyn AnyActor>), Error>>;
+type StartFactory = Box<dyn FnOnce(&mut System) -> Result<Box<dyn AnyActor>, Error>>;
+
+#[derive(Error, Debug)]
+pub enum ProcessError {
+    #[error("unknown internal error, this is a bug in stewart")]
+    Internal(#[from] anyhow::Error),
+}

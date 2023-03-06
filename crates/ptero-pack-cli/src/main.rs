@@ -3,24 +3,28 @@ mod io;
 
 use anyhow::Error;
 use clap::{Parser, Subcommand};
-use stewart::{Runner, System};
-use tracing::{event, Level};
+use stewart::System;
+use tracing::{event, span, Level};
 use tracing_subscriber::{prelude::*, EnvFilter, FmtSubscriber};
 
 use crate::commands::{add::AddCommand, create::CreateCommand};
 
 fn main() {
+    let args = CliArgs::parse();
+
     let filter = EnvFilter::builder()
-        .parse("trace") // ,stewart=debug
+        .parse("trace,stewart=warn,ptero_pack=info")
         .unwrap();
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::TRACE)
+        .without_time()
+        .with_target(false)
         .finish()
         .with(filter);
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
     // Run main
-    let result = try_main();
+    let result = try_main(args);
 
     // Report any otherwise unhandled errors
     if let Err(error) = result {
@@ -29,14 +33,13 @@ fn main() {
     }
 }
 
-fn try_main() -> Result<(), Error> {
+fn try_main(args: CliArgs) -> Result<(), Error> {
     // Parse command line args
-    let args = CliArgs::parse();
-    event!(Level::INFO, "running command");
+    let span = span!(Level::INFO, "command", id = args.command.name(),);
+    let _entry = span.enter();
 
     // Set up the runtime
     let mut system = System::new();
-    let mut runner = Runner::new();
 
     // Start the command actor
     match args.command {
@@ -45,7 +48,7 @@ fn try_main() -> Result<(), Error> {
     };
 
     // Run the command until it's done
-    runner.run_until_idle(&mut system)?;
+    system.run_until_idle()?;
 
     // TODO: Stewart doesn't currently bubble up errors for us to catch, and we need those for the
     // correct error code.
@@ -64,4 +67,13 @@ struct CliArgs {
 enum Command {
     Create(CreateCommand),
     Add(AddCommand),
+}
+
+impl Command {
+    fn name(&self) -> &'static str {
+        match self {
+            Command::Create(_) => "create",
+            Command::Add(_) => "add",
+        }
+    }
 }

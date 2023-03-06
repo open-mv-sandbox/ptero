@@ -12,9 +12,9 @@ use dacti_index::{
     IndexEntry, IndexGroupEncoding, IndexGroupHeader, IndexHeader, INDEX_COMPONENT_UUID,
 };
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
-use ptero_daicon::{io::ReadWrite, start_find_component, FindComponent, FindComponentResult};
+use ptero_daicon::{io::ReadWriteCmd, FileManagerCmd, FindComponentResult};
 use stewart::{
-    utils::{ActorAddrT, ActorT, SystemExt, Void},
+    utils::{AddrT, ActorT, SystemExt, Void},
     AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
@@ -63,7 +63,8 @@ pub fn start_add_data(system: &mut System, data: AddData) {
 }
 
 pub struct AddData {
-    pub package: ActorAddrT<ReadWrite>,
+    pub file: AddrT<ReadWriteCmd>,
+    pub file_manager: AddrT<FileManagerCmd>,
     pub data: Vec<u8>,
     pub uuid: Uuid,
 }
@@ -71,8 +72,8 @@ pub struct AddData {
 struct AddDataActor;
 
 impl AddDataActor {
-    fn start(system: &mut System, _addr: ActorAddrT<Void>, data: AddData) -> Result<Self, Error> {
-        event!(Level::DEBUG, "adding data to package");
+    fn start(system: &mut System, _addr: AddrT<Void>, data: AddData) -> Result<Self, Error> {
+        event!(Level::INFO, "adding data to package");
 
         // The first 64kb is reserved for components and indices
         // TODO: Actually find a free spot
@@ -85,17 +86,18 @@ impl AddDataActor {
         index_entry.set_offset(data_start as u32);
         index_entry.set_size(data_len);
         let add_index = AddIndex {
-            package: data.package,
+            file: data.file,
+            file_manager: data.file_manager,
             value: index_entry,
         };
         system.start_with("pp-add-index", add_index, AddIndexActor::start);
 
         // Write the file to the package
-        let write = ReadWrite::Write {
+        let write = ReadWriteCmd::Write {
             start: data_start,
             data: data.data,
         };
-        system.handle(data.package, write);
+        system.handle(data.file, write)?;
 
         Ok(AddDataActor)
     }
@@ -115,32 +117,32 @@ impl ActorT for AddDataActor {
 }
 
 struct AddIndex {
-    package: ActorAddrT<ReadWrite>,
+    file: AddrT<ReadWriteCmd>,
+    file_manager: AddrT<FileManagerCmd>,
     value: IndexEntry,
 }
 
 struct AddIndexActor {
     message: Option<FindComponentResult>,
-    package: ActorAddrT<ReadWrite>,
+    file: AddrT<ReadWriteCmd>,
     value: IndexEntry,
 }
 
 impl AddIndexActor {
     fn start(
         system: &mut System,
-        addr: ActorAddrT<FindComponentResult>,
+        addr: AddrT<FindComponentResult>,
         data: AddIndex,
     ) -> Result<Self, Error> {
-        let find_component = FindComponent {
-            target: INDEX_COMPONENT_UUID,
-            package: data.package,
-            reply: addr,
+        let cmd = FileManagerCmd::GetComponent {
+            id: INDEX_COMPONENT_UUID,
+            on_result: addr,
         };
-        start_find_component(system, find_component);
+        system.handle(data.file_manager, cmd)?;
 
         Ok(Self {
             message: None,
-            package: data.package,
+            file: data.file,
             value: data.value,
         })
     }
@@ -165,11 +167,11 @@ impl ActorT for AddIndexActor {
 
         // Write the new table
         let data = create_table_data(&self.value)?;
-        let msg = ReadWrite::Write {
+        let msg = ReadWriteCmd::Write {
             start: component_offset,
             data,
         };
-        system.handle(self.package, msg);
+        system.handle(self.file, msg)?;
 
         Ok(AfterProcess::Stop)
     }
