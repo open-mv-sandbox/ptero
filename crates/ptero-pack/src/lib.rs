@@ -14,7 +14,7 @@ use dacti_index::{
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{io::ReadWriteCmd, FileManagerCmd, FindComponentResult};
 use stewart::{
-    utils::{ActorT, AddrT, SystemExt, Void},
+    utils::{ActorT, AddrT, Void},
     AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
@@ -59,8 +59,7 @@ pub fn create_package(path: &str) -> Result<(), Error> {
 }
 
 pub fn start_add_data(system: &mut System, data: AddData) -> Result<(), Error> {
-    system.start_with("pp-add-data", data, AddDataActor::start)?;
-    Ok(())
+    AddDataActor::start(system, data)
 }
 
 pub struct AddData {
@@ -73,8 +72,11 @@ pub struct AddData {
 struct AddDataActor;
 
 impl AddDataActor {
-    fn start(system: &mut System, _addr: AddrT<Void>, data: AddData) -> Result<Self, Error> {
+    fn start(system: &mut System, data: AddData) -> Result<(), Error> {
         event!(Level::INFO, "adding data to package");
+
+        let addr = system.create("pp-add-data");
+        system.start(addr, AddDataActor)?;
 
         // The first 64kb is reserved for components and indices
         // TODO: Actually find a free spot
@@ -91,7 +93,7 @@ impl AddDataActor {
             file_manager: data.file_manager,
             value: index_entry,
         };
-        system.start_with("pp-add-index", add_index, AddIndexActor::start)?;
+        AddIndexActor::start(system, add_index)?;
 
         // Write the file to the package
         let write = ReadWriteCmd::Write {
@@ -100,7 +102,7 @@ impl AddDataActor {
         };
         system.handle(data.file, write)?;
 
-        Ok(AddDataActor)
+        Ok(())
     }
 }
 
@@ -130,22 +132,23 @@ struct AddIndexActor {
 }
 
 impl AddIndexActor {
-    fn start(
-        system: &mut System,
-        addr: AddrT<FindComponentResult>,
-        data: AddIndex,
-    ) -> Result<Self, Error> {
+    fn start(system: &mut System, data: AddIndex) -> Result<(), Error> {
+        let addr = system.create("pp-add-index");
+
         let cmd = FileManagerCmd::GetComponent {
             id: INDEX_COMPONENT_UUID,
             on_result: addr,
         };
         system.handle(data.file_manager, cmd)?;
 
-        Ok(Self {
+        let actor = Self {
             message: None,
             file: data.file,
             value: data.value,
-        })
+        };
+        system.start(addr, actor)?;
+
+        Ok(())
     }
 }
 

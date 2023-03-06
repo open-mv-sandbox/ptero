@@ -1,24 +1,20 @@
 use anyhow::Error;
 use daicon::{ComponentEntry, ComponentTableHeader};
 use stewart::{
-    utils::{start_map, ActorT, AddrT, SystemExt},
+    utils::{start_map, ActorT, AddrT},
     AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
 use uuid::Uuid;
 
-use crate::{io::ReadWriteCmd, start_find_component, FindComponent};
+use crate::{io::ReadWriteCmd, start_find_component, FindComponentData};
 
 /// Start a daicon file manager.
-pub fn start_file_manager(system: &mut System, data: FileManagerData) -> Result<(), Error> {
-    // TODO: Make it so we can immediately return the inner API addr
-    system.start_with("pd-file-manager", data, FileManagerActor::start)?;
-    Ok(())
-}
-
-pub struct FileManagerData<'a> {
-    pub on_ready: &'a mut Option<AddrT<FileManagerCmd>>,
-    pub read_write: AddrT<ReadWriteCmd>,
+pub fn start_file_manager(
+    system: &mut System,
+    read_write: AddrT<ReadWriteCmd>,
+) -> Result<AddrT<FileManagerCmd>, Error> {
+    FileManagerActor::start(system, read_write)
 }
 
 pub enum FileManagerCmd {
@@ -42,16 +38,19 @@ struct FileManagerActor {
 impl FileManagerActor {
     fn start(
         system: &mut System,
-        addr: AddrT<Message>,
-        data: FileManagerData,
-    ) -> Result<Self, anyhow::Error> {
-        let api_addr = start_map(system, |c| Message::Command(c), addr)?;
-        *data.on_ready = Some(api_addr);
+        read_write: AddrT<ReadWriteCmd>,
+    ) -> Result<AddrT<FileManagerCmd>, anyhow::Error> {
+        let addr = system.create("pd-file-manager");
 
-        Ok(FileManagerActor {
-            read_write: data.read_write,
+        let api_addr = start_map(system, |c| Message::Command(c), addr)?;
+
+        let actor = Self {
+            read_write,
             queue: Vec::new(),
-        })
+        };
+        system.start(addr, actor)?;
+
+        Ok(api_addr)
     }
 }
 
@@ -70,7 +69,7 @@ impl ActorT for FileManagerActor {
                     FileManagerCmd::GetComponent { id, on_result } => {
                         event!(Level::INFO, "processing get-component");
                         // TODO: Clean this up
-                        let data = FindComponent {
+                        let data = FindComponentData {
                             target: id,
                             package: self.read_write,
                             reply: on_result,

@@ -37,8 +37,7 @@ mod ping_actor {
     /// The start function uses the concrete actor internally.
     /// The actor itself is never public.
     pub fn start_ping(system: &mut System) -> Result<Addr<PingF>, Error> {
-        let addr = system.start("ping", PingActor::start)?;
-        Ok(addr)
+        PingActor::start(system)
     }
 
     pub struct Ping<'a>(pub &'a str);
@@ -60,10 +59,14 @@ mod ping_actor {
     }
 
     impl PingActor {
-        fn start(_system: &mut System, _addr: Addr<PingF>) -> Result<Self, Error> {
+        fn start(system: &mut System) -> Result<Addr<PingF>, Error> {
             event!(Level::DEBUG, "creating ping actor");
 
-            Ok(Self { queue: Vec::new() })
+            let addr = system.create("ping");
+            let actor = Self { queue: Vec::new() };
+            system.start(addr, actor)?;
+
+            Ok(addr)
         }
     }
 

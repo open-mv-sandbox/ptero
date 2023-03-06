@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context as ContextExt, Error};
 use ptero_daicon::io::ReadWriteCmd;
 use stewart::{
-    utils::{ActorT, AddrT, SystemExt},
+    utils::{ActorT, AddrT},
     AfterProcess, AfterReduce, System,
 };
 use tracing::{event, Level};
@@ -15,8 +15,7 @@ pub fn start_file_read_write(
     system: &mut System,
     path: String,
 ) -> Result<AddrT<ReadWriteCmd>, Error> {
-    let addr = system.start_with("ppcli-rwfile", path, FileReadWriteActor::start)?;
-    Ok(addr)
+    FileReadWriteActor::start(system, path)
 }
 
 struct FileReadWriteActor {
@@ -26,22 +25,23 @@ struct FileReadWriteActor {
 }
 
 impl FileReadWriteActor {
-    fn start(
-        _system: &mut System,
-        _addr: AddrT<ReadWriteCmd>,
-        path: String,
-    ) -> Result<Self, Error> {
+    fn start(system: &mut System, path: String) -> Result<AddrT<ReadWriteCmd>, Error> {
+        let addr = system.create("ppcli-rwfile");
+
         let package_file = OpenOptions::new()
             .read(true)
             .write(true)
             .open(path)
             .context("failed to open target package for writing")?;
 
-        Ok(Self {
+        let actor = Self {
             queue: Vec::new(),
             package_file,
             scratch_buffer: Vec::new(),
-        })
+        };
+        system.start(addr, actor)?;
+
+        Ok(addr)
     }
 }
 

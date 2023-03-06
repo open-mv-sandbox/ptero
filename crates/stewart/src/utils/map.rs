@@ -2,7 +2,7 @@ use anyhow::Error;
 
 use crate::{AfterProcess, AfterReduce, System};
 
-use crate::utils::{ActorT, AddrT, SystemExt};
+use crate::utils::{ActorT, AddrT};
 
 /// Start actor that maps a value into another one.
 pub fn start_map<F, A, B>(system: &mut System, map: F, target: AddrT<B>) -> Result<AddrT<A>, Error>
@@ -11,8 +11,7 @@ where
     A: 'static,
     B: 'static,
 {
-    let addr = system.start_with("map", (map, target), MapActor::start)?;
-    Ok(addr)
+    MapActor::start(system, map, target)
 }
 
 struct MapActor<F, A, B> {
@@ -23,20 +22,20 @@ struct MapActor<F, A, B> {
 
 impl<F, A, B> MapActor<F, A, B>
 where
-    F: FnMut(A) -> B,
+    F: FnMut(A) -> B + 'static,
     A: 'static,
     B: 'static,
 {
-    fn start(
-        _system: &mut System,
-        _addr: AddrT<A>,
-        (map, target): (F, AddrT<B>),
-    ) -> Result<Self, anyhow::Error> {
-        Ok(Self {
+    fn start(system: &mut System, map: F, target: AddrT<B>) -> Result<AddrT<A>, Error> {
+        let addr = system.create("map");
+        let actor = Self {
             map,
             target,
             queue: Vec::new(),
-        })
+        };
+        system.start(addr, actor)?;
+
+        Ok(addr)
     }
 }
 

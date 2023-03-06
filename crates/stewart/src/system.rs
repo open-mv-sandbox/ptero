@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 
-use anyhow::Error;
 use family::{any::FamilyMember, Family};
 use thiserror::Error;
 use thunderdome::{Arena, Index};
@@ -16,6 +15,7 @@ use crate::{dynamic::AnyActor, Actor, Addr, AfterProcess, AfterReduce};
 pub struct System {
     addresses: Arena<AddrEntry>,
     queue: VecDeque<Index>,
+    pending_start: Vec<Index>,
 }
 
 impl System {
@@ -23,52 +23,38 @@ impl System {
         Self::default()
     }
 
-    /// Start an actor.
-    ///
-    /// The actor is started *immediately* in-place, and added to the system.
-    pub fn start<F, A>(
-        &mut self,
-        log_id: &'static str,
-        start: F,
-    ) -> Result<Addr<A::Family>, StartError>
-    where
-        F: FnOnce(&mut System, Addr<A::Family>) -> Result<A, Error>,
-        A: Actor + 'static,
-    {
-        // Allocate an address for the actor
+    /// Create a slot for an actor on the system, to be later started.
+    pub fn create<F>(&mut self, log_id: &'static str) -> Addr<F> {
         let addr_entry = AddrEntry { log_id, slot: None };
         let index = self.addresses.insert(addr_entry);
-        let addr = Addr::from_index(index);
+        self.pending_start.push(index);
+        Addr::from_index(index)
+    }
 
-        // Create a tracing span for the actor
-        let span = span!(Level::ERROR, "actor", id = log_id);
-        let enter = span.enter();
-        event!(Level::INFO, "starting actor");
+    /// Start an actor on the system, making its address available for handling.
+    pub fn start<A>(&mut self, addr: Addr<A::Family>, actor: A) -> Result<(), StartError>
+    where
+        A: Actor + 'static,
+    {
+        // Remove pending, starting is what it's pending for
+        self.pending_start.retain(|v| *v != addr.index());
 
-        // Run the actor factory
-        let result = (start)(self, addr);
-
-        // Handle factory result
-        let actor = result.map_err::<StartError, _>(|source| {
-            event!(Level::DEBUG, "actor start failed");
-            self.addresses.remove(index);
-            StartError::StartCallError { log_id, source }
-        })?;
-
-        // Replace the placeholder
+        // Retrieve the slot
         let addr_entry = self
             .addresses
-            .get_mut(index)
-            .ok_or(InternalError::CorruptActorsState)?;
-        drop(enter);
-        let actor_entry = ActorEntry {
+            .get_mut(addr.index())
+            .ok_or(StartError::ActorNotFound)?;
+
+        // Replace the placeholder
+        let span = span!(Level::ERROR, "actor", id = addr_entry.log_id);
+        let actor_entry = ActiveActor {
             span,
             actor: Box::new(actor),
             queued: false,
         };
         addr_entry.slot = Some(actor_entry);
 
-        Ok(addr)
+        Ok(())
     }
 
     /// Handle a message, immediately sending it to the actor's reducer.
@@ -126,9 +112,37 @@ impl System {
     /// Running a process task may spawn new process tasks, so this is not guaranteed to ever
     /// return.
     pub fn run_until_idle(&mut self) -> Result<(), ProcessError> {
+        self.cleanup()?;
+
         while let Some(index) = self.queue.pop_front() {
             self.process_at(index)?;
+
+            self.cleanup()?;
         }
+
+        Ok(())
+    }
+
+    fn cleanup(&mut self) -> Result<(), InternalError> {
+        // Clean up actors that didn't start in time, and thus failed
+        // Intentionally in reverse order, clean up children before parents
+        while let Some(index) = self.pending_start.pop() {
+            self.cleanup_pending(index)?;
+        }
+
+        Ok(())
+    }
+
+    fn cleanup_pending(&mut self, index: Index) -> Result<(), InternalError> {
+        let entry = self
+            .addresses
+            .remove(index)
+            .ok_or(InternalError::CorruptActorsState)?;
+
+        let span = span!(Level::ERROR, "actor", id = entry.log_id);
+        let _enter = span.enter();
+        event!(Level::INFO, "failed to start in time, cleaning up");
+        drop(entry);
 
         Ok(())
     }
@@ -180,12 +194,27 @@ impl System {
     }
 }
 
-struct AddrEntry {
-    log_id: &'static str,
-    slot: Option<ActorEntry>,
+impl Drop for System {
+    fn drop(&mut self) {
+        let mut ids = Vec::new();
+        for actor in self.addresses.drain() {
+            ids.push(actor.1.log_id);
+        }
+
+        if !ids.is_empty() {
+            let ids = ids.join(",");
+            event!(Level::WARN, ids, "actors not stopped before system drop");
+        }
+    }
 }
 
-struct ActorEntry {
+struct AddrEntry {
+    log_id: &'static str,
+    slot: Option<ActiveActor>,
+}
+
+struct ActiveActor {
+    /// Continual span of the active actor.
     span: Span,
     actor: Box<dyn AnyActor>,
     queued: bool,
@@ -193,8 +222,10 @@ struct ActorEntry {
 
 #[derive(Error, Debug)]
 pub enum StartError {
-    #[error("failed to start actor{{id=\"{log_id}\"}}, error in actor's start call")]
-    StartCallError { log_id: &'static str, source: Error },
+    #[error("failed to start actor, no actor exists at the given address")]
+    ActorNotFound,
+    #[error("failed to start actor, actor at address already started")]
+    ActorAlreadyStarted,
     #[error("internal error, this is a bug in stewart")]
     Internal(#[from] InternalError),
 }

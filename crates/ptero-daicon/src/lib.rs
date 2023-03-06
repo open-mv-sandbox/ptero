@@ -12,21 +12,20 @@ use anyhow::{bail, Context, Error};
 use bytemuck::{bytes_of_mut, Zeroable};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
 use stewart::{
-    utils::{ActorT, AddrT, SystemExt},
-    Actor, Addr, AfterProcess, AfterReduce, System,
+    utils::{ActorT, AddrT},
+    Actor, AfterProcess, AfterReduce, System,
 };
 use uuid::Uuid;
 
 use crate::io::{ReadResult, ReadResultF, ReadWriteCmd};
 
-pub use self::manager::{start_file_manager, FileManagerCmd, FileManagerData, FindComponentResult};
+pub use self::manager::{start_file_manager, FileManagerCmd, FindComponentResult};
 
-fn start_find_component(system: &mut System, data: FindComponent) -> Result<(), Error> {
-    system.start_with("pd-find-component", data, FindComponentActor::start)?;
-    Ok(())
+fn start_find_component(system: &mut System, data: FindComponentData) -> Result<(), Error> {
+    FindComponentActor::start(system, data)
 }
 
-struct FindComponent {
+struct FindComponentData {
     pub target: Uuid,
     pub package: AddrT<ReadWriteCmd>,
     pub reply: AddrT<FindComponentResult>,
@@ -34,28 +33,29 @@ struct FindComponent {
 
 struct FindComponentActor {
     queue: Vec<FindComponentMessage>,
-    address: AddrT<FindComponentMessage>,
-    data: FindComponent,
+    addr: AddrT<FindComponentMessage>,
+    data: FindComponentData,
 }
 
 impl FindComponentActor {
-    fn start(
-        system: &mut System,
-        address: AddrT<FindComponentMessage>,
-        data: FindComponent,
-    ) -> Result<FindComponentActor, Error> {
+    fn start(system: &mut System, data: FindComponentData) -> Result<(), Error> {
+        let addr = system.create("pd-find-component");
+
         // Start reading the header
         let read_header = ReadHeader {
             package: data.package,
-            reply: address,
+            reply: addr,
         };
-        system.start_with("pd-read-header", read_header, ReadHeaderActor::start)?;
+        ReadHeaderActor::start(system, read_header)?;
 
-        Ok(FindComponentActor {
+        let actor = Self {
             queue: Vec::new(),
-            address,
+            addr,
             data,
-        })
+        };
+        system.start(addr, actor)?;
+
+        Ok(())
     }
 }
 
@@ -77,9 +77,9 @@ impl ActorT for FindComponentActor {
                         package: self.data.package,
                         header_location: location,
                         header,
-                        reply: self.address,
+                        reply: self.addr,
                     };
-                    system.start_with("pd-read-entries", read_entries, ReadEntriesActor::start)?;
+                    ReadEntriesActor::start(system, read_entries)?;
 
                     // TODO: Follow extensions
                 }
@@ -120,22 +120,23 @@ struct ReadHeaderActor {
 }
 
 impl ReadHeaderActor {
-    fn start(
-        system: &mut System,
-        address: Addr<ReadResultF>,
-        data: ReadHeader,
-    ) -> Result<Self, Error> {
+    fn start(system: &mut System, data: ReadHeader) -> Result<(), Error> {
+        let addr = system.create("pd-read-header");
+
         let msg = ReadWriteCmd::Read {
             start: 0,
             length: (SIGNATURE.len() + size_of::<ComponentTableHeader>()) as u64,
-            reply: address,
+            reply: addr,
         };
         system.handle(data.package, msg)?;
 
-        Ok(ReadHeaderActor {
+        let actor = ReadHeaderActor {
             header: ComponentTableHeader::zeroed(),
             reply: data.reply,
-        })
+        };
+        system.start(addr, actor)?;
+
+        Ok(())
     }
 }
 
@@ -181,23 +182,24 @@ struct ReadEntriesActor {
 }
 
 impl ReadEntriesActor {
-    fn start(
-        system: &mut System,
-        address: Addr<ReadResultF>,
-        data: StartReadEntries,
-    ) -> Result<Self, Error> {
+    fn start(system: &mut System, data: StartReadEntries) -> Result<(), Error> {
+        let addr = system.create("pd-read-entries");
+
         let msg = ReadWriteCmd::Read {
             start: data.header_location + size_of::<ComponentTableHeader>() as u64,
             length: (data.header.length() as usize * size_of::<ComponentEntry>()) as u64,
-            reply: address,
+            reply: addr,
         };
         system.handle(data.package, msg)?;
 
-        Ok(ReadEntriesActor {
+        let actor = ReadEntriesActor {
             message: None,
             header: data.header,
             reply: data.reply,
-        })
+        };
+        system.start(addr, actor)?;
+
+        Ok(())
     }
 }
 

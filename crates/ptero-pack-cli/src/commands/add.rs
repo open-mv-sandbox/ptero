@@ -1,11 +1,7 @@
 use anyhow::Error;
 use clap::Args;
-use ptero_daicon::FileManagerData;
 use ptero_pack::{start_add_data, AddData};
-use stewart::{
-    utils::{ActorT, AddrT, SystemExt},
-    AfterProcess, AfterReduce, System,
-};
+use stewart::{utils::ActorT, AfterProcess, AfterReduce, System};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -28,38 +24,36 @@ pub struct AddCommand {
 }
 
 pub fn start(system: &mut System, data: AddCommand) -> Result<(), Error> {
-    system.start_with("ppcli-add", data, AddCommandActor::start)?;
-    Ok(())
+    AddCommandActor::start(system, data)
 }
 
 struct AddCommandActor {}
 
 impl AddCommandActor {
-    fn start(system: &mut System, _addr: AddrT<()>, data: AddCommand) -> Result<Self, Error> {
+    fn start(system: &mut System, data: AddCommand) -> Result<(), Error> {
         event!(Level::INFO, "adding file to package");
+
+        let addr = system.create("ppcli-add");
 
         // Start the file actor
         let input = std::fs::read(&data.input)?;
         let read_write = start_file_read_write(system, data.package)?;
 
         // Start the file manager actor
-        let mut file_manager_addr = None;
-        let file_manager = FileManagerData {
-            on_ready: &mut file_manager_addr,
-            read_write,
-        };
-        ptero_daicon::start_file_manager(system, file_manager)?;
+        let file_manager = ptero_daicon::start_file_manager(system, read_write)?;
 
         // Start the add data command
         let add_data = AddData {
             file: read_write,
-            file_manager: file_manager_addr.unwrap(),
+            file_manager,
             data: input,
             uuid: data.uuid,
         };
         start_add_data(system, add_data)?;
 
-        Ok(AddCommandActor {})
+        system.start(addr, Self {})?;
+
+        Ok(())
     }
 }
 
