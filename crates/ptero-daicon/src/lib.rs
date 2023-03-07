@@ -13,7 +13,7 @@ use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
 use ptero_io::{ReadResult, ReadResultF, ReadWriteCmd};
 use stewart::{
     utils::{ActorT, AddrT},
-    Actor, AfterProcess, AfterReduce, System,
+    Actor, ActorId, AfterProcess, AfterReduce, System,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -21,18 +21,23 @@ use uuid::Uuid;
 pub use self::manager::{start_file_manager, FileManagerCmd, FindComponentResult};
 
 #[instrument("find-component", skip_all)]
-fn start_find_component(system: &mut System, data: FindComponentData) -> Result<(), Error> {
-    let addr = system.create();
+fn start_find_component(
+    system: &mut System,
+    parent: ActorId,
+    data: FindComponentData,
+) -> Result<(), Error> {
+    let (id, addr) = system.create_addr(parent)?;
 
     // Start reading the header
     let read_header = ReadHeader {
         package: data.package,
         reply: addr,
     };
-    ReadHeaderActor::start(system, read_header)?;
+    ReadHeaderActor::start(system, id, read_header)?;
 
     let actor = FindComponentActor {
         queue: Vec::new(),
+        id,
         addr,
         data,
     };
@@ -49,6 +54,7 @@ struct FindComponentData {
 
 struct FindComponentActor {
     queue: Vec<FindComponentMessage>,
+    id: ActorId,
     addr: AddrT<FindComponentMessage>,
     data: FindComponentData,
 }
@@ -73,7 +79,7 @@ impl ActorT for FindComponentActor {
                         header,
                         reply: self.addr,
                     };
-                    ReadEntriesActor::start(system, read_entries)?;
+                    ReadEntriesActor::start(system, self.id, read_entries)?;
 
                     // TODO: Follow extensions
                 }
@@ -114,8 +120,8 @@ struct ReadHeaderActor {
 }
 
 impl ReadHeaderActor {
-    fn start(system: &mut System, data: ReadHeader) -> Result<(), Error> {
-        let addr = system.create();
+    fn start(system: &mut System, parent: ActorId, data: ReadHeader) -> Result<(), Error> {
+        let (_, addr) = system.create_addr(parent)?;
 
         let msg = ReadWriteCmd::Read {
             start: 0,
@@ -176,8 +182,8 @@ struct ReadEntriesActor {
 }
 
 impl ReadEntriesActor {
-    fn start(system: &mut System, data: StartReadEntries) -> Result<(), Error> {
-        let addr = system.create();
+    fn start(system: &mut System, parent: ActorId, data: StartReadEntries) -> Result<(), Error> {
+        let (_, addr) = system.create_addr(parent)?;
 
         let msg = ReadWriteCmd::Read {
             start: data.header_location + size_of::<ComponentTableHeader>() as u64,

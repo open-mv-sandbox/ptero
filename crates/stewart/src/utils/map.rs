@@ -1,19 +1,24 @@
 use anyhow::Error;
 use tracing::instrument;
 
-use crate::{AfterProcess, AfterReduce, System};
+use crate::{ActorId, AfterProcess, AfterReduce, System};
 
 use crate::utils::{ActorT, AddrT};
 
 /// Start actor that maps a value into another one.
 #[instrument("map", skip_all)]
-pub fn start_map<F, A, B>(system: &mut System, map: F, target: AddrT<B>) -> Result<AddrT<A>, Error>
+pub fn start_map<F, A, B>(
+    system: &mut System,
+    parent: ActorId,
+    map: F,
+    target: AddrT<B>,
+) -> Result<AddrT<A>, Error>
 where
     F: FnMut(A) -> B + 'static,
     A: 'static,
     B: 'static,
 {
-    let addr = system.create();
+    let (_, addr) = system.create_addr(parent)?;
     let actor = MapActor {
         map,
         target,

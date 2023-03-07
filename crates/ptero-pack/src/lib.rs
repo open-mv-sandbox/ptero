@@ -16,7 +16,7 @@ use ptero_daicon::{FileManagerCmd, FindComponentResult};
 use ptero_io::ReadWriteCmd;
 use stewart::{
     utils::{ActorT, AddrT},
-    AfterProcess, AfterReduce, System,
+    ActorId, AfterProcess, AfterReduce, System,
 };
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -60,10 +60,10 @@ pub fn create_package(path: &str) -> Result<(), Error> {
 }
 
 #[instrument("add-data", skip_all)]
-pub fn start_add_data(system: &mut System, data: AddData) -> Result<(), Error> {
+pub fn start_add_data(system: &mut System, parent: ActorId, data: AddData) -> Result<(), Error> {
     event!(Level::INFO, "adding data to package");
 
-    let addr = system.create();
+    let (id, addr) = system.create_addr(parent)?;
     system.start(addr, AddDataActor)?;
 
     // The first 64kb is reserved for components and indices
@@ -81,7 +81,7 @@ pub fn start_add_data(system: &mut System, data: AddData) -> Result<(), Error> {
         file_manager: data.file_manager,
         value: index_entry,
     };
-    AddIndexActor::start(system, add_index)?;
+    AddIndexActor::start(system, id, add_index)?;
 
     // Write the file to the package
     let write = ReadWriteCmd::Write {
@@ -128,8 +128,8 @@ struct AddIndexActor {
 }
 
 impl AddIndexActor {
-    fn start(system: &mut System, data: AddIndex) -> Result<(), Error> {
-        let addr = system.create();
+    fn start(system: &mut System, parent: ActorId, data: AddIndex) -> Result<(), Error> {
+        let (_, addr) = system.create_addr(parent)?;
 
         let cmd = FileManagerCmd::GetComponent {
             id: INDEX_COMPONENT_UUID,

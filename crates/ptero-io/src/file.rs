@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context as ContextExt, Error};
 use stewart::{
     utils::{ActorT, AddrT},
-    AfterProcess, AfterReduce, System,
+    ActorId, AfterProcess, AfterReduce, System,
 };
 use tracing::{event, instrument, Level};
 
@@ -16,10 +16,11 @@ use crate::ReadWriteCmd;
 #[instrument("file-read-write", skip_all)]
 pub fn start_file_read_write(
     system: &mut System,
+    parent: ActorId,
     path: String,
     truncate: bool,
 ) -> Result<AddrT<ReadWriteCmd>, Error> {
-    let addr = system.create();
+    let (_, addr) = system.create_addr(parent)?;
 
     let package_file = OpenOptions::new()
         .read(true)

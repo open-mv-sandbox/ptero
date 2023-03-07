@@ -3,7 +3,7 @@ use daicon::{ComponentEntry, ComponentTableHeader};
 use ptero_io::ReadWriteCmd;
 use stewart::{
     utils::{start_map, ActorT, AddrT},
-    AfterProcess, AfterReduce, System,
+    ActorId, AfterProcess, AfterReduce, System,
 };
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -14,13 +14,15 @@ use crate::{start_find_component, FindComponentData};
 #[instrument("file-manager", skip_all)]
 pub fn start_file_manager(
     system: &mut System,
+    parent: ActorId,
     read_write: AddrT<ReadWriteCmd>,
 ) -> Result<AddrT<FileManagerCmd>, Error> {
-    let addr = system.create();
+    let (id, addr) = system.create_addr(parent)?;
 
-    let api_addr = start_map(system, |c| Message::Command(c), addr)?;
+    let api_addr = start_map(system, id, |c| Message::Command(c), addr)?;
 
     let actor = FileManagerActor {
+        id,
         read_write,
         queue: Vec::new(),
     };
@@ -43,6 +45,7 @@ pub struct FindComponentResult {
 
 /// Root manager actor.
 struct FileManagerActor {
+    id: ActorId,
     read_write: AddrT<ReadWriteCmd>,
     queue: Vec<Message>,
 }
@@ -67,7 +70,7 @@ impl ActorT for FileManagerActor {
                             package: self.read_write,
                             reply: on_result,
                         };
-                        start_find_component(system, data)?;
+                        start_find_component(system, self.id, data)?;
                     }
                 },
             }

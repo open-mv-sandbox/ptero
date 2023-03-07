@@ -1,11 +1,9 @@
 use anyhow::Error;
 use clap::Args;
-use ptero_pack::{start_add_data, AddData};
-use stewart::{utils::ActorT, AfterProcess, AfterReduce, System};
+use ptero_pack::AddData;
+use stewart::{utils::ActorT, ActorId, AfterProcess, AfterReduce, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
-
-use ptero_io::start_file_read_write;
 
 /// Add files to a dacti package.
 #[derive(Args, Debug)]
@@ -27,14 +25,13 @@ pub struct AddCommand {
 pub fn start(system: &mut System, data: AddCommand) -> Result<(), Error> {
     event!(Level::INFO, "adding file to package");
 
-    let addr = system.create();
+    let (id, addr) = system.create_addr(ActorId::root())?;
 
-    // Start the file actor
     let input = std::fs::read(&data.input)?;
-    let read_write = start_file_read_write(system, data.package, false)?;
 
-    // Start the file manager actor
-    let file_manager = ptero_daicon::start_file_manager(system, read_write)?;
+    // Start managers for the package
+    let read_write = ptero_io::start_file_read_write(system, id, data.package, false)?;
+    let file_manager = ptero_daicon::start_file_manager(system, id, read_write)?;
 
     // Start the add data command
     let add_data = AddData {
@@ -43,7 +40,7 @@ pub fn start(system: &mut System, data: AddCommand) -> Result<(), Error> {
         data: input,
         uuid: data.uuid,
     };
-    start_add_data(system, add_data)?;
+    ptero_pack::start_add_data(system, id, add_data)?;
 
     system.start(addr, AddCommandActor {})?;
 

@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use anyhow::{Context, Error};
 use family::{any::FamilyMember, Family};
 use thiserror::Error;
 use thunderdome::{Arena, Index};
@@ -23,21 +24,48 @@ impl System {
         Self::default()
     }
 
-    /// Create a slot for an actor on the system, to be later started.
-    pub fn create<F>(&mut self) -> Addr<F> {
-        // Derive a logging ID from the current span if possible
-        let log_id = Span::current()
-            .metadata()
-            .map(|v| v.name())
-            .unwrap_or("unknown");
+    /// Create an address for an actor on the system, to be later started using `start`.
+    ///
+    /// The address' debugging name is inferred from the current span's name. This name is only
+    /// used in logging.
+    pub fn create_addr<F>(
+        &mut self,
+        parent: ActorId,
+    ) -> Result<(ActorId, Addr<F>), CreateAddrError> {
+        let parent = parent.0;
+        let span = Span::current();
 
+        // For convenience, just infer it from the span name, which should generally be right.
+        // The one common case where it isn't is if a span is hidden in filtering, or there never
+        // was a span, but the next step improves on that issue.
+        let mut debug_name = span.metadata().map(|m| m.name()).unwrap_or("unknown");
+
+        // If the new addr has a parent, but we're still in the same span, just use "unknown"
+        if let Some(parent) = parent {
+            let parent = self
+                .addresses
+                .get(parent)
+                .ok_or(CreateAddrError::ParentDoesNotExist)?;
+            if parent.debug_name == debug_name {
+                debug_name = "unknown";
+            }
+        }
+
+        // Continual span is inherited from the create addr callsite
         let addr_entry = AddrEntry {
-            span_hint: log_id,
-            slot: None,
+            debug_name,
+            span,
+            queued: false,
+            actor: None,
         };
         let index = self.addresses.insert(addr_entry);
+
+        // Track the address so we can clean it up if it doesn't get started in time
         self.pending_start.push(index);
-        Addr::from_index(index)
+
+        let id = ActorId(Some(index));
+        let addr = Addr::from_index(index);
+        Ok((id, addr))
     }
 
     /// Start an actor on the system, making its address available for handling.
@@ -61,17 +89,9 @@ impl System {
             .get_mut(addr.index())
             .ok_or(StartError::ActorNotFound)?;
 
-        // This span inherits the parent span, which using the recommended start function syntax
-        // will have any instrumentation the caller wants
-        let span = Span::current();
-
-        // Replace the placeholder
-        let actor_entry = ActiveActor {
-            span,
-            actor: Box::new(actor),
-            queued: false,
-        };
-        addr_entry.slot = Some(actor_entry);
+        // Fill the slot
+        let actor = Box::new(actor);
+        addr_entry.actor = Some(actor);
 
         Ok(())
     }
@@ -88,24 +108,23 @@ impl System {
     {
         let index = addr.index();
 
-        // TODO: Move to common borrow/return helpers
-        let address_entry = self
+        let addr_entry = self
             .addresses
             .get_mut(index)
             .ok_or(HandleError::ActorNotFound)?;
-        let actor_entry = address_entry
-            .slot
+        let span = addr_entry.span.clone();
+        let actor = addr_entry
+            .actor
             .as_mut()
             .ok_or(HandleError::ActorNotAvailable {
-                span_hint: address_entry.span_hint,
+                name: addr_entry.debug_name,
             })?;
 
         // Let the actor reduce the message
-        let _enter = actor_entry.span.enter();
-
+        let _enter = span.enter();
         let message = message.into();
         let mut message = Some(FamilyMember::<F>(message));
-        let result = actor_entry.actor.reduce(&mut message);
+        let result = actor.reduce(&mut message);
 
         // Schedule process if necessary
         match result {
@@ -113,9 +132,9 @@ impl System {
                 // Nothing to do
             }
             Ok(AfterReduce::Process) => {
-                if !actor_entry.queued {
+                if !addr_entry.queued {
                     self.queue.push_back(index);
-                    actor_entry.queued = true;
+                    addr_entry.queued = true;
                 }
             }
             Err(error) => {
@@ -143,7 +162,7 @@ impl System {
         Ok(())
     }
 
-    fn step_cleanup(&mut self) -> Result<(), InternalError> {
+    fn step_cleanup(&mut self) -> Result<(), Error> {
         // Clean up actors that didn't start in time, and thus failed
         // Intentionally in reverse order, clean up children before parents
         while let Some(index) = self.pending_start.pop() {
@@ -153,37 +172,24 @@ impl System {
         Ok(())
     }
 
-    fn cleanup_pending(&mut self, index: Index) -> Result<(), InternalError> {
+    fn cleanup_pending(&mut self, index: Index) -> Result<(), Error> {
         let entry = self
             .addresses
             .remove(index)
-            .ok_or(InternalError::CorruptActorsState)?;
+            .context("pending actor address doesn't exist")?;
 
-        event!(
-            Level::INFO,
-            span = entry.span_hint,
-            "failed to start in time, cleaning up"
-        );
+        let _enter = entry.span.enter();
+        event!(Level::INFO, "failed to start in time, cleaning up");
 
         Ok(())
     }
 
     fn process_at(&mut self, index: Index) -> Result<(), ProcessError> {
-        let addr_entry = self
-            .addresses
-            .get_mut(index)
-            .ok_or(InternalError::CorruptQueueState)?;
-
-        let state = std::mem::replace(&mut addr_entry.slot, None);
-        let mut actor_entry = state.ok_or(ProcessError::ActorNotAvailable {
-            span_hint: addr_entry.span_hint,
-        })?;
+        let (span, mut actor) = self.take_for_process(index)?;
 
         // Perform the actor's process step
-        let enter = actor_entry.span.enter();
-
-        let result = actor_entry.actor.process(self);
-        actor_entry.queued = false;
+        let _entry = span.enter();
+        let result = actor.process(self);
 
         // Handle the result
         let after = match result {
@@ -197,52 +203,84 @@ impl System {
         // Stop the actor if we have to
         if after == AfterProcess::Stop {
             event!(Level::INFO, "stopping actor");
-            drop(enter);
-            drop(actor_entry);
+            drop(actor);
             self.addresses.remove(index);
             return Ok(());
         }
 
-        // Return the actor
+        // Return the actor otherwise
         let addr_entry = self
             .addresses
             .get_mut(index)
-            .ok_or(InternalError::CorruptActorsState)?;
-        drop(enter);
-        addr_entry.slot = Some(actor_entry);
+            .context("actor disappeared during process")?;
+        addr_entry.actor = Some(actor);
 
         Ok(())
+    }
+
+    fn take_for_process(
+        &mut self,
+        index: Index,
+    ) -> Result<(Span, Box<dyn AnyActor>), ProcessError> {
+        let addr_entry = self
+            .addresses
+            .get_mut(index)
+            .context("queued actor address doesn't exist")?;
+
+        // Mark the actor as no longer queued, as we're processing it
+        addr_entry.queued = false;
+
+        // Take the actor from the slot
+        let span = addr_entry.span.clone();
+        let actor = std::mem::replace(&mut addr_entry.actor, None);
+
+        // If the actor wasn't in the slot, return an error
+        let actor = actor.context("actor not available")?;
+
+        Ok((span, actor))
     }
 }
 
 impl Drop for System {
     fn drop(&mut self) {
-        let mut spans = Vec::new();
-        for actor in self.addresses.drain() {
-            spans.push(actor.1.span_hint);
+        let mut names = Vec::new();
+        for (_, addr_entry) in self.addresses.drain() {
+            names.push(addr_entry.debug_name);
         }
 
-        if !spans.is_empty() {
-            let spans = spans.join(",");
-            event!(
-                Level::WARN,
-                create_spans = spans,
-                "actors not stopped before system drop"
-            );
+        if !names.is_empty() {
+            let names = names.join(",");
+            event!(Level::WARN, names, "actors not stopped before system drop");
         }
     }
 }
 
 struct AddrEntry {
-    span_hint: &'static str,
-    slot: Option<ActiveActor>,
+    /// Non-unqiue debugging name, used to improve logging.
+    debug_name: &'static str,
+    /// Persistent logging span, groups logging that happenened under this actor.
+    span: Span,
+    queued: bool,
+    actor: Option<Box<dyn AnyActor>>,
 }
 
-struct ActiveActor {
-    /// Continual span of the active actor.
-    span: Span,
-    actor: Box<dyn AnyActor>,
-    queued: bool,
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct ActorId(pub(crate) Option<Index>);
+
+impl ActorId {
+    /// Address ID of the root of the system.
+    ///
+    /// You can use this to start actors with no parent other than the system root, which thus
+    /// exceed the lifetime of the current actor.
+    pub fn root() -> Self {
+        Self(None)
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum CreateAddrError {
+    #[error("failed to start actor, actor isn't pending to be started")]
+    ParentDoesNotExist,
 }
 
 #[derive(Error, Debug)]
@@ -254,29 +292,19 @@ pub enum StartError {
     #[error("failed to start actor, actor at address already started")]
     ActorAlreadyStarted,
     #[error("internal error, this is a bug in stewart")]
-    Internal(#[from] InternalError),
+    Internal(#[from] Error),
 }
 
 #[derive(Error, Debug)]
 pub enum HandleError {
     #[error("failed to handle message, no actor exists at the given address")]
     ActorNotFound,
-    #[error("failed to handle message, actor ({span_hint}) at the address exists, but is not currently available")]
-    ActorNotAvailable { span_hint: &'static str },
+    #[error("failed to handle message, actor ({name}) at the address exists, but is not currently available")]
+    ActorNotAvailable { name: &'static str },
 }
 
 #[derive(Error, Debug)]
 pub enum ProcessError {
-    #[error("failed to process actor, actor ({span_hint}) at the address exists, but is not currently available")]
-    ActorNotAvailable { span_hint: &'static str },
     #[error("internal error, this is a bug in stewart")]
-    Internal(#[from] InternalError),
-}
-
-#[derive(Error, Debug)]
-pub enum InternalError {
-    #[error("internal actor state was corrupt")]
-    CorruptActorsState,
-    #[error("internal queue state was corrupt")]
-    CorruptQueueState,
+    Internal(#[from] Error),
 }
