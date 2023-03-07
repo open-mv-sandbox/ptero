@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use stewart::{utils::ActorT, AfterProcess, AfterReduce, System};
-use tracing::{event, Level};
+use tracing::{event, instrument, Level};
 
 /// Create a new dacti package.
 #[derive(Args, Debug)]
@@ -11,24 +11,19 @@ pub struct CreateCommand {
     package: String,
 }
 
+#[instrument("create-command", skip_all)]
 pub fn start(system: &mut System, data: CreateCommand) -> Result<(), Error> {
-    CreateCommandActor::start(system, data)
+    event!(Level::INFO, "creating package");
+
+    let addr = system.create();
+    system.start(addr, CreateCommandActor)?;
+
+    ptero_pack::create_package(&data.package)?;
+
+    Ok(())
 }
 
 struct CreateCommandActor;
-
-impl CreateCommandActor {
-    fn start(system: &mut System, data: CreateCommand) -> Result<(), Error> {
-        event!(Level::INFO, "creating package");
-
-        let addr = system.create("ppcli-create");
-        system.start(addr, Self)?;
-
-        ptero_pack::create_package(&data.package)?;
-
-        Ok(())
-    }
-}
 
 impl ActorT for CreateCommandActor {
     type Message = ();

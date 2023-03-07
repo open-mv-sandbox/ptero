@@ -321,9 +321,22 @@ dependencies = [
 
 [[package]]
 name = "family"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "878ff4851ab6f53348093775bac08e464f6b91ff3ed4dac646c12dead3733393"
+dependencies = [
+ "family-derive",
+]
+
+[[package]]
+name = "family-derive"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "432d8e3d0cbc833c05c5576996754dbcb61648f43b6489531541838e101945b7"
+checksum = "0139a7b93e7b39c390eb2f89563d702ec23dadf2cb57210c1e7bdd1dde6aa14a"
+dependencies = [
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "foreign-types"

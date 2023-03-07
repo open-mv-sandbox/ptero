@@ -5,17 +5,28 @@ use stewart::{
     utils::{start_map, ActorT, AddrT},
     AfterProcess, AfterReduce, System,
 };
-use tracing::{event, Level};
+use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
 use crate::{start_find_component, FindComponentData};
 
 /// Start a daicon file manager.
+#[instrument("file-manager", skip_all)]
 pub fn start_file_manager(
     system: &mut System,
     read_write: AddrT<ReadWriteCmd>,
 ) -> Result<AddrT<FileManagerCmd>, Error> {
-    FileManagerActor::start(system, read_write)
+    let addr = system.create();
+
+    let api_addr = start_map(system, |c| Message::Command(c), addr)?;
+
+    let actor = FileManagerActor {
+        read_write,
+        queue: Vec::new(),
+    };
+    system.start(addr, actor)?;
+
+    Ok(api_addr)
 }
 
 pub enum FileManagerCmd {
@@ -34,25 +45,6 @@ pub struct FindComponentResult {
 struct FileManagerActor {
     read_write: AddrT<ReadWriteCmd>,
     queue: Vec<Message>,
-}
-
-impl FileManagerActor {
-    fn start(
-        system: &mut System,
-        read_write: AddrT<ReadWriteCmd>,
-    ) -> Result<AddrT<FileManagerCmd>, anyhow::Error> {
-        let addr = system.create("ptero-daicon:file-manager");
-
-        let api_addr = start_map(system, |c| Message::Command(c), addr)?;
-
-        let actor = Self {
-            read_write,
-            queue: Vec::new(),
-        };
-        system.start(addr, actor)?;
-
-        Ok(api_addr)
-    }
 }
 
 impl ActorT for FileManagerActor {

@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use family::{any::FamilyMember, Family};
 use thiserror::Error;
 use thunderdome::{Arena, Index};
-use tracing::{event, span, Level, Span};
+use tracing::{event, Level, Span};
 
 use crate::{dynamic::AnyActor, Actor, Addr, AfterProcess, AfterReduce};
 
@@ -24,8 +24,17 @@ impl System {
     }
 
     /// Create a slot for an actor on the system, to be later started.
-    pub fn create<F>(&mut self, log_id: &'static str) -> Addr<F> {
-        let addr_entry = AddrEntry { log_id, slot: None };
+    pub fn create<F>(&mut self) -> Addr<F> {
+        // Derive a logging ID from the current span if possible
+        let log_id = Span::current()
+            .metadata()
+            .map(|v| v.name())
+            .unwrap_or("unknown");
+
+        let addr_entry = AddrEntry {
+            span_hint: log_id,
+            slot: None,
+        };
         let index = self.addresses.insert(addr_entry);
         self.pending_start.push(index);
         Addr::from_index(index)
@@ -45,8 +54,11 @@ impl System {
             .get_mut(addr.index())
             .ok_or(StartError::ActorNotFound)?;
 
+        // This span inherits the parent span, which using the recommended start function syntax
+        // will have any instrumentation the caller wants
+        let span = Span::current();
+
         // Replace the placeholder
-        let span = span!(Level::ERROR, "actor", id = addr_entry.log_id);
         let actor_entry = ActiveActor {
             span,
             actor: Box::new(actor),
@@ -69,6 +81,7 @@ impl System {
     {
         let index = addr.index();
 
+        // TODO: Move to common borrow/return helpers
         let address_entry = self
             .addresses
             .get_mut(index)
@@ -77,7 +90,7 @@ impl System {
             .slot
             .as_mut()
             .ok_or(HandleError::ActorNotAvailable {
-                log_id: address_entry.log_id,
+                span_hint: address_entry.span_hint,
             })?;
 
         // Let the actor reduce the message
@@ -112,18 +125,18 @@ impl System {
     /// Running a process task may spawn new process tasks, so this is not guaranteed to ever
     /// return.
     pub fn run_until_idle(&mut self) -> Result<(), ProcessError> {
-        self.cleanup()?;
+        self.step_cleanup()?;
 
         while let Some(index) = self.queue.pop_front() {
             self.process_at(index)?;
 
-            self.cleanup()?;
+            self.step_cleanup()?;
         }
 
         Ok(())
     }
 
-    fn cleanup(&mut self) -> Result<(), InternalError> {
+    fn step_cleanup(&mut self) -> Result<(), InternalError> {
         // Clean up actors that didn't start in time, and thus failed
         // Intentionally in reverse order, clean up children before parents
         while let Some(index) = self.pending_start.pop() {
@@ -139,10 +152,11 @@ impl System {
             .remove(index)
             .ok_or(InternalError::CorruptActorsState)?;
 
-        let span = span!(Level::ERROR, "actor", id = entry.log_id);
-        let _enter = span.enter();
-        event!(Level::INFO, "failed to start in time, cleaning up");
-        drop(entry);
+        event!(
+            Level::INFO,
+            span = entry.span_hint,
+            "failed to start in time, cleaning up"
+        );
 
         Ok(())
     }
@@ -155,7 +169,7 @@ impl System {
 
         let state = std::mem::replace(&mut addr_entry.slot, None);
         let mut actor_entry = state.ok_or(ProcessError::ActorNotAvailable {
-            log_id: addr_entry.log_id,
+            span_hint: addr_entry.span_hint,
         })?;
 
         // Perform the actor's process step
@@ -196,20 +210,20 @@ impl System {
 
 impl Drop for System {
     fn drop(&mut self) {
-        let mut ids = Vec::new();
+        let mut spans = Vec::new();
         for actor in self.addresses.drain() {
-            ids.push(actor.1.log_id);
+            spans.push(actor.1.span_hint);
         }
 
-        if !ids.is_empty() {
-            let ids = ids.join(",");
-            event!(Level::WARN, ids, "actors not stopped before system drop");
+        if !spans.is_empty() {
+            let spans = spans.join(",");
+            event!(Level::WARN, create_spans = spans, "actors not stopped before system drop");
         }
     }
 }
 
 struct AddrEntry {
-    log_id: &'static str,
+    span_hint: &'static str,
     slot: Option<ActiveActor>,
 }
 
@@ -234,14 +248,14 @@ pub enum StartError {
 pub enum HandleError {
     #[error("failed to handle message, no actor exists at the given address")]
     ActorNotFound,
-    #[error("failed to handle message, actor{{id=\"{log_id}\"}} at the address exists, but is not currently available")]
-    ActorNotAvailable { log_id: &'static str },
+    #[error("failed to handle message, actor ({span_hint}) at the address exists, but is not currently available")]
+    ActorNotAvailable { span_hint: &'static str },
 }
 
 #[derive(Error, Debug)]
 pub enum ProcessError {
-    #[error("failed to process actor, actor{{id=\"{log_id}\"}} at the address exists, but is not currently available")]
-    ActorNotAvailable { log_id: &'static str },
+    #[error("failed to process actor, actor ({span_hint}) at the address exists, but is not currently available")]
+    ActorNotAvailable { span_hint: &'static str },
     #[error("internal error, this is a bug in stewart")]
     Internal(#[from] InternalError),
 }

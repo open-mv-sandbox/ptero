@@ -3,7 +3,7 @@ mod commands;
 use anyhow::Error;
 use clap::{Parser, Subcommand};
 use stewart::System;
-use tracing::{event, span, Level};
+use tracing::{event, Level};
 use tracing_subscriber::{prelude::*, EnvFilter, FmtSubscriber};
 
 use crate::commands::{add::AddCommand, create::CreateCommand};
@@ -33,10 +33,6 @@ fn main() {
 }
 
 fn try_main(args: CliArgs) -> Result<(), Error> {
-    // Parse command line args
-    let span = span!(Level::INFO, "command", id = args.command.name(),);
-    let _entry = span.enter();
-
     // Set up the runtime
     let mut system = System::new();
 
@@ -66,13 +62,4 @@ struct CliArgs {
 enum Command {
     Create(CreateCommand),
     Add(AddCommand),
-}
-
-impl Command {
-    fn name(&self) -> &'static str {
-        match self {
-            Command::Create(_) => "create",
-            Command::Add(_) => "add",
-        }
-    }
 }

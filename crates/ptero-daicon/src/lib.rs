@@ -15,12 +15,30 @@ use stewart::{
     utils::{ActorT, AddrT},
     Actor, AfterProcess, AfterReduce, System,
 };
+use tracing::instrument;
 use uuid::Uuid;
 
 pub use self::manager::{start_file_manager, FileManagerCmd, FindComponentResult};
 
+#[instrument("find-component", skip_all)]
 fn start_find_component(system: &mut System, data: FindComponentData) -> Result<(), Error> {
-    FindComponentActor::start(system, data)
+    let addr = system.create();
+
+    // Start reading the header
+    let read_header = ReadHeader {
+        package: data.package,
+        reply: addr,
+    };
+    ReadHeaderActor::start(system, read_header)?;
+
+    let actor = FindComponentActor {
+        queue: Vec::new(),
+        addr,
+        data,
+    };
+    system.start(addr, actor)?;
+
+    Ok(())
 }
 
 struct FindComponentData {
@@ -33,28 +51,6 @@ struct FindComponentActor {
     queue: Vec<FindComponentMessage>,
     addr: AddrT<FindComponentMessage>,
     data: FindComponentData,
-}
-
-impl FindComponentActor {
-    fn start(system: &mut System, data: FindComponentData) -> Result<(), Error> {
-        let addr = system.create("pd-find-component");
-
-        // Start reading the header
-        let read_header = ReadHeader {
-            package: data.package,
-            reply: addr,
-        };
-        ReadHeaderActor::start(system, read_header)?;
-
-        let actor = Self {
-            queue: Vec::new(),
-            addr,
-            data,
-        };
-        system.start(addr, actor)?;
-
-        Ok(())
-    }
 }
 
 impl ActorT for FindComponentActor {
@@ -119,7 +115,7 @@ struct ReadHeaderActor {
 
 impl ReadHeaderActor {
     fn start(system: &mut System, data: ReadHeader) -> Result<(), Error> {
-        let addr = system.create("pd-read-header");
+        let addr = system.create();
 
         let msg = ReadWriteCmd::Read {
             start: 0,
@@ -181,7 +177,7 @@ struct ReadEntriesActor {
 
 impl ReadEntriesActor {
     fn start(system: &mut System, data: StartReadEntries) -> Result<(), Error> {
-        let addr = system.create("pd-read-entries");
+        let addr = system.create();
 
         let msg = ReadWriteCmd::Read {
             start: data.header_location + size_of::<ComponentTableHeader>() as u64,

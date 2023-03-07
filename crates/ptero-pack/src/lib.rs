@@ -18,7 +18,7 @@ use stewart::{
     utils::{ActorT, AddrT},
     AfterProcess, AfterReduce, System,
 };
-use tracing::{event, Level};
+use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
 /// TODO: Change to actor
@@ -59,8 +59,38 @@ pub fn create_package(path: &str) -> Result<(), Error> {
     Ok(())
 }
 
+#[instrument("add-data", skip_all)]
 pub fn start_add_data(system: &mut System, data: AddData) -> Result<(), Error> {
-    AddDataActor::start(system, data)
+    event!(Level::INFO, "adding data to package");
+
+    let addr = system.create();
+    system.start(addr, AddDataActor)?;
+
+    // The first 64kb is reserved for components and indices
+    // TODO: Actually find a free spot
+    let data_start = 1024 * 64;
+    let data_len = data.data.len() as u32;
+
+    // Add the index for the file to the package
+    let mut index_entry = IndexEntry::zeroed();
+    index_entry.set_region_id(data.uuid);
+    index_entry.set_offset(data_start as u32);
+    index_entry.set_size(data_len);
+    let add_index = AddIndex {
+        file: data.file,
+        file_manager: data.file_manager,
+        value: index_entry,
+    };
+    AddIndexActor::start(system, add_index)?;
+
+    // Write the file to the package
+    let write = ReadWriteCmd::Write {
+        start: data_start,
+        data: data.data,
+    };
+    system.handle(data.file, write)?;
+
+    Ok(())
 }
 
 pub struct AddData {
@@ -71,41 +101,6 @@ pub struct AddData {
 }
 
 struct AddDataActor;
-
-impl AddDataActor {
-    fn start(system: &mut System, data: AddData) -> Result<(), Error> {
-        event!(Level::INFO, "adding data to package");
-
-        let addr = system.create("pp-add-data");
-        system.start(addr, AddDataActor)?;
-
-        // The first 64kb is reserved for components and indices
-        // TODO: Actually find a free spot
-        let data_start = 1024 * 64;
-        let data_len = data.data.len() as u32;
-
-        // Add the index for the file to the package
-        let mut index_entry = IndexEntry::zeroed();
-        index_entry.set_region_id(data.uuid);
-        index_entry.set_offset(data_start as u32);
-        index_entry.set_size(data_len);
-        let add_index = AddIndex {
-            file: data.file,
-            file_manager: data.file_manager,
-            value: index_entry,
-        };
-        AddIndexActor::start(system, add_index)?;
-
-        // Write the file to the package
-        let write = ReadWriteCmd::Write {
-            start: data_start,
-            data: data.data,
-        };
-        system.handle(data.file, write)?;
-
-        Ok(())
-    }
-}
 
 impl ActorT for AddDataActor {
     type Message = ();
@@ -134,7 +129,7 @@ struct AddIndexActor {
 
 impl AddIndexActor {
     fn start(system: &mut System, data: AddIndex) -> Result<(), Error> {
-        let addr = system.create("pp-add-index");
+        let addr = system.create();
 
         let cmd = FileManagerCmd::GetComponent {
             id: INDEX_COMPONENT_UUID,

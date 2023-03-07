@@ -8,43 +8,40 @@ use stewart::{
     utils::{ActorT, AddrT},
     AfterProcess, AfterReduce, System,
 };
-use tracing::{event, Level};
+use tracing::{event, instrument, Level};
 
 use crate::ReadWriteCmd;
 
 /// Start a file actor implementation of the `ReadWriteCmd` message.
+#[instrument("file-read-write", skip_all)]
 pub fn start_file_read_write(
     system: &mut System,
     path: String,
+    truncate: bool,
 ) -> Result<AddrT<ReadWriteCmd>, Error> {
-    FileReadWriteActor::start(system, path)
+    let addr = system.create();
+
+    let package_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .truncate(truncate)
+        .open(path)
+        .context("failed to open target package for writing")?;
+
+    let actor = FileReadWriteActor {
+        queue: Vec::new(),
+        package_file,
+        scratch_buffer: Vec::new(),
+    };
+    system.start(addr, actor)?;
+
+    Ok(addr)
 }
 
 struct FileReadWriteActor {
     queue: Vec<ReadWriteCmd>,
     package_file: File,
     scratch_buffer: Vec<u8>,
-}
-
-impl FileReadWriteActor {
-    fn start(system: &mut System, path: String) -> Result<AddrT<ReadWriteCmd>, Error> {
-        let addr = system.create("ppcli-rwfile");
-
-        let package_file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)
-            .context("failed to open target package for writing")?;
-
-        let actor = Self {
-            queue: Vec::new(),
-            package_file,
-            scratch_buffer: Vec::new(),
-        };
-        system.start(addr, actor)?;
-
-        Ok(addr)
-    }
 }
 
 impl ActorT for FileReadWriteActor {
