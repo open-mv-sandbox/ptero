@@ -2,18 +2,20 @@ mod utils;
 
 use anyhow::Error;
 use stewart::System;
+use tracing::{event, Level};
 
-use crate::ping_actor::{start_ping, HelloMsg};
+use crate::hello_serivce::{start_hello, HelloMsg};
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut system = System::new();
 
-    // Start the PingActor
-    let addr = start_ping(&mut system)?;
+    // Start the hello service
+    let addr = start_hello(&mut system)?;
 
     // Now that we have an address, send it some data
+    event!(Level::INFO, "sending messages");
     system.handle(addr, HelloMsg("World"))?;
     system.handle(addr, HelloMsg("Actors"))?;
 
@@ -23,12 +25,13 @@ fn main() -> Result<(), Error> {
 
     // Let the system process the messages we just sent
     system.run_until_idle()?;
+    event!(Level::INFO, "finished executing actors");
 
     Ok(())
 }
 
 /// To demonstrate encapsulation, an inner module is used here.
-mod ping_actor {
+mod hello_serivce {
     use anyhow::Error;
     use family::Member;
     use stewart::{Actor, Addr, AfterProcess, AfterReduce, System};
@@ -36,9 +39,9 @@ mod ping_actor {
 
     /// The start function uses the concrete actor internally, the actor itself is never public.
     /// By instrumenting the start function, your actor's span will inherit it automatically.
-    #[instrument("ping", skip_all)]
-    pub fn start_ping(system: &mut System) -> Result<Addr<HelloMsgF>, Error> {
-        event!(Level::DEBUG, "creating ping actor");
+    #[instrument("hello", skip_all)]
+    pub fn start_hello(system: &mut System) -> Result<Addr<HelloMsgF>, Error> {
+        event!(Level::DEBUG, "creating service");
 
         let addr = system.create();
         let actor = HelloActor { queue: Vec::new() };
@@ -52,7 +55,7 @@ mod ping_actor {
     #[derive(Member)]
     pub struct HelloMsg<'a>(pub &'a str);
 
-    /// The actor implementation below remains entirely private to the module
+    /// The actor implementation below remains entirely private to the module.
     struct HelloActor {
         queue: Vec<String>,
     }
@@ -63,8 +66,8 @@ mod ping_actor {
         fn reduce(&mut self, message: HelloMsg) -> Result<AfterReduce, Error> {
             event!(Level::DEBUG, "adding message");
 
-            // Because "Ping" is a borrowed value, you have to decide how to most efficiently
-            // queue it yourself in your actor.
+            // Because "HelloMsg" is a borrowed value, you have to decide how to most
+            // efficiently queue it yourself in your actor.
             self.queue.push(message.0.to_string());
 
             Ok(AfterReduce::Process)

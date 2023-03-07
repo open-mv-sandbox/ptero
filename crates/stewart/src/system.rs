@@ -45,8 +45,15 @@ impl System {
     where
         A: Actor + 'static,
     {
+        event!(Level::INFO, "starting actor");
+
         // Remove pending, starting is what it's pending for
-        self.pending_start.retain(|v| *v != addr.index());
+        let index = self
+            .pending_start
+            .iter()
+            .position(|i| *i == addr.index())
+            .ok_or(StartError::ActorNotPending)?;
+        self.pending_start.remove(index);
 
         // Retrieve the slot
         let addr_entry = self
@@ -217,7 +224,11 @@ impl Drop for System {
 
         if !spans.is_empty() {
             let spans = spans.join(",");
-            event!(Level::WARN, create_spans = spans, "actors not stopped before system drop");
+            event!(
+                Level::WARN,
+                create_spans = spans,
+                "actors not stopped before system drop"
+            );
         }
     }
 }
@@ -236,6 +247,8 @@ struct ActiveActor {
 
 #[derive(Error, Debug)]
 pub enum StartError {
+    #[error("failed to start actor, actor isn't pending to be started")]
+    ActorNotPending,
     #[error("failed to start actor, no actor exists at the given address")]
     ActorNotFound,
     #[error("failed to start actor, actor at address already started")]
