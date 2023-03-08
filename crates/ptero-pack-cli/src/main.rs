@@ -12,7 +12,7 @@ fn main() {
     let args = CliArgs::parse();
 
     let filter = EnvFilter::builder()
-        .parse("trace,stewart=warn,ptero_io=warn,ptero_pack=info")
+        .parse("trace,stewart=warn,ptero_io=warn")
         .unwrap();
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::TRACE)

@@ -187,6 +187,7 @@ impl System {
         let after = match result {
             Ok(after) => after,
             Err(error) => {
+                // TODO: What to do with this?
                 event!(Level::ERROR, "actor failed to process\n{:?}", error);
                 AfterProcess::Nothing
             }
@@ -208,14 +209,18 @@ impl System {
 
 impl Drop for System {
     fn drop(&mut self) {
-        let mut names = Vec::new();
+        let mut debug_names = Vec::new();
         for (_, entry) in self.actors.drain() {
-            names.push(entry.debug_name);
+            debug_names.push(entry.debug_name);
         }
 
-        if !names.is_empty() {
-            let names = names.join(",");
-            event!(Level::WARN, names, "actors not stopped before system drop");
+        if !debug_names.is_empty() {
+            let debug_names = debug_names.join(",");
+            event!(
+                Level::WARN,
+                debug_names,
+                "actors not stopped before system drop"
+            );
         }
     }
 }

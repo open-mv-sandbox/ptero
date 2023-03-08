@@ -32,6 +32,7 @@ pub trait Actor {
 pub enum AfterReduce {
     Nothing,
     Process,
+    // TODO: This needs stop as well
 }
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]

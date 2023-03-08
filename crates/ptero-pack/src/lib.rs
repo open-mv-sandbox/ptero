@@ -12,7 +12,7 @@ use dacti_index::{
     IndexEntry, IndexGroupEncoding, IndexGroupHeader, IndexHeader, INDEX_COMPONENT_UUID,
 };
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
-use ptero_daicon::{FileManagerCmd, FindComponentResult};
+use ptero_daicon::{FileManagerCmd, GetComponentCmd, GetComponentResult};
 use ptero_io::ReadWriteCmd;
 use stewart::{ActorT, AddrT, AfterProcess, AfterReduce, Id, System};
 use tracing::{event, instrument, Level};
@@ -58,7 +58,7 @@ pub fn create_package(path: &str) -> Result<(), Error> {
 
 #[instrument("add-data", skip_all)]
 pub fn start_add_data(system: &mut System, parent: Id, data: AddData) -> Result<(), Error> {
-    event!(Level::INFO, "adding data to package");
+    event!(Level::DEBUG, "adding data to package");
 
     let info = system.create_actor(parent)?;
     system.start_actor(info, AddDataActor)?;
@@ -81,6 +81,7 @@ pub fn start_add_data(system: &mut System, parent: Id, data: AddData) -> Result<
     AddIndexActor::start(system, info.id(), add_index)?;
 
     // Write the file to the package
+    event!(Level::DEBUG, "writing file data to package");
     let write = ReadWriteCmd::Write {
         start: data_start,
         data: data.data,
@@ -119,7 +120,7 @@ struct AddIndex {
 }
 
 struct AddIndexActor {
-    message: Option<FindComponentResult>,
+    message: Option<GetComponentResult>,
     file: AddrT<ReadWriteCmd>,
     value: IndexEntry,
 }
@@ -128,10 +129,11 @@ impl AddIndexActor {
     fn start(system: &mut System, parent: Id, data: AddIndex) -> Result<(), Error> {
         let info = system.create_actor(parent)?;
 
-        let cmd = FileManagerCmd::GetComponent {
+        let cmd = GetComponentCmd {
             id: INDEX_COMPONENT_UUID,
             on_result: info.addr(),
         };
+        let cmd = FileManagerCmd::GetComponent(cmd);
         system.handle(data.file_manager, cmd);
 
         let actor = Self {
@@ -146,12 +148,12 @@ impl AddIndexActor {
 }
 
 impl ActorT for AddIndexActor {
-    type Message = FindComponentResult;
+    type Message = GetComponentResult;
 
     fn reduce(
         &mut self,
         _system: &mut System,
-        message: FindComponentResult,
+        message: GetComponentResult,
     ) -> Result<AfterReduce, Error> {
         self.message = Some(message);
         Ok(AfterReduce::Process)
@@ -167,6 +169,7 @@ impl ActorT for AddIndexActor {
         // TODO: Update the component's size after adding the new index
 
         // Write the new table
+        event!(Level::DEBUG, "writing index to package");
         let data = create_table_data(&self.value)?;
         let msg = ReadWriteCmd::Write {
             start: component_offset,

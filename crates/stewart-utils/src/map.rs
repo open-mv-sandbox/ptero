@@ -35,7 +35,7 @@ struct MapActor<F, A, B> {
     _a: PhantomData<AtomicPtr<A>>,
 }
 
-impl<'a: 'b, 'b, F, A, B> ActorT for MapActor<F, A, B>
+impl<F, A, B> ActorT for MapActor<F, A, B>
 where
     F: FnMut(A) -> B + 'static,
     A: 'static,
