@@ -9,9 +9,6 @@ use tracing::{event, Level, Span};
 use crate::{dynamic::AnyActor, Actor, Addr, AfterProcess, AfterReduce, Id, Info};
 
 /// Thread-local cooperative multitasking actor scheduler.
-///
-/// This executor bridges CPU threads into cooperative actor threads.
-/// It does not do any scheduling in itself, this is delegated to an actor.
 #[derive(Default)]
 pub struct System {
     actors: Arena<ActorEntry>,
@@ -20,17 +17,24 @@ pub struct System {
 }
 
 impl System {
+    /// Create a new thread-local system with no actors.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Create an address for an actor on the system, to be later started using `start`.
+    /// Create an actor on the system.
     ///
-    /// The address' debugging name is inferred from the current span's name. This name is only
-    /// used in logging.
-    pub fn create_actor<A: Actor>(&mut self, parent: Id) -> Result<Info<A>, CreateAddrError> {
-        let _parent = parent.0;
+    /// The actor's address will not be available for handling messages until `start` is called.
+    pub fn create_actor<A: Actor>(&mut self, parent: Id) -> Result<Info<A>, CreateActorError> {
+        let parent = parent.0;
         let span = Span::current();
+
+        // Link to the parent
+        if let Some(parent) = parent {
+            self.actors
+                .get_mut(parent)
+                .ok_or(CreateActorError::ParentDoesNotExist)?;
+        }
 
         // Continual span is inherited from the create addr callsite
         let entry = ActorEntry {
@@ -47,8 +51,8 @@ impl System {
         Ok(Info::new(index))
     }
 
-    /// Start an actor on the system, making its address available for handling.
-    pub fn start_actor<A>(&mut self, info: Info<A>, actor: A) -> Result<(), StartError>
+    /// Start an actor on the system, making it available for handling messages.
+    pub fn start_actor<A>(&mut self, info: Info<A>, actor: A) -> Result<(), StartActorError>
     where
         A: Actor + 'static,
     {
@@ -59,14 +63,14 @@ impl System {
             .pending_start
             .iter()
             .position(|i| *i == info.index())
-            .ok_or(StartError::ActorNotPending)?;
+            .ok_or(StartActorError::ActorNotPending)?;
         self.pending_start.remove(index);
 
         // Retrieve the slot
         let entry = self
             .actors
             .get_mut(info.index())
-            .ok_or(StartError::ActorNotFound)?;
+            .ok_or(StartActorError::ActorNotFound)?;
 
         // Fill the slot
         let actor = Box::new(actor);
@@ -147,28 +151,28 @@ impl System {
     /// Running a process task may spawn new process tasks, so this is not guaranteed to ever
     /// return.
     pub fn run_until_idle(&mut self) -> Result<(), ProcessError> {
-        self.step_cleanup()?;
+        self.cleanup_pending()?;
 
         while let Some(index) = self.queue.pop_front() {
             self.process_at(index)?;
 
-            self.step_cleanup()?;
+            self.cleanup_pending()?;
         }
 
         Ok(())
     }
 
-    fn step_cleanup(&mut self) -> Result<(), Error> {
+    fn cleanup_pending(&mut self) -> Result<(), Error> {
         // Clean up actors that didn't start in time, and thus failed
         // Intentionally in reverse order, clean up children before parents
         while let Some(index) = self.pending_start.pop() {
-            self.cleanup_pending(index)?;
+            self.cleanup_pending_at(index)?;
         }
 
         Ok(())
     }
 
-    fn cleanup_pending(&mut self, index: Index) -> Result<(), Error> {
+    fn cleanup_pending_at(&mut self, index: Index) -> Result<(), Error> {
         let entry = self
             .actors
             .remove(index)
@@ -282,21 +286,19 @@ fn debug_name<T>() -> &'static str {
 }
 
 #[derive(Error, Debug)]
-pub enum CreateAddrError {
+pub enum CreateActorError {
     #[error("failed to start actor, actor isn't pending to be started")]
     ParentDoesNotExist,
 }
 
 #[derive(Error, Debug)]
-pub enum StartError {
+pub enum StartActorError {
     #[error("failed to start actor, actor isn't pending to be started")]
     ActorNotPending,
     #[error("failed to start actor, no actor exists at the given address")]
     ActorNotFound,
     #[error("failed to start actor, actor at address already started")]
     ActorAlreadyStarted,
-    #[error("internal error, this is a bug in stewart")]
-    Internal(#[from] Error),
 }
 
 #[derive(Error, Debug)]

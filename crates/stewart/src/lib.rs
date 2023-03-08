@@ -13,5 +13,5 @@ pub use self::{
     actor::{Actor, AfterProcess, AfterReduce},
     family::{ActorT, AddrT},
     info::{Addr, Id, Info},
-    system::{BorrowError, StartError, System},
+    system::{BorrowError, CreateActorError, ProcessError, StartActorError, System},
 };
