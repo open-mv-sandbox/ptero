@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context as ContextExt, Error};
 use stewart::{
     utils::{ActorT, AddrT},
-    ActorId, AfterProcess, AfterReduce, System,
+    AfterProcess, AfterReduce, Id, System,
 };
 use tracing::{event, instrument, Level};
 
@@ -16,11 +16,11 @@ use crate::ReadWriteCmd;
 #[instrument("file-read-write", skip_all)]
 pub fn start_file_read_write(
     system: &mut System,
-    parent: ActorId,
+    parent: Id,
     path: String,
     truncate: bool,
 ) -> Result<AddrT<ReadWriteCmd>, Error> {
-    let (_, addr) = system.create_addr(parent)?;
+    let info = system.create_actor(parent)?;
 
     let package_file = OpenOptions::new()
         .read(true)
@@ -34,9 +34,9 @@ pub fn start_file_read_write(
         package_file,
         scratch_buffer: Vec::new(),
     };
-    system.start(addr, actor)?;
+    system.start_actor(info, actor)?;
 
-    Ok(addr)
+    Ok(info.addr())
 }
 
 struct FileReadWriteActor {
@@ -48,7 +48,11 @@ struct FileReadWriteActor {
 impl ActorT for FileReadWriteActor {
     type Message = ReadWriteCmd;
 
-    fn reduce<'a>(&mut self, message: ReadWriteCmd) -> Result<AfterReduce, Error> {
+    fn reduce<'a>(
+        &mut self,
+        _system: &mut System,
+        message: ReadWriteCmd,
+    ) -> Result<AfterReduce, Error> {
         self.queue.push(message);
         Ok(AfterReduce::Process)
     }
@@ -74,7 +78,7 @@ impl ActorT for FileReadWriteActor {
                     self.package_file.seek(SeekFrom::Start(start))?;
                     self.package_file.read_exact(&mut self.scratch_buffer)?;
                     let msg = Ok(self.scratch_buffer.as_slice());
-                    system.handle(reply, msg)?;
+                    system.handle(reply, msg);
                 }
                 ReadWriteCmd::Write { start, data } => {
                     self.package_file.seek(SeekFrom::Start(start))?;

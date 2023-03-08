@@ -3,7 +3,7 @@ use daicon::{ComponentEntry, ComponentTableHeader};
 use ptero_io::ReadWriteCmd;
 use stewart::{
     utils::{start_map, ActorT, AddrT},
-    ActorId, AfterProcess, AfterReduce, System,
+    AfterProcess, AfterReduce, Id, Info, System,
 };
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -14,19 +14,19 @@ use crate::{start_find_component, FindComponentData};
 #[instrument("file-manager", skip_all)]
 pub fn start_file_manager(
     system: &mut System,
-    parent: ActorId,
+    parent: Id,
     read_write: AddrT<ReadWriteCmd>,
 ) -> Result<AddrT<FileManagerCmd>, Error> {
-    let (id, addr) = system.create_addr(parent)?;
+    let info = system.create_actor(parent)?;
 
-    let api_addr = start_map(system, id, |c| Message::Command(c), addr)?;
+    let api_addr = start_map(system, info.id(), |c| Message::Command(c), info.addr())?;
 
     let actor = FileManagerActor {
-        id,
+        info,
         read_write,
         queue: Vec::new(),
     };
-    system.start(addr, actor)?;
+    system.start_actor(info, actor)?;
 
     Ok(api_addr)
 }
@@ -45,7 +45,7 @@ pub struct FindComponentResult {
 
 /// Root manager actor.
 struct FileManagerActor {
-    id: ActorId,
+    info: Info<Self>,
     read_write: AddrT<ReadWriteCmd>,
     queue: Vec<Message>,
 }
@@ -53,7 +53,7 @@ struct FileManagerActor {
 impl ActorT for FileManagerActor {
     type Message = Message;
 
-    fn reduce(&mut self, message: Message) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self,_system: &mut System, message: Message) -> Result<AfterReduce, Error> {
         self.queue.push(message);
         Ok(AfterReduce::Process)
     }
@@ -70,7 +70,7 @@ impl ActorT for FileManagerActor {
                             package: self.read_write,
                             reply: on_result,
                         };
-                        start_find_component(system, self.id, data)?;
+                        start_find_component(system, self.info.id(), data)?;
                     }
                 },
             }

@@ -16,7 +16,7 @@ use ptero_daicon::{FileManagerCmd, FindComponentResult};
 use ptero_io::ReadWriteCmd;
 use stewart::{
     utils::{ActorT, AddrT},
-    ActorId, AfterProcess, AfterReduce, System,
+    AfterProcess, AfterReduce, Id, System,
 };
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -60,11 +60,11 @@ pub fn create_package(path: &str) -> Result<(), Error> {
 }
 
 #[instrument("add-data", skip_all)]
-pub fn start_add_data(system: &mut System, parent: ActorId, data: AddData) -> Result<(), Error> {
+pub fn start_add_data(system: &mut System, parent: Id, data: AddData) -> Result<(), Error> {
     event!(Level::INFO, "adding data to package");
 
-    let (id, addr) = system.create_addr(parent)?;
-    system.start(addr, AddDataActor)?;
+    let info = system.create_actor(parent)?;
+    system.start_actor(info, AddDataActor)?;
 
     // The first 64kb is reserved for components and indices
     // TODO: Actually find a free spot
@@ -81,14 +81,14 @@ pub fn start_add_data(system: &mut System, parent: ActorId, data: AddData) -> Re
         file_manager: data.file_manager,
         value: index_entry,
     };
-    AddIndexActor::start(system, id, add_index)?;
+    AddIndexActor::start(system, info.id(), add_index)?;
 
     // Write the file to the package
     let write = ReadWriteCmd::Write {
         start: data_start,
         data: data.data,
     };
-    system.handle(data.file, write)?;
+    system.handle(data.file, write);
 
     Ok(())
 }
@@ -105,7 +105,7 @@ struct AddDataActor;
 impl ActorT for AddDataActor {
     type Message = ();
 
-    fn reduce(&mut self, _message: ()) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, _system: &mut System, _message: ()) -> Result<AfterReduce, Error> {
         unimplemented!()
     }
 
@@ -128,21 +128,21 @@ struct AddIndexActor {
 }
 
 impl AddIndexActor {
-    fn start(system: &mut System, parent: ActorId, data: AddIndex) -> Result<(), Error> {
-        let (_, addr) = system.create_addr(parent)?;
+    fn start(system: &mut System, parent: Id, data: AddIndex) -> Result<(), Error> {
+        let info = system.create_actor(parent)?;
 
         let cmd = FileManagerCmd::GetComponent {
             id: INDEX_COMPONENT_UUID,
-            on_result: addr,
+            on_result: info.addr(),
         };
-        system.handle(data.file_manager, cmd)?;
+        system.handle(data.file_manager, cmd);
 
         let actor = Self {
             message: None,
             file: data.file,
             value: data.value,
         };
-        system.start(addr, actor)?;
+        system.start_actor(info, actor)?;
 
         Ok(())
     }
@@ -151,7 +151,11 @@ impl AddIndexActor {
 impl ActorT for AddIndexActor {
     type Message = FindComponentResult;
 
-    fn reduce(&mut self, message: FindComponentResult) -> Result<AfterReduce, Error> {
+    fn reduce(
+        &mut self,
+        _system: &mut System,
+        message: FindComponentResult,
+    ) -> Result<AfterReduce, Error> {
         self.message = Some(message);
         Ok(AfterReduce::Process)
     }
@@ -171,7 +175,7 @@ impl ActorT for AddIndexActor {
             start: component_offset,
             data,
         };
-        system.handle(self.file, msg)?;
+        system.handle(self.file, msg);
 
         Ok(AfterProcess::Stop)
     }

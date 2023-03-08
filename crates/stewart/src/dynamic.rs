@@ -7,7 +7,11 @@ use tracing::{event, Level};
 use crate::{Actor, AfterProcess, AfterReduce, System};
 
 pub trait AnyActor {
-    fn reduce(&mut self, message: &mut dyn AnyOption) -> Result<AfterReduce, Error>;
+    fn reduce(
+        &mut self,
+        system: &mut System,
+        message: &mut dyn AnyOption,
+    ) -> Result<AfterReduce, Error>;
 
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error>;
 }
@@ -16,7 +20,11 @@ impl<A> AnyActor for A
 where
     A: Actor,
 {
-    fn reduce(&mut self, message: &mut dyn AnyOption) -> Result<AfterReduce, Error> {
+    fn reduce(
+        &mut self,
+        system: &mut System,
+        message: &mut dyn AnyOption,
+    ) -> Result<AfterReduce, Error> {
         let message = match message.downcast::<A::Family>() {
             Some(message) => message,
             None => {
@@ -28,7 +36,7 @@ where
         };
 
         let message = message.take().context("message was already taken")?;
-        Actor::reduce(self, message.0)
+        Actor::reduce(self, system, message.0)
     }
 
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {

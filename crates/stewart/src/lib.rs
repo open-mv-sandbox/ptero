@@ -4,13 +4,13 @@
 //! stewart book.
 
 mod actor;
-mod addr;
 mod dynamic;
+mod info;
 mod system;
 pub mod utils;
 
 pub use self::{
     actor::{Actor, AfterProcess, AfterReduce},
-    addr::Addr,
-    system::{HandleError, StartError, System, ActorId},
+    info::{Addr, Id, Info},
+    system::{BorrowError, StartError, System},
 };

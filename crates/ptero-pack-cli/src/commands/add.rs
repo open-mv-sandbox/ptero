@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_pack::AddData;
-use stewart::{utils::ActorT, ActorId, AfterProcess, AfterReduce, System};
+use stewart::{utils::ActorT, AfterProcess, AfterReduce, Id, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -25,13 +25,13 @@ pub struct AddCommand {
 pub fn start(system: &mut System, data: AddCommand) -> Result<(), Error> {
     event!(Level::INFO, "adding file to package");
 
-    let (id, addr) = system.create_addr(ActorId::root())?;
+    let info = system.create_actor(Id::root())?;
 
     let input = std::fs::read(&data.input)?;
 
     // Start managers for the package
-    let read_write = ptero_io::start_file_read_write(system, id, data.package, false)?;
-    let file_manager = ptero_daicon::start_file_manager(system, id, read_write)?;
+    let read_write = ptero_io::start_file_read_write(system, info.id(), data.package, false)?;
+    let file_manager = ptero_daicon::start_file_manager(system, info.id(), read_write)?;
 
     // Start the add data command
     let add_data = AddData {
@@ -40,9 +40,9 @@ pub fn start(system: &mut System, data: AddCommand) -> Result<(), Error> {
         data: input,
         uuid: data.uuid,
     };
-    ptero_pack::start_add_data(system, id, add_data)?;
+    ptero_pack::start_add_data(system, info.id(), add_data)?;
 
-    system.start(addr, AddCommandActor {})?;
+    system.start_actor(info, AddCommandActor {})?;
 
     Ok(())
 }
@@ -52,7 +52,7 @@ struct AddCommandActor {}
 impl ActorT for AddCommandActor {
     type Message = ();
 
-    fn reduce(&mut self, _message: ()) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, _system: &mut System, _message: ()) -> Result<AfterReduce, Error> {
         Ok(AfterReduce::Process)
     }
 

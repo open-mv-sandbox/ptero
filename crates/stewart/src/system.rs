@@ -6,7 +6,7 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::{dynamic::AnyActor, Actor, Addr, AfterProcess, AfterReduce};
+use crate::{dynamic::AnyActor, Actor, Addr, AfterProcess, AfterReduce, Id, Info};
 
 /// Thread-local cooperative multitasking actor scheduler.
 ///
@@ -28,10 +28,7 @@ impl System {
     ///
     /// The address' debugging name is inferred from the current span's name. This name is only
     /// used in logging.
-    pub fn create_addr<F>(
-        &mut self,
-        parent: ActorId,
-    ) -> Result<(ActorId, Addr<F>), CreateAddrError> {
+    pub fn create_actor<A: Actor>(&mut self, parent: Id) -> Result<Info<A>, CreateAddrError> {
         let parent = parent.0;
         let span = Span::current();
 
@@ -63,13 +60,11 @@ impl System {
         // Track the address so we can clean it up if it doesn't get started in time
         self.pending_start.push(index);
 
-        let id = ActorId(Some(index));
-        let addr = Addr::from_index(index);
-        Ok((id, addr))
+        Ok(Info::new(index))
     }
 
     /// Start an actor on the system, making its address available for handling.
-    pub fn start<A>(&mut self, addr: Addr<A::Family>, actor: A) -> Result<(), StartError>
+    pub fn start_actor<A>(&mut self, info: Info<A>, actor: A) -> Result<(), StartError>
     where
         A: Actor + 'static,
     {
@@ -79,14 +74,14 @@ impl System {
         let index = self
             .pending_start
             .iter()
-            .position(|i| *i == addr.index())
+            .position(|i| *i == info.index())
             .ok_or(StartError::ActorNotPending)?;
         self.pending_start.remove(index);
 
         // Retrieve the slot
         let addr_entry = self
             .addresses
-            .get_mut(addr.index())
+            .get_mut(info.index())
             .ok_or(StartError::ActorNotFound)?;
 
         // Fill the slot
@@ -97,49 +92,66 @@ impl System {
     }
 
     /// Handle a message, immediately sending it to the actor's reducer.
-    pub fn handle<'a, F>(
-        &mut self,
-        addr: Addr<F>,
-        message: impl Into<F::Member<'a>>,
-    ) -> Result<(), HandleError>
+    ///
+    /// Handle never returns an error, but is not guaranteed to actually deliver the message.
+    /// Message delivery failure can be for a variety of reasons, not always caused by the sender,
+    /// and not always caused by the receiver. This makes it unclear who should receive the error.
+    ///
+    /// The error is logged, and may in the future be handleable. If you have a use case where you
+    /// need to handle a handle error, open an issue.
+    pub fn handle<'a, F>(&mut self, addr: Addr<F>, message: impl Into<F::Member<'a>>)
     where
         F: Family,
         F::Member<'static>: 'static,
     {
-        let index = addr.index();
+        let result = self.try_handle(addr, message);
+        match result {
+            Ok(value) => value,
+            Err(error) => {
+                event!(Level::WARN, "failed to handle message\n{:?}", error);
+            }
+        }
+    }
 
-        let addr_entry = self
-            .addresses
-            .get_mut(index)
-            .ok_or(HandleError::ActorNotFound)?;
-        let span = addr_entry.span.clone();
-        let actor = addr_entry
-            .actor
-            .as_mut()
-            .ok_or(HandleError::ActorNotAvailable {
-                name: addr_entry.debug_name,
-            })?;
+    fn try_handle<'a, F>(
+        &mut self,
+        addr: Addr<F>,
+        message: impl Into<F::Member<'a>>,
+    ) -> Result<(), Error>
+    where
+        F: Family,
+        F::Member<'static>: 'static,
+    {
+        // Attempt to borrow the actor for handling
+        let (entry, mut actor) = self.borrow(addr.index())?;
+
+        // Enter the actor's span for logging
+        let span = entry.span.clone();
+        let _entry = span.enter();
 
         // Let the actor reduce the message
-        let _enter = span.enter();
         let message = message.into();
         let mut message = Some(FamilyMember::<F>(message));
-        let result = actor.reduce(&mut message);
+        let result = actor.reduce(self, &mut message);
 
-        // Schedule process if necessary
-        match result {
-            Ok(AfterReduce::Nothing) => {
-                // Nothing to do
-            }
-            Ok(AfterReduce::Process) => {
-                if !addr_entry.queued {
-                    self.queue.push_back(index);
-                    addr_entry.queued = true;
-                }
-            }
+        // Handle the result
+        let after = match result {
+            Ok(value) => value,
             Err(error) => {
                 // TODO: What to do with this?
                 event!(Level::ERROR, "actor failed to reduce message\n{:?}", error);
+                AfterReduce::Nothing
+            }
+        };
+
+        // Return the actor
+        let entry = self.unborrow(addr.index(), actor)?;
+
+        // Schedule process if necessary
+        if after == AfterReduce::Process {
+            if !entry.queued {
+                entry.queued = true;
+                self.queue.push_back(addr.index());
             }
         }
 
@@ -185,10 +197,16 @@ impl System {
     }
 
     fn process_at(&mut self, index: Index) -> Result<(), ProcessError> {
-        let (span, mut actor) = self.take_for_process(index)?;
+        let (entry, mut actor) = self.borrow(index)?;
+
+        // Mark the actor as no longer queued, as we're processing it
+        entry.queued = false;
+
+        // Enter the actor's span for logging
+        let span = entry.span.clone();
+        let _entry = span.enter();
 
         // Perform the actor's process step
-        let _entry = span.enter();
         let result = actor.process(self);
 
         // Handle the result
@@ -205,39 +223,44 @@ impl System {
             event!(Level::INFO, "stopping actor");
             drop(actor);
             self.addresses.remove(index);
-            return Ok(());
+        } else {
+            // Return the actor otherwise
+            self.unborrow(index, actor)?;
         }
-
-        // Return the actor otherwise
-        let addr_entry = self
-            .addresses
-            .get_mut(index)
-            .context("actor disappeared during process")?;
-        addr_entry.actor = Some(actor);
 
         Ok(())
     }
 
-    fn take_for_process(
-        &mut self,
-        index: Index,
-    ) -> Result<(Span, Box<dyn AnyActor>), ProcessError> {
-        let addr_entry = self
+    fn borrow(&mut self, index: Index) -> Result<(&mut AddrEntry, Box<dyn AnyActor>), BorrowError> {
+        // Find the actor's entry
+        let entry = self
             .addresses
             .get_mut(index)
-            .context("queued actor address doesn't exist")?;
-
-        // Mark the actor as no longer queued, as we're processing it
-        addr_entry.queued = false;
+            .ok_or(BorrowError::ActorNotFound)?;
 
         // Take the actor from the slot
-        let span = addr_entry.span.clone();
-        let actor = std::mem::replace(&mut addr_entry.actor, None);
+        let actor = std::mem::replace(&mut entry.actor, None);
 
         // If the actor wasn't in the slot, return an error
-        let actor = actor.context("actor not available")?;
+        let actor = actor.ok_or(BorrowError::ActorNotAvailable {
+            name: entry.debug_name,
+        })?;
 
-        Ok((span, actor))
+        Ok((entry, actor))
+    }
+
+    fn unborrow(
+        &mut self,
+        index: Index,
+        actor: Box<dyn AnyActor>,
+    ) -> Result<&mut AddrEntry, BorrowError> {
+        let entry = self
+            .addresses
+            .get_mut(index)
+            .ok_or(BorrowError::InternalActorDisappeared)?;
+        entry.actor = Some(actor);
+
+        Ok(entry)
     }
 }
 
@@ -264,19 +287,6 @@ struct AddrEntry {
     actor: Option<Box<dyn AnyActor>>,
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub struct ActorId(pub(crate) Option<Index>);
-
-impl ActorId {
-    /// Address ID of the root of the system.
-    ///
-    /// You can use this to start actors with no parent other than the system root, which thus
-    /// exceed the lifetime of the current actor.
-    pub fn root() -> Self {
-        Self(None)
-    }
-}
-
 #[derive(Error, Debug)]
 pub enum CreateAddrError {
     #[error("failed to start actor, actor isn't pending to be started")]
@@ -296,15 +306,19 @@ pub enum StartError {
 }
 
 #[derive(Error, Debug)]
-pub enum HandleError {
-    #[error("failed to handle message, no actor exists at the given address")]
-    ActorNotFound,
-    #[error("failed to handle message, actor ({name}) at the address exists, but is not currently available")]
-    ActorNotAvailable { name: &'static str },
+pub enum ProcessError {
+    #[error("failed to process actor, borrow error")]
+    BorrowError(#[from] BorrowError),
+    #[error("internal error, this is a bug in stewart")]
+    Internal(#[from] Error),
 }
 
 #[derive(Error, Debug)]
-pub enum ProcessError {
-    #[error("internal error, this is a bug in stewart")]
-    Internal(#[from] Error),
+pub enum BorrowError {
+    #[error("failed to borrow actor, no actor exists at the given address")]
+    ActorNotFound,
+    #[error("failed to borrow actor, actor ({name}) at the address exists, but is not currently available")]
+    ActorNotAvailable { name: &'static str },
+    #[error("this is a bug in stewart, the actor disappeared before it could be returned")]
+    InternalActorDisappeared,
 }

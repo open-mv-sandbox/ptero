@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{ActorId, System};
+use stewart::{Id, System};
 use tracing::{event, Level};
 
 use crate::hello_serivce::{start_hello, HelloMsg};
@@ -12,16 +12,16 @@ fn main() -> Result<(), Error> {
     let mut system = System::new();
 
     // Start the hello service
-    let addr = start_hello(&mut system, ActorId::root())?;
+    let addr = start_hello(&mut system, Id::root())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
-    system.handle(addr, HelloMsg("World"))?;
-    system.handle(addr, HelloMsg("Actors"))?;
+    system.handle(addr, HelloMsg("World"));
+    system.handle(addr, HelloMsg("Actors"));
 
     // You can also use temporary borrows!
     let data = String::from("Borrowed");
-    system.handle(addr, HelloMsg(data.as_str()))?;
+    system.handle(addr, HelloMsg(data.as_str()));
 
     // Let the system process the messages we just sent
     system.run_until_idle()?;
@@ -34,20 +34,20 @@ fn main() -> Result<(), Error> {
 mod hello_serivce {
     use anyhow::Error;
     use family::Member;
-    use stewart::{Actor, ActorId, Addr, AfterProcess, AfterReduce, System};
+    use stewart::{Actor, Addr, AfterProcess, AfterReduce, Id, System};
     use tracing::{event, instrument, Level};
 
     /// The start function uses the concrete actor internally, the actor itself is never public.
     /// By instrumenting the start function, your actor's span will inherit it automatically.
     #[instrument("hello", skip_all)]
-    pub fn start_hello(system: &mut System, parent: ActorId) -> Result<Addr<HelloMsgF>, Error> {
+    pub fn start_hello(system: &mut System, parent: Id) -> Result<Addr<HelloMsgF>, Error> {
         event!(Level::DEBUG, "creating service");
 
-        let (_, addr) = system.create_addr(parent)?;
+        let info = system.create_actor(parent)?;
         let actor = HelloActor { queue: Vec::new() };
-        system.start(addr, actor)?;
+        system.start_actor(info, actor)?;
 
-        Ok(addr)
+        Ok(info.addr())
     }
 
     /// When creating a borrowed message, you need to implement the `Member` and `Family` traits.
@@ -63,7 +63,11 @@ mod hello_serivce {
     impl Actor for HelloActor {
         type Family = HelloMsgF;
 
-        fn reduce(&mut self, message: HelloMsg) -> Result<AfterReduce, Error> {
+        fn reduce(
+            &mut self,
+            _system: &mut System,
+            message: HelloMsg,
+        ) -> Result<AfterReduce, Error> {
             event!(Level::DEBUG, "adding message");
 
             // Because "HelloMsg" is a borrowed value, you have to decide how to most

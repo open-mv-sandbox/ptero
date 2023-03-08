@@ -11,7 +11,8 @@ pub trait ActorT {
     type Message: 'static;
 
     /// Handle a message in-place, storing it as appropriate until processing.
-    fn reduce(&mut self, message: Self::Message) -> Result<AfterReduce, Error>;
+    fn reduce(&mut self, system: &mut System, message: Self::Message)
+        -> Result<AfterReduce, Error>;
 
     /// Process reduced messages.
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error>;
@@ -25,9 +26,10 @@ where
 
     fn reduce(
         &mut self,
+        system: &mut System,
         message: <Self::Family as Family>::Member<'_>,
     ) -> Result<AfterReduce, Error> {
-        self.reduce(message.0)
+        self.reduce(system, message.0)
     }
 
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {

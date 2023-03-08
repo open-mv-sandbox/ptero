@@ -10,10 +10,11 @@ pub trait Actor {
     /// Handle a message in-place, storing it as appropriate until processing.
     fn reduce(
         &mut self,
+        system: &mut System,
         message: <Self::Family as Family>::Member<'_>,
     ) -> Result<AfterReduce, Error>;
 
-    /// Process reduced messages.
+    /// Process previously reduced messages.
     fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error>;
 }
 

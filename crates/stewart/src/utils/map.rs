@@ -1,7 +1,10 @@
+use std::marker::PhantomData;
+use std::sync::atomic::AtomicPtr;
+
 use anyhow::Error;
 use tracing::instrument;
 
-use crate::{ActorId, AfterProcess, AfterReduce, System};
+use crate::{AfterProcess, AfterReduce, Id, System};
 
 use crate::utils::{ActorT, AddrT};
 
@@ -9,7 +12,7 @@ use crate::utils::{ActorT, AddrT};
 #[instrument("map", skip_all)]
 pub fn start_map<F, A, B>(
     system: &mut System,
-    parent: ActorId,
+    parent: Id,
     map: F,
     target: AddrT<B>,
 ) -> Result<AddrT<A>, Error>
@@ -18,21 +21,21 @@ where
     A: 'static,
     B: 'static,
 {
-    let (_, addr) = system.create_addr(parent)?;
+    let info = system.create_actor(parent)?;
     let actor = MapActor {
         map,
         target,
-        queue: Vec::new(),
+        _a: PhantomData,
     };
-    system.start(addr, actor)?;
+    system.start_actor(info, actor)?;
 
-    Ok(addr)
+    Ok(info.addr())
 }
 
 struct MapActor<F, A, B> {
     map: F,
     target: AddrT<B>,
-    queue: Vec<A>,
+    _a: PhantomData<AtomicPtr<A>>,
 }
 
 impl<F, A, B> ActorT for MapActor<F, A, B>
@@ -43,16 +46,14 @@ where
 {
     type Message = A;
 
-    fn reduce(&mut self, message: A) -> Result<AfterReduce, Error> {
-        // TODO: Special 'reroute' option to shortcut the queue?
-        self.queue.push(message);
-        Ok(AfterReduce::Process)
+    fn reduce(&mut self, system: &mut System, message: A) -> Result<AfterReduce, Error> {
+        // Immediately re-route the message
+        let message = (self.map)(message);
+        system.handle(self.target, message);
+        Ok(AfterReduce::Nothing)
     }
 
-    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
-        for message in self.queue.drain(..) {
-            system.handle(self.target, (self.map)(message))?;
-        }
+    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
         Ok(AfterProcess::Nothing)
     }
 }

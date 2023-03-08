@@ -13,7 +13,7 @@ use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
 use ptero_io::{ReadResult, ReadResultF, ReadWriteCmd};
 use stewart::{
     utils::{ActorT, AddrT},
-    Actor, ActorId, AfterProcess, AfterReduce, System,
+    Actor, AfterProcess, AfterReduce, Id, Info, System,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -23,25 +23,24 @@ pub use self::manager::{start_file_manager, FileManagerCmd, FindComponentResult}
 #[instrument("find-component", skip_all)]
 fn start_find_component(
     system: &mut System,
-    parent: ActorId,
+    parent: Id,
     data: FindComponentData,
 ) -> Result<(), Error> {
-    let (id, addr) = system.create_addr(parent)?;
+    let info = system.create_actor(parent)?;
 
     // Start reading the header
     let read_header = ReadHeader {
         package: data.package,
-        reply: addr,
+        reply: info.addr(),
     };
-    ReadHeaderActor::start(system, id, read_header)?;
+    ReadHeaderActor::start(system, info.id(), read_header)?;
 
     let actor = FindComponentActor {
+        info,
         queue: Vec::new(),
-        id,
-        addr,
         data,
     };
-    system.start(addr, actor)?;
+    system.start_actor(info, actor)?;
 
     Ok(())
 }
@@ -53,16 +52,19 @@ struct FindComponentData {
 }
 
 struct FindComponentActor {
+    info: Info<Self>,
     queue: Vec<FindComponentMessage>,
-    id: ActorId,
-    addr: AddrT<FindComponentMessage>,
     data: FindComponentData,
 }
 
 impl ActorT for FindComponentActor {
     type Message = FindComponentMessage;
 
-    fn reduce(&mut self, message: FindComponentMessage) -> Result<AfterReduce, Error> {
+    fn reduce(
+        &mut self,
+        _system: &mut System,
+        message: FindComponentMessage,
+    ) -> Result<AfterReduce, Error> {
         self.queue.push(message);
         Ok(AfterReduce::Process)
     }
@@ -77,9 +79,9 @@ impl ActorT for FindComponentActor {
                         package: self.data.package,
                         header_location: location,
                         header,
-                        reply: self.addr,
+                        reply: self.info.addr(),
                     };
-                    ReadEntriesActor::start(system, self.id, read_entries)?;
+                    ReadEntriesActor::start(system, self.info.id(), read_entries)?;
 
                     // TODO: Follow extensions
                 }
@@ -89,7 +91,7 @@ impl ActorT for FindComponentActor {
                         .find(|e| e.type_id() == self.data.target)
                     {
                         let result = FindComponentResult { header, entry };
-                        system.handle(self.data.reply, result)?;
+                        system.handle(self.data.reply, result);
                     } else {
                         // TODO: Better error reporting
                         bail!("unable to find component");
@@ -120,21 +122,21 @@ struct ReadHeaderActor {
 }
 
 impl ReadHeaderActor {
-    fn start(system: &mut System, parent: ActorId, data: ReadHeader) -> Result<(), Error> {
-        let (_, addr) = system.create_addr(parent)?;
+    fn start(system: &mut System, parent: Id, data: ReadHeader) -> Result<(), Error> {
+        let info = system.create_actor(parent)?;
 
         let msg = ReadWriteCmd::Read {
             start: 0,
             length: (SIGNATURE.len() + size_of::<ComponentTableHeader>()) as u64,
-            reply: addr,
+            reply: info.addr(),
         };
-        system.handle(data.package, msg)?;
+        system.handle(data.package, msg);
 
         let actor = ReadHeaderActor {
             header: ComponentTableHeader::zeroed(),
             reply: data.reply,
         };
-        system.start(addr, actor)?;
+        system.start_actor(info, actor)?;
 
         Ok(())
     }
@@ -143,7 +145,7 @@ impl ReadHeaderActor {
 impl Actor for ReadHeaderActor {
     type Family = ReadResultF;
 
-    fn reduce(&mut self, message: ReadResult) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, _system: &mut System, message: ReadResult) -> Result<AfterReduce, Error> {
         let data = message?;
 
         // Validate signature
@@ -162,7 +164,7 @@ impl Actor for ReadHeaderActor {
         let header_location = 8;
 
         let msg = FindComponentMessage::Header(header_location, self.header);
-        system.handle(self.reply, msg)?;
+        system.handle(self.reply, msg);
 
         Ok(AfterProcess::Stop)
     }
@@ -182,22 +184,22 @@ struct ReadEntriesActor {
 }
 
 impl ReadEntriesActor {
-    fn start(system: &mut System, parent: ActorId, data: StartReadEntries) -> Result<(), Error> {
-        let (_, addr) = system.create_addr(parent)?;
+    fn start(system: &mut System, parent: Id, data: StartReadEntries) -> Result<(), Error> {
+        let info = system.create_actor(parent)?;
 
         let msg = ReadWriteCmd::Read {
             start: data.header_location + size_of::<ComponentTableHeader>() as u64,
             length: (data.header.length() as usize * size_of::<ComponentEntry>()) as u64,
-            reply: addr,
+            reply: info.addr(),
         };
-        system.handle(data.package, msg)?;
+        system.handle(data.package, msg);
 
         let actor = ReadEntriesActor {
             message: None,
             header: data.header,
             reply: data.reply,
         };
-        system.start(addr, actor)?;
+        system.start_actor(info, actor)?;
 
         Ok(())
     }
@@ -206,7 +208,7 @@ impl ReadEntriesActor {
 impl Actor for ReadEntriesActor {
     type Family = ReadResultF;
 
-    fn reduce(&mut self, message: ReadResult) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, _system: &mut System, message: ReadResult) -> Result<AfterReduce, Error> {
         self.message = Some(message?.to_vec());
         Ok(AfterReduce::Process)
     }
@@ -225,7 +227,7 @@ impl Actor for ReadEntriesActor {
 
         // Reply with the read data
         let msg = FindComponentMessage::Entries(self.header, entries);
-        system.handle(self.reply, msg)?;
+        system.handle(self.reply, msg);
 
         Ok(AfterProcess::Stop)
     }
