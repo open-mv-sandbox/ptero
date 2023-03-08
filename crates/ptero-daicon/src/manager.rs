@@ -2,7 +2,7 @@ use anyhow::Error;
 use daicon::{ComponentEntry, ComponentTableHeader};
 use ptero_io::ReadWriteCmd;
 use stewart::{ActorT, AddrT, AfterProcess, AfterReduce, Id, Info, System};
-use stewart_utils::start_map_t;
+use stewart_utils::start_map;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -17,7 +17,7 @@ pub fn start_file_manager(
 ) -> Result<AddrT<FileManagerCmd>, Error> {
     let info = system.create_actor(parent)?;
 
-    let api_addr = start_map_t(system, info.id(), Message::Command, info.addr())?;
+    let api_addr = start_map(system, info.id(), info.addr(), Message::Command)?;
 
     let actor = FileManagerActor {
         info,

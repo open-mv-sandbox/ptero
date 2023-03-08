@@ -2,4 +2,4 @@
 
 mod map;
 
-pub use self::map::{start_map, start_map_t};
+pub use self::map::start_map;

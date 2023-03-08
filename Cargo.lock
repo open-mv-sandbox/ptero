@@ -999,9 +999,9 @@ name = "stewart-utils"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "family",
  "stewart",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
