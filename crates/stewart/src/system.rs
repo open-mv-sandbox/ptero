@@ -136,11 +136,9 @@ impl System {
         let entry = self.unborrow(addr.index(), actor)?;
 
         // Schedule process if necessary
-        if after == AfterReduce::Process {
-            if !entry.queued {
-                entry.queued = true;
-                self.queue.push_back(addr.index());
-            }
+        if after == AfterReduce::Process && !entry.queued {
+            entry.queued = true;
+            self.queue.push_back(addr.index());
         }
 
         Ok(())
@@ -280,7 +278,7 @@ struct ActorEntry {
 
 fn debug_name<T>() -> &'static str {
     let name = std::any::type_name::<T>();
-    let before_generics = name.split("<").next().unwrap_or("Unknown");
+    let before_generics = name.split('<').next().unwrap_or("Unknown");
     let after_modules = before_generics.split("::").last().unwrap_or("Unknown");
     after_modules
 }

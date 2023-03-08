@@ -17,7 +17,7 @@ pub fn start_file_manager(
 ) -> Result<AddrT<FileManagerCmd>, Error> {
     let info = system.create_actor(parent)?;
 
-    let api_addr = start_map(system, info.id(), |c| Message::Command(c), info.addr())?;
+    let api_addr = start_map(system, info.id(), Message::Command, info.addr())?;
 
     let actor = FileManagerActor {
         info,

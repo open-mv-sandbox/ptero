@@ -10,7 +10,7 @@ use tracing::instrument;
 pub fn start_map<F, A, B>(
     system: &mut System,
     parent: Id,
-    map: F,
+    function: F,
     target: AddrT<B>,
 ) -> Result<AddrT<A>, Error>
 where
@@ -18,11 +18,9 @@ where
     A: 'static,
     B: 'static,
 {
-    // TODO: No longer needs the static requirement
-
     let info = system.create_actor(parent)?;
     let actor = MapActor {
-        map,
+        function,
         target,
         _a: PhantomData,
     };
@@ -32,14 +30,14 @@ where
 }
 
 struct MapActor<F, A, B> {
-    map: F,
+    function: F,
     target: AddrT<B>,
     _a: PhantomData<AtomicPtr<A>>,
 }
 
 impl<F, A, B> ActorT for MapActor<F, A, B>
 where
-    F: FnMut(A) -> B,
+    F: FnMut(A) -> B + 'static,
     A: 'static,
     B: 'static,
 {
@@ -47,7 +45,7 @@ where
 
     fn reduce(&mut self, system: &mut System, message: A) -> Result<AfterReduce, Error> {
         // Immediately re-route the message
-        let message = (self.map)(message);
+        let message = (self.function)(message);
         system.handle(self.target, message);
         Ok(AfterReduce::Nothing)
     }

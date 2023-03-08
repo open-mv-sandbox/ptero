@@ -17,7 +17,10 @@ pub struct Info<A> {
     _a: PhantomData<AtomicPtr<A>>,
 }
 
-impl<A: Actor> Info<A> {
+impl<A> Info<A>
+where
+    A: Actor,
+{
     pub(crate) fn new(index: Index) -> Self {
         Self {
             index,
