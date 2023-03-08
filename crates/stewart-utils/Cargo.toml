@@ -1,0 +1,10 @@
+[package]
+name = "stewart-utils"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+family.workspace = true
+tracing.workspace = true
+stewart.workspace = true

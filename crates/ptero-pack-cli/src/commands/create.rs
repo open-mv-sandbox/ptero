@@ -1,6 +1,6 @@
 use anyhow::Error;
 use clap::Args;
-use stewart::{utils::ActorT, AfterProcess, AfterReduce, Id, System};
+use stewart::{ActorT, AfterProcess, AfterReduce, Id, System};
 use tracing::{event, instrument, Level};
 
 /// Create a new dacti package.

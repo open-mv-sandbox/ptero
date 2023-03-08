@@ -800,6 +800,7 @@ dependencies = [
  "family",
  "ptero-io",
  "stewart",
+ "stewart-utils",
  "tracing",
  "uuid",
 ]
@@ -991,6 +992,16 @@ dependencies = [
  "thunderdome",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "stewart-utils"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "family",
+ "stewart",
+ "tracing",
 ]
 
 [[package]]

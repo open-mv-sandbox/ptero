@@ -9,6 +9,7 @@ bytemuck.workspace = true
 daicon.workspace = true
 family.workspace = true
 stewart.workspace = true
+stewart-utils.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 ptero-io.workspace = true

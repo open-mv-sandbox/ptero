@@ -2,11 +2,8 @@ use std::marker::PhantomData;
 use std::sync::atomic::AtomicPtr;
 
 use anyhow::Error;
+use stewart::{ActorT, AddrT, AfterProcess, AfterReduce, Id, System};
 use tracing::instrument;
-
-use crate::{AfterProcess, AfterReduce, Id, System};
-
-use crate::utils::{ActorT, AddrT};
 
 /// Start actor that maps a value into another one.
 #[instrument("map", skip_all)]
@@ -21,6 +18,8 @@ where
     A: 'static,
     B: 'static,
 {
+    // TODO: No longer needs the static requirement
+
     let info = system.create_actor(parent)?;
     let actor = MapActor {
         map,

@@ -14,10 +14,7 @@ use dacti_index::{
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{FileManagerCmd, FindComponentResult};
 use ptero_io::ReadWriteCmd;
-use stewart::{
-    utils::{ActorT, AddrT},
-    AfterProcess, AfterReduce, Id, System,
-};
+use stewart::{ActorT, AddrT, AfterProcess, AfterReduce, Id, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 

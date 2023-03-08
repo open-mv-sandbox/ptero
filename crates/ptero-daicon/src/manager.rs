@@ -1,10 +1,8 @@
 use anyhow::Error;
 use daicon::{ComponentEntry, ComponentTableHeader};
 use ptero_io::ReadWriteCmd;
-use stewart::{
-    utils::{start_map, ActorT, AddrT},
-    AfterProcess, AfterReduce, Id, Info, System,
-};
+use stewart::{ActorT, AddrT, AfterProcess, AfterReduce, Id, Info, System};
+use stewart_utils::start_map;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -53,7 +51,7 @@ struct FileManagerActor {
 impl ActorT for FileManagerActor {
     type Message = Message;
 
-    fn reduce(&mut self,_system: &mut System, message: Message) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, _system: &mut System, message: Message) -> Result<AfterReduce, Error> {
         self.queue.push(message);
         Ok(AfterReduce::Process)
     }

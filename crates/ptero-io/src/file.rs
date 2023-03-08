@@ -4,10 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as ContextExt, Error};
-use stewart::{
-    utils::{ActorT, AddrT},
-    AfterProcess, AfterReduce, Id, System,
-};
+use stewart::{ActorT, AddrT, AfterProcess, AfterReduce, Id, System};
 use tracing::{event, instrument, Level};
 
 use crate::ReadWriteCmd;

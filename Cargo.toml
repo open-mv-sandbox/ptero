@@ -28,3 +28,4 @@ ptero-daicon = { path = "./crates/ptero-daicon" }
 ptero-io = { path = "./crates/ptero-io" }
 ptero-pack = { path = "./crates/ptero-pack" }
 stewart = { path = "./crates/stewart" }
+stewart-utils = { path = "./crates/stewart-utils" }

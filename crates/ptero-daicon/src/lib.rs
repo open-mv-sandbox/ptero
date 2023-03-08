@@ -11,10 +11,7 @@ use anyhow::{bail, Context, Error};
 use bytemuck::{bytes_of_mut, Zeroable};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
 use ptero_io::{ReadResult, ReadResultF, ReadWriteCmd};
-use stewart::{
-    utils::{ActorT, AddrT},
-    Actor, AfterProcess, AfterReduce, Id, Info, System,
-};
+use stewart::{Actor, ActorT, AddrT, AfterProcess, AfterReduce, Id, Info, System};
 use tracing::instrument;
 use uuid::Uuid;
 

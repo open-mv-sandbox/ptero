@@ -29,28 +29,12 @@ impl System {
     /// The address' debugging name is inferred from the current span's name. This name is only
     /// used in logging.
     pub fn create_actor<A: Actor>(&mut self, parent: Id) -> Result<Info<A>, CreateAddrError> {
-        let parent = parent.0;
+        let _parent = parent.0;
         let span = Span::current();
-
-        // For convenience, just infer it from the span name, which should generally be right.
-        // The one common case where it isn't is if a span is hidden in filtering, or there never
-        // was a span, but the next step improves on that issue.
-        let mut debug_name = span.metadata().map(|m| m.name()).unwrap_or("unknown");
-
-        // If the new addr has a parent, but we're still in the same span, just use "unknown"
-        if let Some(parent) = parent {
-            let parent = self
-                .addresses
-                .get(parent)
-                .ok_or(CreateAddrError::ParentDoesNotExist)?;
-            if parent.debug_name == debug_name {
-                debug_name = "unknown";
-            }
-        }
 
         // Continual span is inherited from the create addr callsite
         let addr_entry = AddrEntry {
-            debug_name,
+            debug_name: debug_name::<A>(),
             span,
             queued: false,
             actor: None,
@@ -279,12 +263,19 @@ impl Drop for System {
 }
 
 struct AddrEntry {
-    /// Non-unqiue debugging name, used to improve logging.
+    /// Debugging identification name, not intended for anything other than warn/err reporting.
     debug_name: &'static str,
     /// Persistent logging span, groups logging that happenened under this actor.
     span: Span,
     queued: bool,
     actor: Option<Box<dyn AnyActor>>,
+}
+
+fn debug_name<T>() -> &'static str {
+    let name = std::any::type_name::<T>();
+    let before_generics = name.split("<").next().unwrap_or("Unknown");
+    let after_modules = before_generics.split("::").last().unwrap_or("Unknown");
+    after_modules
 }
 
 #[derive(Error, Debug)]
