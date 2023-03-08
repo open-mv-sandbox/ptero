@@ -80,7 +80,6 @@ impl System {
     pub fn handle<'a, F>(&mut self, addr: Addr<F>, message: impl Into<F::Member<'a>>)
     where
         F: Family,
-        F::Member<'static>: 'static,
     {
         let result = self.try_handle(addr, message);
         match result {
@@ -98,7 +97,6 @@ impl System {
     ) -> Result<(), Error>
     where
         F: Family,
-        F::Member<'static>: 'static,
     {
         // Attempt to borrow the actor for handling
         let (entry, mut actor) = self.actors.borrow(addr.index())?;

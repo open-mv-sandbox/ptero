@@ -2,28 +2,33 @@ use std::marker::PhantomData;
 use std::sync::atomic::AtomicPtr;
 
 use anyhow::Error;
-use family::{utils::FamilyT, Family};
+use family::{
+    utils::{FamilyT, MemberT},
+    Family,
+};
 use stewart::{Actor, Addr, AddrT, AfterProcess, AfterReduce, Id, System};
 use tracing::instrument;
 
 /// Start actor that maps a value into another one.
 #[instrument("map", skip_all)]
-pub fn start_map<F, A, B>(
+pub fn start_map<'a, F, A, B, C>(
     system: &mut System,
     parent: Id,
     function: F,
-    target: AddrT<B>,
+    target: Addr<B>,
 ) -> Result<Addr<A>, Error>
 where
-    F: FnMut(A::Member<'_>) -> B + 'static,
+    F: FnMut(A::Member<'_>) -> C + 'static,
     A: Family,
-    B: 'static,
+    B: Family,
+    for<'b> C: Into<B::Member<'a>> + 'b,
 {
     let info = system.create_actor(parent)?;
-    let actor = MapActor {
+    let actor = MapActor::<F, A, B, C> {
         function,
         target,
         _a: PhantomData,
+        _c: PhantomData,
     };
     system.start_actor(info, actor)?;
 
@@ -41,21 +46,23 @@ where
     A: 'static,
     B: 'static,
 {
-    let function = move |a: <FamilyT<A> as Family>::Member<'_>| function(a.0);
-    start_map::<_, FamilyT<A>, _>(system, parent, function, target)
+    let function = move |a: <FamilyT<A> as Family>::Member<'_>| MemberT(function(a.0));
+    start_map::<_, FamilyT<A>, _, _>(system, parent, function, target)
 }
 
-struct MapActor<F, A, B> {
+struct MapActor<F, A, B, C> {
     function: F,
-    target: AddrT<B>,
+    target: Addr<B>,
     _a: PhantomData<AtomicPtr<A>>,
+    _c: PhantomData<AtomicPtr<C>>,
 }
 
-impl<F, A, B> Actor for MapActor<F, A, B>
+impl<'a, F, A, B, C> Actor for MapActor<F, A, B, C>
 where
-    F: FnMut(A::Member<'_>) -> B + 'static,
+    F: FnMut(A::Member<'_>) -> C + 'static,
     A: Family,
-    B: 'static,
+    B: Family,
+    C: Into<B::Member<'a>>,
 {
     type Family = A;
 
