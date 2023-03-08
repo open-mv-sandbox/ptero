@@ -38,7 +38,7 @@ mod hello_serivce {
     use tracing::{event, instrument, Level};
 
     /// The start function uses the concrete actor internally, the actor itself is never public.
-    /// By instrumenting the start function, your actor's span will inherit it automatically.
+    /// By instrumenting the start function, your actor's callbacks will use it automatically.
     #[instrument("hello", skip_all)]
     pub fn start_hello(system: &mut System, parent: Id) -> Result<Addr<HelloMsgF>, Error> {
         event!(Level::DEBUG, "creating service");

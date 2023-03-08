@@ -4,6 +4,7 @@
 //! stewart book.
 
 mod actor;
+mod actors;
 mod dynamic;
 mod family;
 mod info;
@@ -11,7 +12,8 @@ mod system;
 
 pub use self::{
     actor::{Actor, AfterProcess, AfterReduce},
+    actors::BorrowError,
     family::{ActorT, AddrT},
     info::{Addr, Id, Info},
-    system::{BorrowError, CreateActorError, ProcessError, StartActorError, System},
+    system::{CreateActorError, ProcessError, StartActorError, System},
 };

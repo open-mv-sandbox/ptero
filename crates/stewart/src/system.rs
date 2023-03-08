@@ -3,15 +3,18 @@ use std::collections::VecDeque;
 use anyhow::{Context, Error};
 use family::{any::FamilyMember, Family};
 use thiserror::Error;
-use thunderdome::{Arena, Index};
+use thunderdome::Index;
 use tracing::{event, Level, Span};
 
-use crate::{dynamic::AnyActor, Actor, Addr, AfterProcess, AfterReduce, Id, Info};
+use crate::{
+    actors::{Actors, BorrowError},
+    Actor, Addr, AfterProcess, AfterReduce, Id, Info,
+};
 
 /// Thread-local cooperative multitasking actor scheduler.
 #[derive(Default)]
 pub struct System {
-    actors: Arena<ActorEntry>,
+    actors: Actors,
     queue: VecDeque<Index>,
     pending_start: Vec<Index>,
 }
@@ -26,24 +29,11 @@ impl System {
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
     pub fn create_actor<A: Actor>(&mut self, parent: Id) -> Result<Info<A>, CreateActorError> {
-        let parent = parent.0;
+        // Continual span is inherited from the create addr callsite
         let span = Span::current();
 
-        // Link to the parent
-        if let Some(parent) = parent {
-            self.actors
-                .get_mut(parent)
-                .ok_or(CreateActorError::ParentDoesNotExist)?;
-        }
-
-        // Continual span is inherited from the create addr callsite
-        let entry = ActorEntry {
-            debug_name: debug_name::<A>(),
-            span,
-            queued: false,
-            actor: None,
-        };
-        let index = self.actors.insert(entry);
+        // Create the new actor
+        let index = self.actors.create(debug_name::<A>(), span, parent.0)?;
 
         // Track the address so we can clean it up if it doesn't get started in time
         self.pending_start.push(index);
@@ -111,7 +101,7 @@ impl System {
         F::Member<'static>: 'static,
     {
         // Attempt to borrow the actor for handling
-        let (entry, mut actor) = self.borrow(addr.index())?;
+        let (entry, mut actor) = self.actors.borrow(addr.index())?;
 
         // Enter the actor's span for logging
         let span = entry.span.clone();
@@ -133,7 +123,7 @@ impl System {
         };
 
         // Return the actor
-        let entry = self.unborrow(addr.index(), actor)?;
+        let entry = self.actors.unborrow(addr.index(), actor)?;
 
         // Schedule process if necessary
         if after == AfterReduce::Process && !entry.queued {
@@ -183,7 +173,7 @@ impl System {
     }
 
     fn process_at(&mut self, index: Index) -> Result<(), ProcessError> {
-        let (entry, mut actor) = self.borrow(index)?;
+        let (entry, mut actor) = self.actors.borrow(index)?;
 
         // Mark the actor as no longer queued, as we're processing it
         entry.queued = false;
@@ -211,45 +201,10 @@ impl System {
             self.actors.remove(index);
         } else {
             // Return the actor otherwise
-            self.unborrow(index, actor)?;
+            self.actors.unborrow(index, actor)?;
         }
 
         Ok(())
-    }
-
-    fn borrow(
-        &mut self,
-        index: Index,
-    ) -> Result<(&mut ActorEntry, Box<dyn AnyActor>), BorrowError> {
-        // Find the actor's entry
-        let entry = self
-            .actors
-            .get_mut(index)
-            .ok_or(BorrowError::ActorNotFound)?;
-
-        // Take the actor from the slot
-        let actor = std::mem::replace(&mut entry.actor, None);
-
-        // If the actor wasn't in the slot, return an error
-        let actor = actor.ok_or(BorrowError::ActorNotAvailable {
-            name: entry.debug_name,
-        })?;
-
-        Ok((entry, actor))
-    }
-
-    fn unborrow(
-        &mut self,
-        index: Index,
-        actor: Box<dyn AnyActor>,
-    ) -> Result<&mut ActorEntry, BorrowError> {
-        let entry = self
-            .actors
-            .get_mut(index)
-            .ok_or(BorrowError::InternalActorDisappeared)?;
-        entry.actor = Some(actor);
-
-        Ok(entry)
     }
 }
 
@@ -265,15 +220,6 @@ impl Drop for System {
             event!(Level::WARN, names, "actors not stopped before system drop");
         }
     }
-}
-
-struct ActorEntry {
-    /// Debugging identification name, not intended for anything other than warn/err reporting.
-    debug_name: &'static str,
-    /// Persistent logging span, groups logging that happenened under this actor.
-    span: Span,
-    queued: bool,
-    actor: Option<Box<dyn AnyActor>>,
 }
 
 fn debug_name<T>() -> &'static str {
@@ -305,14 +251,4 @@ pub enum ProcessError {
     BorrowError(#[from] BorrowError),
     #[error("internal error, this is a bug in stewart")]
     Internal(#[from] Error),
-}
-
-#[derive(Error, Debug)]
-pub enum BorrowError {
-    #[error("failed to borrow actor, no actor exists at the given address")]
-    ActorNotFound,
-    #[error("failed to borrow actor, actor ({name}) at the address exists, but is not currently available")]
-    ActorNotAvailable { name: &'static str },
-    #[error("this is a bug in stewart, the actor disappeared before it could be returned")]
-    InternalActorDisappeared,
 }
