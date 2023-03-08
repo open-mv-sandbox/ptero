@@ -14,7 +14,7 @@ use crate::{dynamic::AnyActor, Actor, Addr, AfterProcess, AfterReduce, Id, Info}
 /// It does not do any scheduling in itself, this is delegated to an actor.
 #[derive(Default)]
 pub struct System {
-    addresses: Arena<AddrEntry>,
+    actors: Arena<ActorEntry>,
     queue: VecDeque<Index>,
     pending_start: Vec<Index>,
 }
@@ -33,13 +33,13 @@ impl System {
         let span = Span::current();
 
         // Continual span is inherited from the create addr callsite
-        let addr_entry = AddrEntry {
+        let entry = ActorEntry {
             debug_name: debug_name::<A>(),
             span,
             queued: false,
             actor: None,
         };
-        let index = self.addresses.insert(addr_entry);
+        let index = self.actors.insert(entry);
 
         // Track the address so we can clean it up if it doesn't get started in time
         self.pending_start.push(index);
@@ -63,14 +63,14 @@ impl System {
         self.pending_start.remove(index);
 
         // Retrieve the slot
-        let addr_entry = self
-            .addresses
+        let entry = self
+            .actors
             .get_mut(info.index())
             .ok_or(StartError::ActorNotFound)?;
 
         // Fill the slot
         let actor = Box::new(actor);
-        addr_entry.actor = Some(actor);
+        entry.actor = Some(actor);
 
         Ok(())
     }
@@ -170,7 +170,7 @@ impl System {
 
     fn cleanup_pending(&mut self, index: Index) -> Result<(), Error> {
         let entry = self
-            .addresses
+            .actors
             .remove(index)
             .context("pending actor address doesn't exist")?;
 
@@ -206,7 +206,7 @@ impl System {
         if after == AfterProcess::Stop {
             event!(Level::INFO, "stopping actor");
             drop(actor);
-            self.addresses.remove(index);
+            self.actors.remove(index);
         } else {
             // Return the actor otherwise
             self.unborrow(index, actor)?;
@@ -215,10 +215,13 @@ impl System {
         Ok(())
     }
 
-    fn borrow(&mut self, index: Index) -> Result<(&mut AddrEntry, Box<dyn AnyActor>), BorrowError> {
+    fn borrow(
+        &mut self,
+        index: Index,
+    ) -> Result<(&mut ActorEntry, Box<dyn AnyActor>), BorrowError> {
         // Find the actor's entry
         let entry = self
-            .addresses
+            .actors
             .get_mut(index)
             .ok_or(BorrowError::ActorNotFound)?;
 
@@ -237,9 +240,9 @@ impl System {
         &mut self,
         index: Index,
         actor: Box<dyn AnyActor>,
-    ) -> Result<&mut AddrEntry, BorrowError> {
+    ) -> Result<&mut ActorEntry, BorrowError> {
         let entry = self
-            .addresses
+            .actors
             .get_mut(index)
             .ok_or(BorrowError::InternalActorDisappeared)?;
         entry.actor = Some(actor);
@@ -251,8 +254,8 @@ impl System {
 impl Drop for System {
     fn drop(&mut self) {
         let mut names = Vec::new();
-        for (_, addr_entry) in self.addresses.drain() {
-            names.push(addr_entry.debug_name);
+        for (_, entry) in self.actors.drain() {
+            names.push(entry.debug_name);
         }
 
         if !names.is_empty() {
@@ -262,7 +265,7 @@ impl Drop for System {
     }
 }
 
-struct AddrEntry {
+struct ActorEntry {
     /// Debugging identification name, not intended for anything other than warn/err reporting.
     debug_name: &'static str,
     /// Persistent logging span, groups logging that happenened under this actor.
