@@ -16,7 +16,7 @@ pub fn start_file_manager(
     system: &mut System,
     parent: Id,
     read_write: AddrT<ReadWriteCmd>,
-) -> Result<AddrT<FileManagerCmd>, Error> {
+) -> Result<AddrT<FileManagerCommand>, Error> {
     let info = system.create_actor(parent)?;
 
     // Public API mapping actor
@@ -32,17 +32,17 @@ pub fn start_file_manager(
     Ok(api_addr)
 }
 
-pub enum FileManagerCmd {
-    GetComponent(GetComponentCmd),
+pub enum FileManagerCommand {
+    GetComponent(GetComponentCommand),
 }
 
-pub struct GetComponentCmd {
+pub struct GetComponentCommand {
     pub id: Uuid,
     pub on_result: AddrT<GetComponentResult>,
 }
 
 pub struct GetComponentResult {
-    pub header: ComponentTableHeader,
+    pub offset: u64,
     pub entry: ComponentEntry,
 }
 
@@ -51,7 +51,7 @@ struct FileManagerActor {
     queue: VecDeque<FileManagerMsg>,
     read_write: AddrT<ReadWriteCmd>,
 
-    pending: Vec<GetComponentCmd>,
+    pending: Vec<GetComponentCommand>,
     header: Option<ComponentTableHeader>,
     entries: Option<Vec<ComponentEntry>>,
 }
@@ -103,9 +103,9 @@ impl FileManagerActor {
         Ok(())
     }
 
-    fn on_command(&mut self, command: FileManagerCmd) -> Result<(), Error> {
+    fn on_command(&mut self, command: FileManagerCommand) -> Result<(), Error> {
         match command {
-            FileManagerCmd::GetComponent(command) => {
+            FileManagerCommand::GetComponent(command) => {
                 event!(Level::INFO, id = ?command.id, "queuing get-component");
                 self.pending.push(command);
             }
@@ -132,7 +132,7 @@ impl FileManagerActor {
                 );
                 let header = self.header.unwrap();
                 let result = GetComponentResult {
-                    header,
+                    offset: header.entries_offset(),
                     entry: *entry,
                 };
                 system.handle(pending.on_result, result);
@@ -174,7 +174,7 @@ impl ActorT for FileManagerActor {
 }
 
 pub enum FileManagerMsg {
-    Command(FileManagerCmd),
+    Command(FileManagerCommand),
     Header(ComponentTableHeader),
     Entries(Vec<ComponentEntry>),
 }

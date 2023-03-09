@@ -58,10 +58,6 @@ impl Actor for ReadHeaderActor {
         // Pass it to the manager
         system.handle(self.manager, FileManagerMsg::Header(header));
 
-        Ok(After::Process)
-    }
-
-    fn process(&mut self, _system: &mut System) -> Result<After, Error> {
         Ok(After::Stop)
     }
 }
@@ -115,10 +111,6 @@ impl Actor for ReadEntriesActor {
         // Reply with the read data
         system.handle(self.manager, FileManagerMsg::Entries(entries));
 
-        Ok(After::Process)
-    }
-
-    fn process(&mut self, _system: &mut System) -> Result<After, Error> {
         Ok(After::Stop)
     }
 }

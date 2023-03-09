@@ -3,7 +3,10 @@ use family::Family;
 
 use crate::System;
 
-/// Active message handler.
+/// Active actor interface.
+///
+/// TODO: As of right now, actors are split up into `reduce` and `process`, but some actors only
+/// use one of the two. Maybe move the queue system to an extension?
 pub trait Actor {
     type Family: Family;
 
@@ -14,10 +17,9 @@ pub trait Actor {
     /// processing the message here means a higher chance of failure, as the sending actor is not
     /// available itself for handling during `reduce`.
     ///
-    /// However, if you absolutely need to, you can process (and redirect) the message in-place
-    /// here. In some cases this is better, such as if your actor's only task is to relay the
-    /// message to another actor. This also does not require you to convert a borrowed message
-    /// into owned, to queue it before re-sending it.
+    /// In some cases however, it's beneficial to immediately process the message. This prevents
+    /// it from being penalized by being delayed by a queue round-trip. Especially when all your
+    /// actor does is relay a message to another actor or system, this may be beneficial.
     fn reduce(
         &mut self,
         system: &mut System,
@@ -25,7 +27,9 @@ pub trait Actor {
     ) -> Result<After, Error>;
 
     /// Process previously reduced messages.
-    fn process(&mut self, system: &mut System) -> Result<After, Error>;
+    fn process(&mut self, _system: &mut System) -> Result<After, Error> {
+        Ok(After::Nothing)
+    }
 }
 
 /// The operation to take after the `reduce` or `process` step.

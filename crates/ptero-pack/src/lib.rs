@@ -12,7 +12,7 @@ use dacti_index::{
     IndexEntry, IndexGroupEncoding, IndexGroupHeader, IndexHeader, INDEX_COMPONENT_UUID,
 };
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
-use ptero_daicon::{FileManagerCmd, GetComponentCmd, GetComponentResult};
+use ptero_daicon::{FileManagerCommand, GetComponentCommand, GetComponentResult};
 use ptero_io::ReadWriteCmd;
 use stewart::{ActorT, AddrT, After, Id, System};
 use tracing::{event, instrument, Level};
@@ -93,7 +93,7 @@ pub fn start_add_data(system: &mut System, parent: Id, data: AddData) -> Result<
 
 pub struct AddData {
     pub file: AddrT<ReadWriteCmd>,
-    pub file_manager: AddrT<FileManagerCmd>,
+    pub file_manager: AddrT<FileManagerCommand>,
     pub data: Vec<u8>,
     pub uuid: Uuid,
 }
@@ -115,7 +115,7 @@ impl ActorT for AddDataActor {
 
 struct AddIndex {
     file: AddrT<ReadWriteCmd>,
-    file_manager: AddrT<FileManagerCmd>,
+    file_manager: AddrT<FileManagerCommand>,
     value: IndexEntry,
 }
 
@@ -129,12 +129,12 @@ impl AddIndexActor {
     fn start(system: &mut System, parent: Id, data: AddIndex) -> Result<(), Error> {
         let info = system.create_actor(parent)?;
 
-        let cmd = GetComponentCmd {
+        let command = GetComponentCommand {
             id: INDEX_COMPONENT_UUID,
             on_result: info.addr(),
         };
-        let cmd = FileManagerCmd::GetComponent(cmd);
-        system.handle(data.file_manager, cmd);
+        let command = FileManagerCommand::GetComponent(command);
+        system.handle(data.file_manager, command);
 
         let actor = Self {
             message: None,
@@ -163,7 +163,7 @@ impl ActorT for AddIndexActor {
         let message = self.message.take().context("incorrect state")?;
 
         let region = from_bytes::<RegionData>(message.entry.data());
-        let component_offset = region.offset(message.header.entries_offset());
+        let component_offset = region.offset(message.offset);
 
         // TODO: Find a free slot rather than just assuming there's no groups and files yet
         // TODO: Update the component's size after adding the new index

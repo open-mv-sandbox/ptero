@@ -3,4 +3,6 @@
 mod manager;
 mod read;
 
-pub use self::manager::{start_file_manager, FileManagerCmd, GetComponentCmd, GetComponentResult};
+pub use self::manager::{
+    start_file_manager, FileManagerCommand, GetComponentCommand, GetComponentResult,
+};
