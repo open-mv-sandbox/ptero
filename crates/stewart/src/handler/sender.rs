@@ -4,7 +4,7 @@ use anyhow::Error;
 use family::{utils::FamilyT, Family};
 use tracing::{event, Level};
 
-use crate::{handler::After, Id, Info, System};
+use crate::{After, Id, Info, System};
 
 use super::Handler;
 
@@ -92,7 +92,7 @@ fn apply_handle_try<A: Handler + 'static>(
     };
 
     // Return the actor
-    system.return_actor(id, actor, after == After::Stop)?;
+    system.return_actor(id, actor, after)?;
 
     Ok(())
 }

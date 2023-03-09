@@ -1,13 +1,10 @@
-mod process;
-
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use anyhow::Error;
-use stewart::{handler::After, Id, Info, System};
 use thiserror::Error;
 use tracing::{event, Level};
 
-pub use self::process::Process;
+use crate::{schedule::Process, After, Id, Info, System};
 
 /// Shared thread-local processing schedule.
 #[derive(Clone, Default)]
@@ -97,7 +94,7 @@ fn apply_process<A: Process + 'static>(system: &mut System, id: Id) -> Result<()
     };
 
     // Return the actor
-    system.return_actor(id, actor, after == After::Stop)?;
+    system.return_actor(id, actor, after)?;
 
     Ok(())
 }

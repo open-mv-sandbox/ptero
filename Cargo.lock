@@ -812,7 +812,6 @@ dependencies = [
  "anyhow",
  "family",
  "stewart",
- "stewart-scheduler",
  "tracing",
 ]
 
@@ -990,18 +989,6 @@ dependencies = [
  "family",
  "thiserror",
  "thunderdome",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "stewart-scheduler"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "family",
- "stewart",
- "thiserror",
  "tracing",
  "tracing-subscriber",
 ]

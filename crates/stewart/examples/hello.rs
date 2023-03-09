@@ -31,8 +31,8 @@ mod hello_serivce {
     use anyhow::Error;
     use family::Member;
     use stewart::{
-        handler::{After, Handler, Sender},
-        Id, System,
+        handler::{Handler, Sender},
+        After, Id, System,
     };
     use tracing::{event, instrument, Level};
 

@@ -2,14 +2,17 @@ use std::marker::PhantomData;
 use std::sync::atomic::AtomicPtr;
 
 use anyhow::Error;
-use stewart::{ActorT, After, Id, SenderT, System};
+use stewart::{
+    handler::{HandlerT, SenderT},
+    After, Id, System,
+};
 use tracing::instrument;
 
 /// Start actor that maps a value into another one.
 #[instrument("map", skip_all)]
 pub fn start_map<F, A, B>(
     system: &mut System,
-    parent: Id,
+    parent: Option<Id>,
     target: SenderT<B>,
     function: F,
 ) -> Result<SenderT<A>, Error>
@@ -26,7 +29,7 @@ where
     };
     system.start_actor(info, actor)?;
 
-    Ok(info.sender())
+    Ok(SenderT::new(info))
 }
 
 struct MapActor<F, A, B>
@@ -38,7 +41,7 @@ where
     _a: PhantomData<AtomicPtr<A>>,
 }
 
-impl<F, A, B> ActorT for MapActor<F, A, B>
+impl<F, A, B> HandlerT for MapActor<F, A, B>
 where
     F: FnMut(A) -> B + 'static,
     A: 'static,

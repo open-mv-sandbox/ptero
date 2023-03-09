@@ -5,7 +5,7 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::{Id, Info};
+use crate::{After, Id, Info};
 
 /// Thread-local actor collection and lifetime manager.
 #[derive(Default)]
@@ -142,14 +142,19 @@ impl System {
         Ok((entry.span.clone(), actor))
     }
 
-    pub fn return_actor<A>(&mut self, id: Id, actor: Box<A>, stop: bool) -> Result<(), BorrowError>
+    pub fn return_actor<A>(
+        &mut self,
+        id: Id,
+        actor: Box<A>,
+        after: After,
+    ) -> Result<(), BorrowError>
     where
         A: 'static,
     {
         // TODO: Validate same type slot
 
         // If we got told to stop the actor, do that instead of returning
-        if stop {
+        if after == After::Stop {
             event!(Level::INFO, "stopping actor");
             drop(actor);
             self.actors.remove(id.index);

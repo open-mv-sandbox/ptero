@@ -1,8 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::System;
-use stewart_scheduler::Schedule;
+use stewart::{schedule::Schedule, System};
 use tracing::{event, Level};
 
 use crate::hello_serivce::{start_hello, HelloMsg};
@@ -37,10 +36,10 @@ mod hello_serivce {
     use anyhow::Error;
     use family::Member;
     use stewart::{
-        handler::{After, Handler, Sender},
-        Id, Info, System,
+        handler::{Handler, Sender},
+        schedule::{Process, Schedule},
+        After, Id, Info, System,
     };
-    use stewart_scheduler::{Process, Schedule};
     use tracing::{event, instrument, Level};
 
     /// When creating a borrowed message, you need to implement the `Member` and `Family` traits.

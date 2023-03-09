@@ -4,6 +4,6 @@ mod handler;
 mod sender;
 
 pub use self::{
-    handler::{After, Handler, HandlerT},
+    handler::{Handler, HandlerT},
     sender::{Sender, SenderT},
 };
