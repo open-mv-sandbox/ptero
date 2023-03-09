@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 anyhow.workspace = true
 family.workspace = true
-heck.workspace = true
 thunderdome.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

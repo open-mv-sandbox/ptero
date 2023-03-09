@@ -43,14 +43,10 @@ where
 {
     type Message = A;
 
-    fn reduce(&mut self, system: &mut System, message: A) -> Result<After, Error> {
+    fn handle(&mut self, system: &mut System, message: A) -> Result<After, Error> {
         // Immediately re-route the message
         let message = (self.function)(message);
         system.handle(self.target, message);
-        Ok(After::Nothing)
-    }
-
-    fn process(&mut self, _system: &mut System) -> Result<After, Error> {
         Ok(After::Nothing)
     }
 }

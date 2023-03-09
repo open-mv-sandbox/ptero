@@ -1,22 +1,35 @@
 //! Helper types for storing and calling actors dynamically.
 
+use std::any::Any;
+
 use anyhow::{Context, Error};
 use family::any::AnyOption;
 use tracing::{event, Level};
 
 use crate::{Actor, After, System};
 
-pub trait AnyActor {
-    fn reduce(&mut self, system: &mut System, message: &mut dyn AnyOption) -> Result<After, Error>;
+// TODO: Replace family-downcast with Handler<F>-downcast instead, and then .as_handler() on
+// AnyActor.
 
-    fn process(&mut self, system: &mut System) -> Result<After, Error>;
+pub trait AnyActor {
+    fn as_any(&mut self) -> &mut dyn Any;
+    fn into_any(self: Box<Self>) -> Box<dyn Any>;
+    fn handle(&mut self, system: &mut System, message: &mut dyn AnyOption) -> Result<After, Error>;
 }
 
 impl<A> AnyActor for A
 where
-    A: Actor,
+    A: Actor + 'static,
 {
-    fn reduce(&mut self, system: &mut System, message: &mut dyn AnyOption) -> Result<After, Error> {
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+
+    fn handle(&mut self, system: &mut System, message: &mut dyn AnyOption) -> Result<After, Error> {
         let message = match message.downcast::<A::Family>() {
             Some(message) => message,
             None => {
@@ -28,10 +41,6 @@ where
         };
 
         let message = message.take().context("message was already taken")?;
-        Actor::reduce(self, system, message.0)
-    }
-
-    fn process(&mut self, system: &mut System) -> Result<After, Error> {
-        Actor::process(self, system)
+        Actor::handle(self, system, message.0)
     }
 }

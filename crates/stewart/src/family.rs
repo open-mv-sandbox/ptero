@@ -10,11 +10,8 @@ use crate::{Actor, Addr, After, System};
 pub trait ActorT {
     type Message: 'static;
 
-    /// Handle a message in-place, storing it as appropriate until processing.
-    fn reduce(&mut self, system: &mut System, message: Self::Message) -> Result<After, Error>;
-
-    /// Process reduced messages.
-    fn process(&mut self, system: &mut System) -> Result<After, Error>;
+    /// Handle a message in-place.
+    fn handle(&mut self, system: &mut System, message: Self::Message) -> Result<After, Error>;
 }
 
 impl<A> Actor for A
@@ -23,16 +20,12 @@ where
 {
     type Family = FamilyT<<Self as ActorT>::Message>;
 
-    fn reduce(
+    fn handle(
         &mut self,
         system: &mut System,
         message: <Self::Family as Family>::Member<'_>,
     ) -> Result<After, Error> {
-        self.reduce(system, message.0)
-    }
-
-    fn process(&mut self, system: &mut System) -> Result<After, Error> {
-        self.process(system)
+        self.handle(system, message.0)
     }
 }
 

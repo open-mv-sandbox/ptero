@@ -9,7 +9,6 @@ clap = "4.1.6"
 console_error_panic_hook = "0.1.6"
 daicon = "0.3.0"
 family = "0.1.2"
-heck = "0.4.1"
 js-sys = "0.3.61"
 raw-window-handle = "0.5.0"
 thiserror = "1.0.38"
@@ -28,4 +27,5 @@ ptero-daicon = { path = "./crates/ptero-daicon" }
 ptero-io = { path = "./crates/ptero-io" }
 ptero-pack = { path = "./crates/ptero-pack" }
 stewart = { path = "./crates/stewart" }
+stewart-scheduler = { path = "./crates/stewart-scheduler" }
 stewart-utils = { path = "./crates/stewart-utils" }
