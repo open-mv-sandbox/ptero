@@ -25,20 +25,15 @@ pub struct AddCommand {
 pub fn start(system: &mut System, schedule: Schedule, data: AddCommand) -> Result<(), Error> {
     event!(Level::INFO, "adding file to package");
 
-    let info = system.create_actor(None)?;
+    let info = system.create_actor(system.root_id())?;
 
     let input = std::fs::read(&data.input)?;
 
     // Start managers for the package
-    let read_write = ptero_io::start_file_read_write(
-        system,
-        Some(info.id()),
-        schedule.clone(),
-        data.package,
-        false,
-    )?;
+    let read_write =
+        ptero_io::start_file_read_write(system, info.id(), schedule.clone(), data.package, false)?;
     let file_manager =
-        ptero_daicon::start_file_manager(system, Some(info.id()), schedule.clone(), read_write)?;
+        ptero_daicon::start_file_manager(system, info.id(), schedule.clone(), read_write)?;
 
     // Start the add data command
     let add_data = AddData {
@@ -47,7 +42,7 @@ pub fn start(system: &mut System, schedule: Schedule, data: AddCommand) -> Resul
         data: input,
         uuid: data.uuid,
     };
-    ptero_pack::start_add_data(system, Some(info.id()), schedule, add_data)?;
+    ptero_pack::start_add_data(system, info.id(), schedule, add_data)?;
 
     system.start_actor(info, AddCommandActor)?;
 

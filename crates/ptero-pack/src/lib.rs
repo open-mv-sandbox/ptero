@@ -63,7 +63,7 @@ pub fn create_package(path: &str) -> Result<(), Error> {
 #[instrument("add-data", skip_all)]
 pub fn start_add_data(
     system: &mut System,
-    parent: Option<Id>,
+    parent: Id,
     schedule: Schedule,
     data: AddData,
 ) -> Result<(), Error> {
@@ -87,7 +87,7 @@ pub fn start_add_data(
         file_manager: data.file_manager,
         value: index_entry,
     };
-    AddIndexActor::start(system, Some(info.id()), schedule, add_index)?;
+    AddIndexActor::start(system, info.id(), schedule, add_index)?;
 
     // Write the file to the package
     event!(Level::DEBUG, "writing file data to package");
@@ -126,7 +126,7 @@ struct AddIndexActor {
 impl AddIndexActor {
     fn start(
         system: &mut System,
-        parent: Option<Id>,
+        parent: Id,
         schedule: Schedule,
         data: AddIndex,
     ) -> Result<(), Error> {

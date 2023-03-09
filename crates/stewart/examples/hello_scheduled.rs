@@ -13,7 +13,8 @@ fn main() -> Result<(), Error> {
     let schedule = Schedule::new();
 
     // Start the hello service
-    let sender = start_hello(&mut system, None, schedule.clone())?;
+    let root = system.root_id();
+    let sender = start_hello(&mut system, root, schedule.clone())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -52,7 +53,7 @@ mod hello_serivce {
     #[instrument("hello", skip_all)]
     pub fn start_hello(
         system: &mut System,
-        parent: Option<Id>,
+        parent: Id,
         schedule: Schedule,
     ) -> Result<Sender<HelloMsgF>, Error> {
         event!(Level::DEBUG, "creating service");

@@ -17,7 +17,7 @@ use crate::ReadWriteCmd;
 #[instrument("file-read-write", skip_all)]
 pub fn start_file_read_write(
     system: &mut System,
-    parent: Option<Id>,
+    parent: Id,
     schedule: Schedule,
     path: String,
     truncate: bool,

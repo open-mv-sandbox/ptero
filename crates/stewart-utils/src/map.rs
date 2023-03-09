@@ -12,7 +12,7 @@ use tracing::instrument;
 #[instrument("map", skip_all)]
 pub fn start_map<F, A, B>(
     system: &mut System,
-    parent: Option<Id>,
+    parent: Id,
     target: SenderT<B>,
     function: F,
 ) -> Result<SenderT<A>, Error>

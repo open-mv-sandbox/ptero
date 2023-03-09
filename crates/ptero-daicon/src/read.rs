@@ -18,7 +18,7 @@ use crate::manager::FileManagerMsg;
 #[instrument("read-header", skip_all)]
 pub fn start_read_header(
     system: &mut System,
-    parent: Option<Id>,
+    parent: Id,
     read_write: SenderT<ReadWriteCmd>,
     manager: SenderT<FileManagerMsg>,
 ) -> Result<(), Error> {
@@ -68,7 +68,7 @@ impl Handler for ReadHeaderActor {
 #[instrument("read-entries", skip_all)]
 pub fn start_read_entries(
     system: &mut System,
-    parent: Option<Id>,
+    parent: Id,
     read_write: SenderT<ReadWriteCmd>,
     start: u64,
     length: usize,

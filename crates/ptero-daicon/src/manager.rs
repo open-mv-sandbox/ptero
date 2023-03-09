@@ -18,7 +18,7 @@ use crate::read::{start_read_entries, start_read_header};
 #[instrument("file-manager", skip_all)]
 pub fn start_file_manager(
     system: &mut System,
-    parent: Option<Id>,
+    parent: Id,
     schedule: Schedule,
     read_write: SenderT<ReadWriteCmd>,
 ) -> Result<SenderT<FileManagerCommand>, Error> {
@@ -27,7 +27,7 @@ pub fn start_file_manager(
     // Public API mapping actor
     let api_addr = start_map(
         system,
-        Some(info.id()),
+        info.id(),
         SenderT::new(info),
         FileManagerMsg::Command,
     )?;
@@ -46,7 +46,7 @@ pub fn start_file_manager(
     system.start_actor(info, actor)?;
 
     // Immediately start reading the first header
-    start_read_header(system, Some(info.id()), read_write, SenderT::new(info))?;
+    start_read_header(system, info.id(), read_write, SenderT::new(info))?;
 
     Ok(api_addr)
 }
@@ -92,7 +92,7 @@ impl FileManagerActor {
                 // Start reading the entries for this header
                 start_read_entries(
                     system,
-                    Some(self.info.id()),
+                    self.info.id(),
                     self.read_write,
                     8 + size_of::<ComponentTableHeader>() as u64,
                     header.length() as usize,

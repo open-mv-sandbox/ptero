@@ -12,7 +12,8 @@ fn main() -> Result<(), Error> {
     let mut system = System::new();
 
     // Start the hello service
-    let sender = start_hello(&mut system, None)?;
+    let root = system.root_id();
+    let sender = start_hello(&mut system, root)?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -44,10 +45,7 @@ mod hello_serivce {
     /// The start function uses the concrete actor internally, the actor itself is never public.
     /// By instrumenting the start function, your actor's callbacks will use it automatically.
     #[instrument("hello", skip_all)]
-    pub fn start_hello(
-        system: &mut System,
-        parent: Option<Id>,
-    ) -> Result<Sender<HelloMsgF>, Error> {
+    pub fn start_hello(system: &mut System, parent: Id) -> Result<Sender<HelloMsgF>, Error> {
         event!(Level::DEBUG, "creating service");
 
         let info = system.create_actor(parent)?;

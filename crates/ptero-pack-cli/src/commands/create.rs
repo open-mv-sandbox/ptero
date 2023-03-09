@@ -15,7 +15,7 @@ pub struct CreateCommand {
 pub fn start(system: &mut System, data: CreateCommand) -> Result<(), Error> {
     event!(Level::INFO, "creating package");
 
-    let info = system.create_actor(None)?;
+    let info = system.create_actor(system.root_id())?;
     system.start_actor(info, CreateCommandActor)?;
 
     ptero_pack::create_package(&data.package)?;

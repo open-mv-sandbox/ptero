@@ -8,34 +8,48 @@ use tracing::{event, Level, Span};
 use crate::{After, Id, Info};
 
 /// Thread-local actor collection and lifetime manager.
-#[derive(Default)]
 pub struct System {
     actors: Arena<ActorEntry>,
     pending_start: Vec<Index>,
+    root: Index,
 }
 
 impl System {
     /// Create a new empty `System`.
     pub fn new() -> Self {
-        Self::default()
+        let mut actors = Arena::new();
+
+        // Insert a no-op root actor for tracking purposes
+        let actor = ActorEntry {
+            debug_name: "Root",
+            span: Span::current(),
+            actor: None,
+        };
+        let root = actors.insert(actor);
+
+        Self {
+            actors,
+            pending_start: Vec::new(),
+            root,
+        }
+    }
+
+    /// Get root actor ID.
+    pub fn root_id(&self) -> Id {
+        Id { index: self.root }
     }
 
     /// Create an actor on the system.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create_actor<A: 'static>(
-        &mut self,
-        parent: Option<Id>,
-    ) -> Result<Info<A>, CreateActorError> {
+    pub fn create_actor<A: 'static>(&mut self, parent: Id) -> Result<Info<A>, CreateActorError> {
         // Continual span is inherited from the create addr callsite
         let span = Span::current();
 
         // Link to the parent
-        if let Some(parent) = parent {
-            self.actors
-                .get_mut(parent.index)
-                .ok_or(CreateActorError::ParentDoesNotExist)?;
-        }
+        self.actors
+            .get_mut(parent.index)
+            .ok_or(CreateActorError::ParentDoesNotExist)?;
 
         // Create the entry
         let entry = ActorEntry {
