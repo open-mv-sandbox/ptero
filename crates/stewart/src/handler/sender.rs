@@ -25,15 +25,25 @@ impl<F> Sender<F>
 where
     F: Family,
 {
-    pub fn new<A: Handler<Family = F>>(info: Info<A>) -> Sender<A::Family>
+    pub fn new<A>(info: Info<A>) -> Sender<A::Family>
     where
-        A: 'static,
+        A: Handler<Family = F> + 'static,
     {
         Self {
             id: info.id(),
-            // TODO: We can use a static marker trait with a function here for cheap mapping.
-            // Passing the trait to the apply function will get us a unique combination function.
-            apply: apply_handle::<A>,
+            apply: apply_handle::<A, IdentityMap<A::Family>>,
+            _p: PhantomData,
+        }
+    }
+
+    pub fn mapped<A, M>(info: Info<A>) -> Sender<M::In>
+    where
+        A: Handler + 'static,
+        M: Map<In = F, Out = A::Family>,
+    {
+        Self {
+            id: info.id(),
+            apply: apply_handle::<A, M>,
             _p: PhantomData,
         }
     }
@@ -59,11 +69,12 @@ where
 
 impl<F> Copy for Sender<F> where F: Family {}
 
-fn apply_handle<A: Handler + 'static>(
-    system: &mut System,
-    id: Id,
-    message: <A::Family as Family>::Member<'_>,
-) {
+fn apply_handle<A, M>(system: &mut System, id: Id, message: <M::In as Family>::Member<'_>)
+where
+    A: Handler + 'static,
+    M: Map<Out = A::Family>,
+{
+    let message = M::map(message);
     let result = apply_handle_try::<A>(system, id, message);
     match result {
         Ok(value) => value,
@@ -104,3 +115,26 @@ fn apply_handle_try<A: Handler + 'static>(
 
 /// Convenience alias for sender to a `HandlerT`.
 pub type SenderT<T> = Sender<FamilyT<T>>;
+
+pub trait Map {
+    type In: Family;
+    type Out: Family;
+
+    fn map(value: <Self::In as Family>::Member<'_>) -> <Self::Out as Family>::Member<'_>;
+}
+
+pub struct IdentityMap<F> {
+    _f: PhantomData<F>,
+}
+
+impl<F> Map for IdentityMap<F>
+where
+    F: Family,
+{
+    type In = F;
+    type Out = F;
+
+    fn map(value: F::Member<'_>) -> F::Member<'_> {
+        value
+    }
+}

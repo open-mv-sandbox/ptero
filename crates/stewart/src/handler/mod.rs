@@ -5,5 +5,5 @@ mod sender;
 
 pub use self::{
     handler::{Handler, HandlerT},
-    sender::{Sender, SenderT},
+    sender::{Map, Sender, SenderT},
 };
