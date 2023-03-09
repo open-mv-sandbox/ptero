@@ -1,11 +1,12 @@
 use std::marker::PhantomData;
 
 use anyhow::Error;
-use family::Family;
-use thunderdome::Index;
+use family::{utils::FamilyT, Family};
 use tracing::{event, Level};
 
-use crate::{Actor, After, Id, System};
+use crate::{handler::After, Id, Info, System};
+
+use super::Handler;
 
 /// Address for sending messages to an actor.
 ///
@@ -15,7 +16,7 @@ pub struct Sender<F>
 where
     F: Family,
 {
-    pub(crate) index: Index,
+    id: Id,
     apply: fn(&mut System, Id, F::Member<'_>),
     _p: PhantomData<*const F>,
 }
@@ -24,25 +25,21 @@ impl<F> Sender<F>
 where
     F: Family,
 {
-    pub(crate) fn new<A>(index: Index) -> Self
+    pub fn new<A: Handler<Family = F>>(info: Info<A>) -> Sender<A::Family>
     where
-        A: Actor<Family = F> + 'static,
+        A: 'static,
     {
         Self {
-            index,
+            id: info.id(),
+            // TODO: We can actually use a static mapping impl here!
             apply: apply_handle::<A>,
             _p: PhantomData,
         }
     }
-}
 
-impl<F> Sender<F>
-where
-    F: Family,
-{
     pub fn send<'a>(self, system: &mut System, message: impl Into<F::Member<'a>>) {
         let message = message.into();
-        (self.apply)(system, Id { index: self.index }, message)
+        (self.apply)(system, self.id, message)
     }
 }
 
@@ -57,7 +54,7 @@ where
 
 impl<F> Copy for Sender<F> where F: Family {}
 
-fn apply_handle<A: Actor + 'static>(
+fn apply_handle<A: Handler + 'static>(
     system: &mut System,
     id: Id,
     message: <A::Family as Family>::Member<'_>,
@@ -72,7 +69,7 @@ fn apply_handle<A: Actor + 'static>(
     }
 }
 
-fn apply_handle_try<A: Actor + 'static>(
+fn apply_handle_try<A: Handler + 'static>(
     system: &mut System,
     id: Id,
     message: <A::Family as Family>::Member<'_>,
@@ -95,7 +92,10 @@ fn apply_handle_try<A: Actor + 'static>(
     };
 
     // Return the actor
-    system.return_actor(id, actor, after)?;
+    system.return_actor(id, actor, after == After::Stop)?;
 
     Ok(())
 }
+
+/// Convenience alias for sender to a `HandlerT`.
+pub type SenderT<T> = Sender<FamilyT<T>>;

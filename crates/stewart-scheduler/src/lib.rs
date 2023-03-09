@@ -1,25 +1,81 @@
-use std::collections::VecDeque;
+mod process;
+
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use anyhow::Error;
-use stewart::{Actor, ActorT, After, Id, SenderT, System};
-use tracing::{event, instrument, Level};
+use stewart::{handler::After, Id, Info, System};
+use thiserror::Error;
+use tracing::{event, Level};
 
-pub trait Process {
-    fn process(&mut self, system: &mut System) -> Result<After, Error>;
+pub use self::process::Process;
+
+/// Shared thread-local processing schedule.
+#[derive(Clone, Default)]
+pub struct Schedule {
+    queue: Rc<RefCell<VecDeque<Item>>>,
 }
 
-pub struct ProcessItem {
+impl Schedule {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add an actor to the schedule for processing.
+    pub fn push<A>(&mut self, info: Info<A>) -> Result<(), ScheduleError>
+    where
+        A: Process + 'static,
+    {
+        let mut queue = self.queue.try_borrow_mut().map_err(|_| ScheduleError)?;
+
+        // If the queue already contains this actor, skip
+        if queue.iter().any(|v| v.id == info.id()) {
+            return Ok(());
+        }
+
+        // Add the actor to the queue
+        let item = Item {
+            id: info.id(),
+            apply: apply_process::<A>,
+        };
+        queue.push_back(item);
+
+        Ok(())
+    }
+
+    /// Run all queued actor processing tasks, until none remain.
+    ///
+    /// Running a process task may spawn new process tasks, so this is not guaranteed to ever
+    /// return.
+    pub fn run_until_idle(&self, system: &mut System) -> Result<(), Error> {
+        system.cleanup_pending()?;
+
+        while let Some(item) = self.take_next()? {
+            // Apply process
+            (item.apply)(system, item.id)?;
+
+            system.cleanup_pending()?;
+        }
+
+        Ok(())
+    }
+
+    fn take_next(&self) -> Result<Option<Item>, ScheduleError> {
+        let item = self
+            .queue
+            .try_borrow_mut()
+            .map_err(|_| ScheduleError)?
+            .pop_front();
+        Ok(item)
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("schedule is unavailable")]
+pub struct ScheduleError;
+
+struct Item {
     id: Id,
     apply: fn(&mut System, Id) -> Result<(), Error>,
-}
-
-impl ProcessItem {
-    pub fn new<A: Process + Actor + 'static>(id: Id) -> Self {
-        Self {
-            id,
-            apply: apply_process::<A>,
-        }
-    }
 }
 
 fn apply_process<A: Process + 'static>(system: &mut System, id: Id) -> Result<(), Error> {
@@ -41,62 +97,7 @@ fn apply_process<A: Process + 'static>(system: &mut System, id: Id) -> Result<()
     };
 
     // Return the actor
-    system.return_actor(id, actor, after)?;
+    system.return_actor(id, actor, after == After::Stop)?;
 
     Ok(())
-}
-
-#[instrument("scheduler", skip_all)]
-pub fn start_scheduler(
-    system: &mut System,
-    parent: Option<Id>,
-) -> Result<(SenderT<ProcessItem>, Id), Error> {
-    // TODO: Encapsulate Id
-
-    // Create the scheduler
-    let info = system.create_actor(parent)?;
-    let actor = SchedulerActor {
-        queue: VecDeque::new(),
-    };
-    system.start_actor(info, actor)?;
-
-    Ok((info.sender(), info.id()))
-}
-
-struct SchedulerActor {
-    queue: VecDeque<ProcessItem>,
-}
-
-impl ActorT for SchedulerActor {
-    type Message = ProcessItem;
-
-    fn handle(&mut self, _system: &mut System, message: ProcessItem) -> Result<After, Error> {
-        // TODO: Avoid duplicates
-        self.queue.push_back(message);
-        Ok(After::Nothing)
-    }
-}
-
-/// Run all queued actor processing tasks, until none remain.
-///
-/// Running a process task may spawn new process tasks, so this is not guaranteed to ever
-/// return.
-pub fn run_until_idle(system: &mut System, scheduler: Id) -> Result<(), Error> {
-    system.cleanup_pending()?;
-
-    while let Some(item) = take_next(system, scheduler) {
-        // Apply process
-        (item.apply)(system, item.id)?;
-
-        system.cleanup_pending()?;
-    }
-
-    Ok(())
-}
-
-fn take_next(system: &mut System, scheduler: Id) -> Option<ProcessItem> {
-    let scheduler = system
-        .get_mut::<SchedulerActor>(scheduler)
-        .expect("failed to get scheduler");
-    scheduler.queue.pop_front()
 }

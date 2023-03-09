@@ -2,7 +2,7 @@ mod utils;
 
 use anyhow::Error;
 use stewart::System;
-use stewart_scheduler::{run_until_idle, start_scheduler};
+use stewart_scheduler::Schedule;
 use tracing::{event, Level};
 
 use crate::hello_serivce::{start_hello, HelloMsg};
@@ -11,10 +11,10 @@ fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut system = System::new();
+    let schedule = Schedule::new();
 
     // Start the hello service
-    let (process, scheduler) = start_scheduler(&mut system, None)?;
-    let sender = start_hello(&mut system, None, process)?;
+    let sender = start_hello(&mut system, None, schedule.clone())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -27,7 +27,7 @@ fn main() -> Result<(), Error> {
 
     // Process actors until idle
     event!(Level::DEBUG, "processing actors");
-    run_until_idle(&mut system, scheduler)?;
+    schedule.run_until_idle(&mut system)?;
 
     Ok(())
 }
@@ -36,8 +36,11 @@ fn main() -> Result<(), Error> {
 mod hello_serivce {
     use anyhow::Error;
     use family::Member;
-    use stewart::{Actor, After, Id, Info, Sender, SenderT, System};
-    use stewart_scheduler::{Process, ProcessItem};
+    use stewart::{
+        handler::{After, Handler, Sender},
+        Id, Info, System,
+    };
+    use stewart_scheduler::{Process, Schedule};
     use tracing::{event, instrument, Level};
 
     /// When creating a borrowed message, you need to implement the `Member` and `Family` traits.
@@ -51,7 +54,7 @@ mod hello_serivce {
     pub fn start_hello(
         system: &mut System,
         parent: Option<Id>,
-        process: SenderT<ProcessItem>,
+        schedule: Schedule,
     ) -> Result<Sender<HelloMsgF>, Error> {
         event!(Level::DEBUG, "creating service");
 
@@ -59,30 +62,31 @@ mod hello_serivce {
         let actor = HelloActor {
             info,
             queue: Vec::new(),
-            process,
+            schedule,
         };
         system.start_actor(info, actor)?;
 
-        Ok(info.sender())
+        Ok(Sender::new(info))
     }
 
     /// The actor implementation below remains entirely private to the module.
     struct HelloActor {
         info: Info<Self>,
         queue: Vec<String>,
-        process: SenderT<ProcessItem>,
+        schedule: Schedule,
     }
 
-    impl Actor for HelloActor {
+    impl Handler for HelloActor {
         type Family = HelloMsgF;
 
-        fn handle(&mut self, system: &mut System, message: HelloMsg) -> Result<After, Error> {
+        fn handle(&mut self, _system: &mut System, message: HelloMsg) -> Result<After, Error> {
             event!(Level::DEBUG, "queuing message");
 
+            // Record the message on the actor's processing queue
             self.queue.push(message.0.to_string());
 
-            let message = ProcessItem::new::<Self>(self.info.id());
-            self.process.send(system, message);
+            // Add this actor to the schedule for processing
+            self.schedule.push(self.info)?;
 
             Ok(After::Nothing)
         }
@@ -90,6 +94,8 @@ mod hello_serivce {
 
     impl Process for HelloActor {
         fn process(&mut self, _system: &mut System) -> Result<After, Error> {
+            event!(Level::DEBUG, "processing scheduled messages");
+
             for entry in self.queue.drain(..) {
                 event!(Level::INFO, "Hello, {}!", entry);
             }

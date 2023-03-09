@@ -30,7 +30,10 @@ fn main() -> Result<(), Error> {
 mod hello_serivce {
     use anyhow::Error;
     use family::Member;
-    use stewart::{Actor, After, Id, Sender, System};
+    use stewart::{
+        handler::{After, Handler, Sender},
+        Id, System,
+    };
     use tracing::{event, instrument, Level};
 
     /// When creating a borrowed message, you need to implement the `Member` and `Family` traits.
@@ -50,13 +53,13 @@ mod hello_serivce {
         let info = system.create_actor(parent)?;
         system.start_actor(info, HelloActor)?;
 
-        Ok(info.sender())
+        Ok(Sender::new(info))
     }
 
     /// The actor implementation below remains entirely private to the module.
     struct HelloActor;
 
-    impl Actor for HelloActor {
+    impl Handler for HelloActor {
         type Family = HelloMsgF;
 
         fn handle(&mut self, _system: &mut System, message: HelloMsg) -> Result<After, Error> {

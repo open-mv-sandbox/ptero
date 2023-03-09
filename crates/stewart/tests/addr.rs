@@ -1,6 +1,6 @@
 use std::mem::size_of;
 
-use stewart::SenderT;
+use stewart::handler::SenderT;
 
 #[test]
 fn system_addr_option_same_size() {

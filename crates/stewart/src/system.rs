@@ -5,9 +5,9 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::{Actor, After, Id, Info};
+use crate::{Id, Info};
 
-/// Thread-local cooperative multitasking actor scheduler.
+/// Thread-local actor collection and lifetime manager.
 #[derive(Default)]
 pub struct System {
     actors: Arena<ActorEntry>,
@@ -15,7 +15,7 @@ pub struct System {
 }
 
 impl System {
-    /// Create a new thread-local system with no actors.
+    /// Create a new empty `System`.
     pub fn new() -> Self {
         Self::default()
     }
@@ -23,7 +23,7 @@ impl System {
     /// Create an actor on the system.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create_actor<A: Actor + 'static>(
+    pub fn create_actor<A: 'static>(
         &mut self,
         parent: Option<Id>,
     ) -> Result<Info<A>, CreateActorError> {
@@ -54,7 +54,7 @@ impl System {
     /// Start an actor on the system, making it available for handling messages.
     pub fn start_actor<A>(&mut self, info: Info<A>, actor: A) -> Result<(), StartActorError>
     where
-        A: Actor + 'static,
+        A: 'static,
     {
         event!(Level::INFO, "starting actor");
 
@@ -102,7 +102,10 @@ impl System {
     }
 
     /// Temporarily borrow an actor without taking it.
-    pub fn get_mut<A: 'static>(&mut self, id: Id) -> Option<&mut A> {
+    pub fn get_mut<A>(&mut self, id: Id) -> Option<&mut A>
+    where
+        A: 'static,
+    {
         let index = id.index;
 
         let entry = self.actors.get_mut(index)?;
@@ -111,7 +114,10 @@ impl System {
         actor.as_mut().downcast_mut()
     }
 
-    pub fn borrow_actor<A: 'static>(&mut self, id: Id) -> Result<(Span, Box<A>), BorrowError> {
+    pub fn borrow_actor<A>(&mut self, id: Id) -> Result<(Span, Box<A>), BorrowError>
+    where
+        A: 'static,
+    {
         // Find the actor's entry
         let entry = self
             .actors
@@ -136,16 +142,14 @@ impl System {
         Ok((entry.span.clone(), actor))
     }
 
-    pub fn return_actor<A: 'static>(
-        &mut self,
-        id: Id,
-        actor: Box<A>,
-        after: After,
-    ) -> Result<(), BorrowError> {
+    pub fn return_actor<A>(&mut self, id: Id, actor: Box<A>, stop: bool) -> Result<(), BorrowError>
+    where
+        A: 'static,
+    {
         // TODO: Validate same type slot
 
         // If we got told to stop the actor, do that instead of returning
-        if after == After::Stop {
+        if stop {
             event!(Level::INFO, "stopping actor");
             drop(actor);
             self.actors.remove(id.index);
@@ -197,12 +201,14 @@ struct ActorEntry {
 }
 
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum CreateActorError {
     #[error("failed to start actor, actor isn't pending to be started")]
     ParentDoesNotExist,
 }
 
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum StartActorError {
     #[error("failed to start actor, actor isn't pending to be started")]
     ActorNotPending,
@@ -213,6 +219,7 @@ pub enum StartActorError {
 }
 
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum BorrowError {
     #[error("failed to borrow actor, no actor exists at the given address")]
     ActorNotFound,

@@ -1001,6 +1001,7 @@ dependencies = [
  "anyhow",
  "family",
  "stewart",
+ "thiserror",
  "tracing",
  "tracing-subscriber",
 ]
