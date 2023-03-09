@@ -1,7 +1,7 @@
 use anyhow::Error;
 use family::{utils::FamilyT, Family};
 
-use crate::{Actor, Addr, After, System};
+use crate::{Actor, After, Sender, System};
 
 /// Convenience actor specialization that operates on messages with a static lifetime.
 ///
@@ -29,5 +29,5 @@ where
     }
 }
 
-/// Convenience alias for addresses of `ActorT`.
-pub type AddrT<T> = Addr<FamilyT<T>>;
+/// Convenience alias for sender of `ActorT`.
+pub type SenderT<T> = Sender<FamilyT<T>>;

@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::atomic::AtomicPtr};
 
 use thunderdome::Index;
 
-use crate::Actor;
+use crate::{Actor, Sender};
 
 /// Identifying handle of a created actor.
 ///
@@ -19,7 +19,7 @@ pub struct Info<A> {
 
 impl<A> Info<A>
 where
-    A: Actor,
+    A: Actor + 'static,
 {
     pub(crate) fn new(index: Index) -> Self {
         Self {
@@ -36,11 +36,8 @@ where
         Id(Some(self.index))
     }
 
-    pub fn addr(self) -> Addr<A::Family> {
-        Addr {
-            index: self.index,
-            _p: PhantomData,
-        }
+    pub fn sender(self) -> Sender<A::Family> {
+        Sender::new::<A>(self.index)
     }
 }
 
@@ -66,26 +63,3 @@ impl Id {
         Self(None)
     }
 }
-
-/// Address for sending messages to an actor.
-///
-/// `Addr` is intentionally !Send + !Sync. In most cases sending an addr between threads is a
-/// mistake, as it's only valid for one `System`, and `System` is !Send + !Sync.
-pub struct Addr<F> {
-    index: Index,
-    _p: PhantomData<*const F>,
-}
-
-impl<F> Addr<F> {
-    pub(crate) fn index(self) -> Index {
-        self.index
-    }
-}
-
-impl<F> Clone for Addr<F> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<F> Copy for Addr<F> {}

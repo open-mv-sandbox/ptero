@@ -1,12 +1,12 @@
 use std::any::Any;
 
 use anyhow::{Context, Error};
-use family::{any::FamilyMember, Family};
+use family::Family;
 use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::{dynamic::AnyActor, Actor, Addr, After, Id, Info};
+use crate::{Actor, After, Id, Info, Sender};
 
 /// Thread-local cooperative multitasking actor scheduler.
 #[derive(Default)]
@@ -24,7 +24,10 @@ impl System {
     /// Create an actor on the system.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create_actor<A: Actor>(&mut self, parent: Id) -> Result<Info<A>, CreateActorError> {
+    pub fn create_actor<A: Actor + 'static>(
+        &mut self,
+        parent: Id,
+    ) -> Result<Info<A>, CreateActorError> {
         // Continual span is inherited from the create addr callsite
         let span = Span::current();
 
@@ -77,62 +80,6 @@ impl System {
         Ok(())
     }
 
-    /// Handle a message, immediately sending it to the actor's reducer.
-    ///
-    /// Handle never returns an error, but is not guaranteed to actually deliver the message.
-    /// Message delivery failure can be for a variety of reasons, not always caused by the sender,
-    /// and not always caused by the receiver. This makes it unclear who should receive the error.
-    ///
-    /// TODO: An open question on this is if there should be a common unified API for 'failed
-    /// message delivery'. This may be beneficial so different systems know how to handle this.
-    /// As well, this would let us formalize a unified way to handle this with remote and
-    /// unreliable delivery (potentially over network) through liason actors.
-    pub fn handle<'a, F>(&mut self, addr: Addr<F>, message: impl Into<F::Member<'a>>)
-    where
-        F: Family,
-    {
-        let result = self.try_handle(addr, message);
-        match result {
-            Ok(value) => value,
-            Err(error) => {
-                event!(Level::WARN, "failed to handle message\n{:?}", error);
-            }
-        }
-    }
-
-    fn try_handle<'a, F>(
-        &mut self,
-        addr: Addr<F>,
-        message: impl Into<F::Member<'a>>,
-    ) -> Result<(), Error>
-    where
-        F: Family,
-    {
-        // Attempt to borrow the actor for handling
-        let (span, mut actor) = self.borrow_actor_inner(addr.index())?;
-        let _entry = span.enter();
-
-        // Let the actor reduce the message
-        let message = message.into();
-        let mut message = Some(FamilyMember::<F>(message));
-        let result = actor.handle(self, &mut message);
-
-        // Handle the result
-        let after = match result {
-            Ok(value) => value,
-            Err(error) => {
-                // TODO: What to do with this?
-                event!(Level::ERROR, "actor failed to reduce message\n{:?}", error);
-                After::Nothing
-            }
-        };
-
-        // Return the actor
-        self.return_actor_inner(addr.index(), actor, after)?;
-
-        Ok(())
-    }
-
     /// Clean up actors that didn't start in time, and thus failed.
     pub fn cleanup_pending(&mut self) -> Result<(), Error> {
         // Intentionally in reverse order, clean up children before parents
@@ -155,28 +102,21 @@ impl System {
         Ok(())
     }
 
-    pub fn borrow_actor<A: Actor + 'static>(
-        &mut self,
-        id: Id,
-    ) -> Result<(Span, Box<A>), BorrowError> {
+    pub fn borrow_actor<A: 'static>(&mut self, id: Id) -> Result<(Span, Box<A>), BorrowError> {
+        // TODO: Cleanup borrow/return now that only public ones are called
+
         let index = id.0.ok_or(BorrowError::CantBorrowRoot)?;
         let (span, actor) = self.borrow_actor_inner(index)?;
 
         // Downcast the actor to the desired type
         // TODO: Return the actor again on failure, or prevent it from being taken in the
         // first place
-        let actor = actor
-            .into_any()
-            .downcast()
-            .map_err(|_| BorrowError::ActorWrongType)?;
+        let actor = actor.downcast().map_err(|_| BorrowError::ActorWrongType)?;
 
         Ok((span, actor))
     }
 
-    fn borrow_actor_inner(
-        &mut self,
-        index: Index,
-    ) -> Result<(Span, Box<dyn AnyActor>), BorrowError> {
+    fn borrow_actor_inner(&mut self, index: Index) -> Result<(Span, Box<dyn Any>), BorrowError> {
         // Find the actor's entry
         let entry = self
             .actors
@@ -201,17 +141,8 @@ impl System {
         after: After,
     ) -> Result<(), BorrowError> {
         // TODO: Validate same type
-
         let index = id.0.ok_or(BorrowError::CantBorrowRoot)?;
-        self.return_actor_inner(index, actor, after)
-    }
 
-    fn return_actor_inner(
-        &mut self,
-        index: Index,
-        actor: Box<dyn AnyActor>,
-        after: After,
-    ) -> Result<(), BorrowError> {
         // If we got told to stop the actor, do that instead of returning
         if after == After::Stop {
             event!(Level::INFO, "stopping actor");
@@ -220,6 +151,7 @@ impl System {
             return Ok(());
         }
 
+        // Put the actor back in the slot
         let entry = self
             .actors
             .get_mut(index)
@@ -230,11 +162,10 @@ impl System {
     }
 
     // TODO: Clean this up
-    pub fn get_mut<F>(&mut self, addr: Addr<F>) -> &mut dyn Any {
-        let entry = self.actors.get_mut(addr.index()).unwrap();
+    pub fn get_mut<F: Family>(&mut self, addr: Sender<F>) -> &mut dyn Any {
+        let entry = self.actors.get_mut(addr.index).unwrap();
         let actor = entry.actor.as_mut().unwrap();
-        let actor = actor.as_mut();
-        actor.as_any()
+        actor.as_mut()
     }
 }
 
@@ -268,7 +199,7 @@ struct ActorEntry {
     debug_name: &'static str,
     /// Persistent logging span, groups logging that happenened under this actor.
     span: Span,
-    actor: Option<Box<dyn AnyActor>>,
+    actor: Option<Box<dyn Any>>,
 }
 
 #[derive(Error, Debug)]

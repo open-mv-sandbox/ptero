@@ -12,16 +12,16 @@ fn main() -> Result<(), Error> {
     let mut system = System::new();
 
     // Start the hello service
-    let addr = start_hello(&mut system, Id::root())?;
+    let sender = start_hello(&mut system, Id::root())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
-    system.handle(addr, HelloMsg("World"));
-    system.handle(addr, HelloMsg("Actors"));
+    sender.send(&mut system, HelloMsg("World"));
+    sender.send(&mut system, HelloMsg("Actors"));
 
     // You can also use temporary borrows!
     let data = String::from("Borrowed");
-    system.handle(addr, HelloMsg(data.as_str()));
+    sender.send(&mut system, HelloMsg(data.as_str()));
 
     Ok(())
 }
@@ -30,7 +30,7 @@ fn main() -> Result<(), Error> {
 mod hello_serivce {
     use anyhow::Error;
     use family::Member;
-    use stewart::{Actor, Addr, After, Id, System};
+    use stewart::{Actor, After, Id, Sender, System};
     use tracing::{event, instrument, Level};
 
     /// When creating a borrowed message, you need to implement the `Member` and `Family` traits.
@@ -41,13 +41,13 @@ mod hello_serivce {
     /// The start function uses the concrete actor internally, the actor itself is never public.
     /// By instrumenting the start function, your actor's callbacks will use it automatically.
     #[instrument("hello", skip_all)]
-    pub fn start_hello(system: &mut System, parent: Id) -> Result<Addr<HelloMsgF>, Error> {
+    pub fn start_hello(system: &mut System, parent: Id) -> Result<Sender<HelloMsgF>, Error> {
         event!(Level::DEBUG, "creating service");
 
         let info = system.create_actor(parent)?;
         system.start_actor(info, HelloActor)?;
 
-        Ok(info.addr())
+        Ok(info.sender())
     }
 
     /// The actor implementation below remains entirely private to the module.

@@ -4,14 +4,15 @@
 //! stewart book.
 
 mod actor;
-mod dynamic;
 mod family;
 mod info;
+mod sender;
 mod system;
 
 pub use self::{
     actor::{Actor, After},
-    family::{ActorT, AddrT},
-    info::{Addr, Id, Info},
+    family::{ActorT, SenderT},
+    info::{Id, Info},
+    sender::Sender,
     system::{BorrowError, CreateActorError, StartActorError, System},
 };

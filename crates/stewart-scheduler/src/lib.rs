@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use anyhow::Error;
-use stewart::{Actor, ActorT, AddrT, After, Id, System};
+use stewart::{Actor, ActorT, After, Id, SenderT, System};
 use tracing::{event, instrument, Level};
 
 pub trait Process {
@@ -47,7 +47,7 @@ fn apply_process<A: Process + Actor + 'static>(system: &mut System, id: Id) -> R
 }
 
 #[instrument("scheduler", skip_all)]
-pub fn start_scheduler(system: &mut System, parent: Id) -> Result<AddrT<ProcessItem>, Error> {
+pub fn start_scheduler(system: &mut System, parent: Id) -> Result<SenderT<ProcessItem>, Error> {
     // Create the scheduler
     let info = system.create_actor(parent)?;
     let actor = SchedulerActor {
@@ -55,7 +55,7 @@ pub fn start_scheduler(system: &mut System, parent: Id) -> Result<AddrT<ProcessI
     };
     system.start_actor(info, actor)?;
 
-    Ok(info.addr())
+    Ok(info.sender())
 }
 
 struct SchedulerActor {
@@ -76,7 +76,7 @@ impl ActorT for SchedulerActor {
 ///
 /// Running a process task may spawn new process tasks, so this is not guaranteed to ever
 /// return.
-pub fn run_until_idle(system: &mut System, process: AddrT<ProcessItem>) -> Result<(), Error> {
+pub fn run_until_idle(system: &mut System, process: SenderT<ProcessItem>) -> Result<(), Error> {
     system.cleanup_pending()?;
 
     while let Some(item) = take_next(system, process) {
@@ -89,7 +89,7 @@ pub fn run_until_idle(system: &mut System, process: AddrT<ProcessItem>) -> Resul
     Ok(())
 }
 
-fn take_next(system: &mut System, process: AddrT<ProcessItem>) -> Option<ProcessItem> {
+fn take_next(system: &mut System, process: SenderT<ProcessItem>) -> Option<ProcessItem> {
     // Downcast to get the scheduler itself
     let scheduler = system.get_mut(process);
     let scheduler: &mut SchedulerActor = scheduler.downcast_mut().unwrap();
