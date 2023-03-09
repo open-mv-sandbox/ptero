@@ -7,7 +7,10 @@ use anyhow::{bail, Error};
 use bytemuck::{bytes_of_mut, Zeroable};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
 use ptero_io::{ReadResult, ReadResultF, ReadWriteCmd};
-use stewart::{Actor, AddrT, After, Id, System};
+use stewart::{
+    handler::{Handler, Sender, SenderT},
+    After, Id, System,
+};
 use tracing::{event, instrument, Level};
 
 use crate::manager::FileManagerMsg;
@@ -15,9 +18,9 @@ use crate::manager::FileManagerMsg;
 #[instrument("read-header", skip_all)]
 pub fn start_read_header(
     system: &mut System,
-    parent: Id,
-    read_write: AddrT<ReadWriteCmd>,
-    manager: AddrT<FileManagerMsg>,
+    parent: Option<Id>,
+    read_write: SenderT<ReadWriteCmd>,
+    manager: SenderT<FileManagerMsg>,
 ) -> Result<(), Error> {
     event!(Level::INFO, "reading header");
 
@@ -26,9 +29,9 @@ pub fn start_read_header(
     let msg = ReadWriteCmd::Read {
         start: 0,
         length: (SIGNATURE.len() + size_of::<ComponentTableHeader>()) as u64,
-        reply: info.addr(),
+        on_result: Sender::new(info),
     };
-    system.handle(read_write, msg);
+    read_write.send(system, msg);
 
     let actor = ReadHeaderActor { manager };
     system.start_actor(info, actor)?;
@@ -37,13 +40,13 @@ pub fn start_read_header(
 }
 
 struct ReadHeaderActor {
-    manager: AddrT<FileManagerMsg>,
+    manager: SenderT<FileManagerMsg>,
 }
 
-impl Actor for ReadHeaderActor {
+impl Handler for ReadHeaderActor {
     type Family = ReadResultF;
 
-    fn reduce(&mut self, system: &mut System, message: ReadResult) -> Result<After, Error> {
+    fn handle(&mut self, system: &mut System, message: ReadResult) -> Result<After, Error> {
         let data = message?;
 
         // Validate signature
@@ -56,7 +59,7 @@ impl Actor for ReadHeaderActor {
         bytes_of_mut(&mut header).copy_from_slice(&data[8..]);
 
         // Pass it to the manager
-        system.handle(self.manager, FileManagerMsg::Header(header));
+        self.manager.send(system, FileManagerMsg::Header(header));
 
         Ok(After::Stop)
     }
@@ -65,11 +68,11 @@ impl Actor for ReadHeaderActor {
 #[instrument("read-entries", skip_all)]
 pub fn start_read_entries(
     system: &mut System,
-    parent: Id,
-    read_write: AddrT<ReadWriteCmd>,
+    parent: Option<Id>,
+    read_write: SenderT<ReadWriteCmd>,
     start: u64,
     length: usize,
-    manager: AddrT<FileManagerMsg>,
+    manager: SenderT<FileManagerMsg>,
 ) -> Result<(), Error> {
     event!(Level::INFO, "reading entries");
 
@@ -78,9 +81,9 @@ pub fn start_read_entries(
     let msg = ReadWriteCmd::Read {
         start,
         length: (length * size_of::<ComponentEntry>()) as u64,
-        reply: info.addr(),
+        on_result: Sender::new(info),
     };
-    system.handle(read_write, msg);
+    read_write.send(system, msg);
 
     let actor = ReadEntriesActor { manager, length };
     system.start_actor(info, actor)?;
@@ -89,14 +92,14 @@ pub fn start_read_entries(
 }
 
 struct ReadEntriesActor {
-    manager: AddrT<FileManagerMsg>,
+    manager: SenderT<FileManagerMsg>,
     length: usize,
 }
 
-impl Actor for ReadEntriesActor {
+impl Handler for ReadEntriesActor {
     type Family = ReadResultF;
 
-    fn reduce(&mut self, system: &mut System, message: ReadResult) -> Result<After, Error> {
+    fn handle(&mut self, system: &mut System, message: ReadResult) -> Result<After, Error> {
         let data = message?;
 
         let mut entries = Vec::new();
@@ -109,7 +112,7 @@ impl Actor for ReadEntriesActor {
         }
 
         // Reply with the read data
-        system.handle(self.manager, FileManagerMsg::Entries(entries));
+        self.manager.send(system, FileManagerMsg::Entries(entries));
 
         Ok(After::Stop)
     }

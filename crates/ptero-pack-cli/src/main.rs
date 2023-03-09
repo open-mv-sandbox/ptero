@@ -2,7 +2,7 @@ mod commands;
 
 use anyhow::Error;
 use clap::{Parser, Subcommand};
-use stewart::System;
+use stewart::{schedule::Schedule, System};
 use tracing::{event, Level};
 use tracing_subscriber::{prelude::*, EnvFilter, FmtSubscriber};
 
@@ -35,18 +35,18 @@ fn main() {
 fn try_main(args: CliArgs) -> Result<(), Error> {
     // Set up the runtime
     let mut system = System::new();
+    let schedule = Schedule::new();
 
     // Start the command actor
     match args.command {
         Command::Create(command) => commands::create::start(&mut system, command)?,
-        Command::Add(command) => commands::add::start(&mut system, command)?,
+        Command::Add(command) => commands::add::start(&mut system, schedule.clone(), command)?,
     };
 
     // Run the command until it's done
-    system.run_until_idle()?;
+    schedule.run_until_idle(&mut system)?;
 
-    // TODO: Stewart doesn't currently bubble up errors for us to catch, and we need those for the
-    // correct error code.
+    // TODO: Receive command errors
     Ok(())
 }
 

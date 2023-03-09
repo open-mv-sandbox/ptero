@@ -31,12 +31,17 @@ where
     {
         Self {
             id: info.id(),
-            // TODO: We can actually use a static mapping impl here!
+            // TODO: We can use a static marker trait with a function here for cheap mapping.
+            // Passing the trait to the apply function will get us a unique combination function.
             apply: apply_handle::<A>,
             _p: PhantomData,
         }
     }
 
+    /// Send a message to an actor, which will handle it in-place.
+    ///
+    /// TODO: Errors are intentionally ignored, but maybe it would be useful to have a unified way
+    /// to handle sending errors of any kind (including over a network).
     pub fn send<'a>(self, system: &mut System, message: impl Into<F::Member<'a>>) {
         let message = message.into();
         (self.apply)(system, self.id, message)

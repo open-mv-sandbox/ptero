@@ -3,7 +3,11 @@ use std::{collections::VecDeque, mem::size_of};
 use anyhow::{Context, Error};
 use daicon::{ComponentEntry, ComponentTableHeader};
 use ptero_io::ReadWriteCmd;
-use stewart::{ActorT, AddrT, After, Id, Info, System};
+use stewart::{
+    handler::{HandlerT, SenderT},
+    schedule::{Process, Schedule},
+    After, Id, Info, System,
+};
 use stewart_utils::start_map;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -14,20 +18,35 @@ use crate::read::{start_read_entries, start_read_header};
 #[instrument("file-manager", skip_all)]
 pub fn start_file_manager(
     system: &mut System,
-    parent: Id,
-    read_write: AddrT<ReadWriteCmd>,
-) -> Result<AddrT<FileManagerCommand>, Error> {
+    parent: Option<Id>,
+    schedule: Schedule,
+    read_write: SenderT<ReadWriteCmd>,
+) -> Result<SenderT<FileManagerCommand>, Error> {
     let info = system.create_actor(parent)?;
 
     // Public API mapping actor
-    let api_addr = start_map(system, info.id(), info.addr(), FileManagerMsg::Command)?;
+    let api_addr = start_map(
+        system,
+        Some(info.id()),
+        SenderT::new(info),
+        FileManagerMsg::Command,
+    )?;
 
     // Start the root manager actor
-    let actor = FileManagerActor::new(info, read_write);
+    let actor = FileManagerActor {
+        info,
+        schedule,
+        queue: VecDeque::new(),
+        read_write,
+
+        pending: Vec::new(),
+        header: None,
+        entries: None,
+    };
     system.start_actor(info, actor)?;
 
     // Immediately start reading the first header
-    start_read_header(system, info.id(), read_write, info.addr())?;
+    start_read_header(system, Some(info.id()), read_write, SenderT::new(info))?;
 
     Ok(api_addr)
 }
@@ -38,7 +57,7 @@ pub enum FileManagerCommand {
 
 pub struct GetComponentCommand {
     pub id: Uuid,
-    pub on_result: AddrT<GetComponentResult>,
+    pub on_result: SenderT<GetComponentResult>,
 }
 
 pub struct GetComponentResult {
@@ -48,8 +67,9 @@ pub struct GetComponentResult {
 
 struct FileManagerActor {
     info: Info<Self>,
+    schedule: Schedule,
     queue: VecDeque<FileManagerMsg>,
-    read_write: AddrT<ReadWriteCmd>,
+    read_write: SenderT<ReadWriteCmd>,
 
     pending: Vec<GetComponentCommand>,
     header: Option<ComponentTableHeader>,
@@ -57,18 +77,6 @@ struct FileManagerActor {
 }
 
 impl FileManagerActor {
-    fn new(info: Info<Self>, read_write: AddrT<ReadWriteCmd>) -> Self {
-        Self {
-            info,
-            queue: VecDeque::new(),
-            read_write,
-
-            pending: Vec::new(),
-            header: None,
-            entries: None,
-        }
-    }
-
     fn on_message(
         &mut self,
         system: &mut System,
@@ -84,11 +92,11 @@ impl FileManagerActor {
                 // Start reading the entries for this header
                 start_read_entries(
                     system,
-                    self.info.id(),
+                    Some(self.info.id()),
                     self.read_write,
                     8 + size_of::<ComponentTableHeader>() as u64,
                     header.length() as usize,
-                    self.info.addr(),
+                    SenderT::new(self.info),
                 )?;
 
                 // TODO: Follow additional headers
@@ -135,7 +143,7 @@ impl FileManagerActor {
                     offset: header.entries_offset(),
                     entry: *entry,
                 };
-                system.handle(pending.on_result, result);
+                pending.on_result.send(system, result);
                 return false;
             }
 
@@ -148,14 +156,17 @@ impl FileManagerActor {
     }
 }
 
-impl ActorT for FileManagerActor {
+impl HandlerT for FileManagerActor {
     type Message = FileManagerMsg;
 
-    fn reduce(&mut self, _system: &mut System, message: FileManagerMsg) -> Result<After, Error> {
+    fn handle(&mut self, _system: &mut System, message: FileManagerMsg) -> Result<After, Error> {
         self.queue.push_back(message);
-        Ok(After::Process)
+        self.schedule.push(self.info)?;
+        Ok(After::Nothing)
     }
+}
 
+impl Process for FileManagerActor {
     fn process(&mut self, system: &mut System) -> Result<After, Error> {
         let mut entries_changed = false;
 

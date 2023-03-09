@@ -1,6 +1,6 @@
 use anyhow::Error;
 use clap::Args;
-use stewart::{ActorT, After, Id, System};
+use stewart::System;
 use tracing::{event, instrument, Level};
 
 /// Create a new dacti package.
@@ -15,7 +15,7 @@ pub struct CreateCommand {
 pub fn start(system: &mut System, data: CreateCommand) -> Result<(), Error> {
     event!(Level::INFO, "creating package");
 
-    let info = system.create_actor(Id::root())?;
+    let info = system.create_actor(None)?;
     system.start_actor(info, CreateCommandActor)?;
 
     ptero_pack::create_package(&data.package)?;
@@ -24,16 +24,3 @@ pub fn start(system: &mut System, data: CreateCommand) -> Result<(), Error> {
 }
 
 struct CreateCommandActor;
-
-impl ActorT for CreateCommandActor {
-    type Message = ();
-
-    fn reduce(&mut self, _system: &mut System, _message: ()) -> Result<After, Error> {
-        unimplemented!()
-    }
-
-    fn process(&mut self, _system: &mut System) -> Result<After, Error> {
-        // TODO: Currently makes no sense for this to be an actor, but it will use other actors
-        unimplemented!()
-    }
-}

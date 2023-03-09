@@ -4,7 +4,11 @@ use std::{
 };
 
 use anyhow::{Context as ContextExt, Error};
-use stewart::{ActorT, AddrT, After, Id, System};
+use stewart::{
+    handler::{HandlerT, SenderT},
+    schedule::{Process, Schedule},
+    After, Id, Info, System,
+};
 use tracing::{event, instrument, Level};
 
 use crate::ReadWriteCmd;
@@ -13,10 +17,11 @@ use crate::ReadWriteCmd;
 #[instrument("file-read-write", skip_all)]
 pub fn start_file_read_write(
     system: &mut System,
-    parent: Id,
+    parent: Option<Id>,
+    schedule: Schedule,
     path: String,
     truncate: bool,
-) -> Result<AddrT<ReadWriteCmd>, Error> {
+) -> Result<SenderT<ReadWriteCmd>, Error> {
     let info = system.create_actor(parent)?;
 
     let package_file = OpenOptions::new()
@@ -27,29 +32,37 @@ pub fn start_file_read_write(
         .context("failed to open target package for writing")?;
 
     let actor = FileReadWriteActor {
+        info,
+        schedule,
         queue: Vec::new(),
         package_file,
         scratch_buffer: Vec::new(),
     };
     system.start_actor(info, actor)?;
 
-    Ok(info.addr())
+    Ok(SenderT::new(info))
 }
 
 struct FileReadWriteActor {
+    info: Info<Self>,
+    schedule: Schedule,
     queue: Vec<ReadWriteCmd>,
     package_file: File,
     scratch_buffer: Vec<u8>,
 }
 
-impl ActorT for FileReadWriteActor {
+impl HandlerT for FileReadWriteActor {
     type Message = ReadWriteCmd;
 
-    fn reduce<'a>(&mut self, _system: &mut System, message: ReadWriteCmd) -> Result<After, Error> {
+    fn handle<'a>(&mut self, _system: &mut System, message: ReadWriteCmd) -> Result<After, Error> {
         self.queue.push(message);
-        Ok(After::Process)
-    }
+        self.schedule.push(self.info)?;
 
+        Ok(After::Nothing)
+    }
+}
+
+impl Process for FileReadWriteActor {
     fn process(&mut self, system: &mut System) -> Result<After, Error> {
         event!(
             Level::INFO,
@@ -64,14 +77,14 @@ impl ActorT for FileReadWriteActor {
                 ReadWriteCmd::Read {
                     start,
                     length,
-                    reply,
+                    on_result: reply,
                 } => {
                     self.scratch_buffer.resize(length as usize, 0);
 
                     self.package_file.seek(SeekFrom::Start(start))?;
                     self.package_file.read_exact(&mut self.scratch_buffer)?;
                     let msg = Ok(self.scratch_buffer.as_slice());
-                    system.handle(reply, msg);
+                    reply.send(system, msg);
                 }
                 ReadWriteCmd::Write { start, data } => {
                     self.package_file.seek(SeekFrom::Start(start))?;

@@ -2,7 +2,7 @@ mod file;
 
 use anyhow::Error;
 use family::{Family, Member};
-use stewart::Addr;
+use stewart::handler::Sender;
 
 pub use self::file::start_file_read_write;
 
@@ -11,7 +11,7 @@ pub enum ReadWriteCmd {
     Read {
         start: u64,
         length: u64,
-        reply: Addr<ReadResultF>,
+        on_result: Sender<ReadResultF>,
     },
     Write {
         start: u64,

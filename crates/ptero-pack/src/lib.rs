@@ -14,7 +14,11 @@ use dacti_index::{
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{FileManagerCommand, GetComponentCommand, GetComponentResult};
 use ptero_io::ReadWriteCmd;
-use stewart::{ActorT, AddrT, After, Id, System};
+use stewart::{
+    handler::{HandlerT, SenderT},
+    schedule::{Process, Schedule},
+    After, Id, Info, System,
+};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -57,7 +61,12 @@ pub fn create_package(path: &str) -> Result<(), Error> {
 }
 
 #[instrument("add-data", skip_all)]
-pub fn start_add_data(system: &mut System, parent: Id, data: AddData) -> Result<(), Error> {
+pub fn start_add_data(
+    system: &mut System,
+    parent: Option<Id>,
+    schedule: Schedule,
+    data: AddData,
+) -> Result<(), Error> {
     event!(Level::DEBUG, "adding data to package");
 
     let info = system.create_actor(parent)?;
@@ -78,7 +87,7 @@ pub fn start_add_data(system: &mut System, parent: Id, data: AddData) -> Result<
         file_manager: data.file_manager,
         value: index_entry,
     };
-    AddIndexActor::start(system, info.id(), add_index)?;
+    AddIndexActor::start(system, Some(info.id()), schedule, add_index)?;
 
     // Write the file to the package
     event!(Level::DEBUG, "writing file data to package");
@@ -86,57 +95,53 @@ pub fn start_add_data(system: &mut System, parent: Id, data: AddData) -> Result<
         start: data_start,
         data: data.data,
     };
-    system.handle(data.file, write);
+    data.file.send(system, write);
 
     Ok(())
 }
 
 pub struct AddData {
-    pub file: AddrT<ReadWriteCmd>,
-    pub file_manager: AddrT<FileManagerCommand>,
+    pub file: SenderT<ReadWriteCmd>,
+    pub file_manager: SenderT<FileManagerCommand>,
     pub data: Vec<u8>,
     pub uuid: Uuid,
 }
 
 struct AddDataActor;
 
-impl ActorT for AddDataActor {
-    type Message = ();
-
-    fn reduce(&mut self, _system: &mut System, _message: ()) -> Result<After, Error> {
-        unimplemented!()
-    }
-
-    fn process(&mut self, _system: &mut System) -> Result<After, Error> {
-        // TODO: Report success/failure back
-        unimplemented!()
-    }
-}
-
 struct AddIndex {
-    file: AddrT<ReadWriteCmd>,
-    file_manager: AddrT<FileManagerCommand>,
+    file: SenderT<ReadWriteCmd>,
+    file_manager: SenderT<FileManagerCommand>,
     value: IndexEntry,
 }
 
 struct AddIndexActor {
+    info: Info<Self>,
+    schedule: Schedule,
     message: Option<GetComponentResult>,
-    file: AddrT<ReadWriteCmd>,
+    file: SenderT<ReadWriteCmd>,
     value: IndexEntry,
 }
 
 impl AddIndexActor {
-    fn start(system: &mut System, parent: Id, data: AddIndex) -> Result<(), Error> {
+    fn start(
+        system: &mut System,
+        parent: Option<Id>,
+        schedule: Schedule,
+        data: AddIndex,
+    ) -> Result<(), Error> {
         let info = system.create_actor(parent)?;
 
         let command = GetComponentCommand {
             id: INDEX_COMPONENT_UUID,
-            on_result: info.addr(),
+            on_result: SenderT::new(info),
         };
         let command = FileManagerCommand::GetComponent(command);
-        system.handle(data.file_manager, command);
+        data.file_manager.send(system, command);
 
         let actor = Self {
+            info,
+            schedule,
             message: None,
             file: data.file,
             value: data.value,
@@ -147,18 +152,21 @@ impl AddIndexActor {
     }
 }
 
-impl ActorT for AddIndexActor {
+impl HandlerT for AddIndexActor {
     type Message = GetComponentResult;
 
-    fn reduce(
+    fn handle(
         &mut self,
         _system: &mut System,
         message: GetComponentResult,
     ) -> Result<After, Error> {
         self.message = Some(message);
-        Ok(After::Process)
+        self.schedule.push(self.info)?;
+        Ok(After::Nothing)
     }
+}
 
+impl Process for AddIndexActor {
     fn process(&mut self, system: &mut System) -> Result<After, Error> {
         let message = self.message.take().context("incorrect state")?;
 
@@ -175,7 +183,7 @@ impl ActorT for AddIndexActor {
             start: component_offset,
             data,
         };
-        system.handle(self.file, msg);
+        self.file.send(system, msg);
 
         Ok(After::Stop)
     }
