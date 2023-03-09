@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::sync::atomic::AtomicPtr;
 
 use anyhow::Error;
-use stewart::{ActorT, AddrT, AfterProcess, AfterReduce, Id, System};
+use stewart::{ActorT, AddrT, After, Id, System};
 use tracing::instrument;
 
 /// Start actor that maps a value into another one.
@@ -43,14 +43,14 @@ where
 {
     type Message = A;
 
-    fn reduce(&mut self, system: &mut System, message: A) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, system: &mut System, message: A) -> Result<After, Error> {
         // Immediately re-route the message
         let message = (self.function)(message);
         system.handle(self.target, message);
-        Ok(AfterReduce::Nothing)
+        Ok(After::Nothing)
     }
 
-    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
-        Ok(AfterProcess::Nothing)
+    fn process(&mut self, _system: &mut System) -> Result<After, Error> {
+        Ok(After::Nothing)
     }
 }

@@ -8,7 +8,8 @@ use tracing::{event, Level, Span};
 
 use crate::{
     actors::{Actors, BorrowError},
-    Actor, Addr, AfterProcess, AfterReduce, Id, Info,
+    dynamic::AnyActor,
+    Actor, Addr, After, Id, Info,
 };
 
 /// Thread-local cooperative multitasking actor scheduler.
@@ -75,8 +76,10 @@ impl System {
     /// Message delivery failure can be for a variety of reasons, not always caused by the sender,
     /// and not always caused by the receiver. This makes it unclear who should receive the error.
     ///
-    /// The error is logged, and may in the future be handleable. If you have a use case where you
-    /// need to handle a handle error, open an issue.
+    /// TODO: An open question on this is if there should be a common unified API for 'failed
+    /// message delivery'. This may be beneficial so different systems know how to handle this.
+    /// As well, this would let us formalize a unified way to handle this with remote and
+    /// unreliable delivery (potentially over network) through liason actors.
     pub fn handle<'a, F>(&mut self, addr: Addr<F>, message: impl Into<F::Member<'a>>)
     where
         F: Family,
@@ -116,18 +119,12 @@ impl System {
             Err(error) => {
                 // TODO: What to do with this?
                 event!(Level::ERROR, "actor failed to reduce message\n{:?}", error);
-                AfterReduce::Nothing
+                After::Nothing
             }
         };
 
         // Return the actor
-        let entry = self.actors.unborrow(addr.index(), actor)?;
-
-        // Schedule process if necessary
-        if after == AfterReduce::Process && !entry.queued {
-            entry.queued = true;
-            self.queue.push_back(addr.index());
-        }
+        self.unborrow_and_after(addr.index(), actor, after)?;
 
         Ok(())
     }
@@ -189,18 +186,37 @@ impl System {
             Err(error) => {
                 // TODO: What to do with this?
                 event!(Level::ERROR, "actor failed to process\n{:?}", error);
-                AfterProcess::Nothing
+                After::Nothing
             }
         };
 
-        // Stop the actor if we have to
-        if after == AfterProcess::Stop {
+        // Return the actor
+        self.unborrow_and_after(index, actor, after)?;
+
+        Ok(())
+    }
+
+    fn unborrow_and_after(
+        &mut self,
+        index: Index,
+        actor: Box<dyn AnyActor>,
+        after: After,
+    ) -> Result<(), BorrowError> {
+        // If we got told to stop the actor, do that instead of returning
+        if after == After::Stop {
             event!(Level::INFO, "stopping actor");
             drop(actor);
             self.actors.remove(index);
-        } else {
-            // Return the actor otherwise
-            self.actors.unborrow(index, actor)?;
+            return Ok(());
+        }
+
+        // Return the actor to the collection
+        let entry = self.actors.unborrow(index, actor)?;
+
+        // Queue up the actor if necessary
+        if after == After::Process && !entry.queued {
+            entry.queued = true;
+            self.queue.push_back(index);
         }
 
         Ok(())

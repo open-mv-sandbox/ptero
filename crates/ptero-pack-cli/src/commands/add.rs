@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_pack::AddData;
-use stewart::{ActorT, AfterProcess, AfterReduce, Id, System};
+use stewart::{ActorT, After, Id, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -52,12 +52,12 @@ struct AddCommandActor {}
 impl ActorT for AddCommandActor {
     type Message = ();
 
-    fn reduce(&mut self, _system: &mut System, _message: ()) -> Result<AfterReduce, Error> {
-        Ok(AfterReduce::Process)
+    fn reduce(&mut self, _system: &mut System, _message: ()) -> Result<After, Error> {
+        Ok(After::Process)
     }
 
-    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
+    fn process(&mut self, _system: &mut System) -> Result<After, Error> {
         // TODO: Handle success/failure
-        Ok(AfterProcess::Nothing)
+        Ok(After::Nothing)
     }
 }

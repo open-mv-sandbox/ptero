@@ -11,7 +11,7 @@ mod info;
 mod system;
 
 pub use self::{
-    actor::{Actor, AfterProcess, AfterReduce},
+    actor::{Actor, After},
     actors::BorrowError,
     family::{ActorT, AddrT},
     info::{Addr, Id, Info},

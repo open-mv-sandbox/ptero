@@ -1,9 +1,9 @@
 use std::{collections::VecDeque, mem::size_of};
 
-use anyhow::Error;
+use anyhow::{Context, Error};
 use daicon::{ComponentEntry, ComponentTableHeader};
 use ptero_io::ReadWriteCmd;
-use stewart::{ActorT, AddrT, AfterProcess, AfterReduce, Id, Info, System};
+use stewart::{ActorT, AddrT, After, Id, Info, System};
 use stewart_utils::start_map;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -20,7 +20,7 @@ pub fn start_file_manager(
     let info = system.create_actor(parent)?;
 
     // Public API mapping actor
-    let api_addr = start_map(system, info.id(), info.addr(), ManagerMsg::Command)?;
+    let api_addr = start_map(system, info.id(), info.addr(), FileManagerMsg::Command)?;
 
     // Start the root manager actor
     let actor = FileManagerActor::new(info, read_write);
@@ -48,13 +48,12 @@ pub struct GetComponentResult {
 
 struct FileManagerActor {
     info: Info<Self>,
-    queue: VecDeque<ManagerMsg>,
+    queue: VecDeque<FileManagerMsg>,
     read_write: AddrT<ReadWriteCmd>,
 
     pending: Vec<GetComponentCmd>,
     header: Option<ComponentTableHeader>,
     entries: Option<Vec<ComponentEntry>>,
-    waiting_for_read: bool,
 }
 
 impl FileManagerActor {
@@ -67,71 +66,22 @@ impl FileManagerActor {
             pending: Vec::new(),
             header: None,
             entries: None,
-            waiting_for_read: true,
         }
     }
 
-    fn on_command(&mut self, command: FileManagerCmd) -> Result<(), Error> {
-        match command {
-            FileManagerCmd::GetComponent(command) => {
-                event!(Level::INFO, "processing get-component");
-                self.pending.push(command);
-            }
-        }
+    fn on_message(
+        &mut self,
+        system: &mut System,
+        message: FileManagerMsg,
+        entries_changed: &mut bool,
+    ) -> Result<(), Error> {
+        match message {
+            FileManagerMsg::Command(command) => self.on_command(command)?,
+            FileManagerMsg::Header(header) => {
+                event!(Level::DEBUG, "caching header");
+                self.header = Some(header);
 
-        Ok(())
-    }
-}
-
-impl ActorT for FileManagerActor {
-    type Message = ManagerMsg;
-
-    fn reduce(&mut self, _system: &mut System, message: ManagerMsg) -> Result<AfterReduce, Error> {
-        self.queue.push_back(message);
-        Ok(AfterReduce::Process)
-    }
-
-    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
-        // Handle pending messages
-        while let Some(message) = self.queue.pop_front() {
-            match message {
-                ManagerMsg::Command(command) => self.on_command(command)?,
-                ManagerMsg::Header(header) => {
-                    event!(Level::DEBUG, "caching header");
-                    self.header = Some(header);
-                    self.waiting_for_read = false;
-                    // TODO: Follow additional headers
-                }
-                ManagerMsg::Entries(entries) => {
-                    event!(Level::DEBUG, count = entries.len(), "caching entries");
-                    self.entries = Some(entries);
-                    self.waiting_for_read = false;
-                }
-            }
-        }
-
-        // Check if we need to do anything new
-        if !self.pending.is_empty() && !self.waiting_for_read {
-            if let Some(entries) = &self.entries {
-                for pending in self.pending.drain(..) {
-                    for entry in entries {
-                        if entry.type_id() != pending.id {
-                            continue;
-                        }
-
-                        event!(Level::DEBUG, "sending found component back");
-                        let header = self.header.unwrap();
-                        let result = GetComponentResult {
-                            header,
-                            entry: *entry,
-                        };
-                        system.handle(pending.on_result, result);
-                    }
-
-                    // TODO: Failure if we ran out and couldn't find it
-                }
-            } else {
-                let header = self.header.as_ref().unwrap();
+                // Start reading the entries for this header
                 start_read_entries(
                     system,
                     self.info.id(),
@@ -140,15 +90,90 @@ impl ActorT for FileManagerActor {
                     header.length() as usize,
                     self.info.addr(),
                 )?;
-                self.waiting_for_read = true;
+
+                // TODO: Follow additional headers
+            }
+            FileManagerMsg::Entries(entries) => {
+                event!(Level::DEBUG, length = entries.len(), "caching entries");
+                self.entries = Some(entries);
+                *entries_changed = true;
+            }
+        };
+
+        Ok(())
+    }
+
+    fn on_command(&mut self, command: FileManagerCmd) -> Result<(), Error> {
+        match command {
+            FileManagerCmd::GetComponent(command) => {
+                event!(Level::INFO, id = ?command.id, "queuing get-component");
+                self.pending.push(command);
             }
         }
 
-        Ok(AfterProcess::Nothing)
+        Ok(())
+    }
+
+    fn on_entries_changed(&mut self, system: &mut System) -> Result<(), Error> {
+        // We will have more tables to check later, but for now just the one
+        let entries = self.entries.as_ref().context("invalid state")?;
+
+        self.pending.retain(|pending| {
+            for entry in entries {
+                if entry.type_id() != pending.id {
+                    continue;
+                }
+
+                // We found a matching component!
+                event!(
+                    Level::DEBUG,
+                    id = ?entry.type_id(),
+                    "sending found component back"
+                );
+                let header = self.header.unwrap();
+                let result = GetComponentResult {
+                    header,
+                    entry: *entry,
+                };
+                system.handle(pending.on_result, result);
+                return false;
+            }
+
+            // TODO: Failure if we ran out and couldn't find it
+
+            true
+        });
+
+        Ok(())
     }
 }
 
-pub enum ManagerMsg {
+impl ActorT for FileManagerActor {
+    type Message = FileManagerMsg;
+
+    fn reduce(&mut self, _system: &mut System, message: FileManagerMsg) -> Result<After, Error> {
+        self.queue.push_back(message);
+        Ok(After::Process)
+    }
+
+    fn process(&mut self, system: &mut System) -> Result<After, Error> {
+        let mut entries_changed = false;
+
+        // Handle pending messages
+        while let Some(message) = self.queue.pop_front() {
+            self.on_message(system, message, &mut entries_changed)?;
+        }
+
+        // Check if we can resolve any pending requests
+        if entries_changed {
+            self.on_entries_changed(system)?;
+        }
+
+        Ok(After::Nothing)
+    }
+}
+
+pub enum FileManagerMsg {
     Command(FileManagerCmd),
     Header(ComponentTableHeader),
     Entries(Vec<ComponentEntry>),

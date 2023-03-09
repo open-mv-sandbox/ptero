@@ -1,6 +1,6 @@
 use anyhow::Error;
 use clap::Args;
-use stewart::{ActorT, AfterProcess, AfterReduce, Id, System};
+use stewart::{ActorT, After, Id, System};
 use tracing::{event, instrument, Level};
 
 /// Create a new dacti package.
@@ -28,11 +28,11 @@ struct CreateCommandActor;
 impl ActorT for CreateCommandActor {
     type Message = ();
 
-    fn reduce(&mut self, _system: &mut System, _message: ()) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, _system: &mut System, _message: ()) -> Result<After, Error> {
         unimplemented!()
     }
 
-    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
+    fn process(&mut self, _system: &mut System) -> Result<After, Error> {
         // TODO: Currently makes no sense for this to be an actor, but it will use other actors
         unimplemented!()
     }

@@ -14,7 +14,7 @@ use dacti_index::{
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{FileManagerCmd, GetComponentCmd, GetComponentResult};
 use ptero_io::ReadWriteCmd;
-use stewart::{ActorT, AddrT, AfterProcess, AfterReduce, Id, System};
+use stewart::{ActorT, AddrT, After, Id, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -103,11 +103,11 @@ struct AddDataActor;
 impl ActorT for AddDataActor {
     type Message = ();
 
-    fn reduce(&mut self, _system: &mut System, _message: ()) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, _system: &mut System, _message: ()) -> Result<After, Error> {
         unimplemented!()
     }
 
-    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
+    fn process(&mut self, _system: &mut System) -> Result<After, Error> {
         // TODO: Report success/failure back
         unimplemented!()
     }
@@ -154,12 +154,12 @@ impl ActorT for AddIndexActor {
         &mut self,
         _system: &mut System,
         message: GetComponentResult,
-    ) -> Result<AfterReduce, Error> {
+    ) -> Result<After, Error> {
         self.message = Some(message);
-        Ok(AfterReduce::Process)
+        Ok(After::Process)
     }
 
-    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
+    fn process(&mut self, system: &mut System) -> Result<After, Error> {
         let message = self.message.take().context("incorrect state")?;
 
         let region = from_bytes::<RegionData>(message.entry.data());
@@ -177,7 +177,7 @@ impl ActorT for AddIndexActor {
         };
         system.handle(self.file, msg);
 
-        Ok(AfterProcess::Stop)
+        Ok(After::Stop)
     }
 }
 

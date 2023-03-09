@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as ContextExt, Error};
-use stewart::{ActorT, AddrT, AfterProcess, AfterReduce, Id, System};
+use stewart::{ActorT, AddrT, After, Id, System};
 use tracing::{event, instrument, Level};
 
 use crate::ReadWriteCmd;
@@ -45,16 +45,12 @@ struct FileReadWriteActor {
 impl ActorT for FileReadWriteActor {
     type Message = ReadWriteCmd;
 
-    fn reduce<'a>(
-        &mut self,
-        _system: &mut System,
-        message: ReadWriteCmd,
-    ) -> Result<AfterReduce, Error> {
+    fn reduce<'a>(&mut self, _system: &mut System, message: ReadWriteCmd) -> Result<After, Error> {
         self.queue.push(message);
-        Ok(AfterReduce::Process)
+        Ok(After::Process)
     }
 
-    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error> {
+    fn process(&mut self, system: &mut System) -> Result<After, Error> {
         event!(
             Level::INFO,
             count = self.queue.len(),
@@ -84,6 +80,6 @@ impl ActorT for FileReadWriteActor {
             }
         }
 
-        Ok(AfterProcess::Nothing)
+        Ok(After::Nothing)
     }
 }

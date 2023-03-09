@@ -22,21 +22,19 @@ pub trait Actor {
         &mut self,
         system: &mut System,
         message: <Self::Family as Family>::Member<'_>,
-    ) -> Result<AfterReduce, Error>;
+    ) -> Result<After, Error>;
 
     /// Process previously reduced messages.
-    fn process(&mut self, system: &mut System) -> Result<AfterProcess, Error>;
+    fn process(&mut self, system: &mut System) -> Result<After, Error>;
 }
 
+/// The operation to take after the `reduce` or `process` step.
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
-pub enum AfterReduce {
+pub enum After {
+    /// Do nothing, no changes are made.
     Nothing,
+    /// Queue the actor for processing.
     Process,
-    // TODO: This needs stop as well
-}
-
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
-pub enum AfterProcess {
-    Nothing,
+    /// Stop the actor and remove it from the system.
     Stop,
 }

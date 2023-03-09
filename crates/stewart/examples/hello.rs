@@ -34,7 +34,7 @@ fn main() -> Result<(), Error> {
 mod hello_serivce {
     use anyhow::Error;
     use family::Member;
-    use stewart::{Actor, Addr, AfterProcess, AfterReduce, Id, System};
+    use stewart::{Actor, Addr, After, Id, System};
     use tracing::{event, instrument, Level};
 
     /// The start function uses the concrete actor internally, the actor itself is never public.
@@ -63,21 +63,17 @@ mod hello_serivce {
     impl Actor for HelloActor {
         type Family = HelloMsgF;
 
-        fn reduce(
-            &mut self,
-            _system: &mut System,
-            message: HelloMsg,
-        ) -> Result<AfterReduce, Error> {
+        fn reduce(&mut self, _system: &mut System, message: HelloMsg) -> Result<After, Error> {
             event!(Level::DEBUG, "adding message");
 
             // Because "HelloMsg" is a borrowed value, you have to decide how to most
             // efficiently queue it yourself in your actor.
             self.queue.push(message.0.to_string());
 
-            Ok(AfterReduce::Process)
+            Ok(After::Process)
         }
 
-        fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
+        fn process(&mut self, _system: &mut System) -> Result<After, Error> {
             event!(Level::DEBUG, "handling queued messages");
 
             // Process the messages previously queued
@@ -88,7 +84,7 @@ mod hello_serivce {
             // We only listen to one wave of messages then stop immediately.
             // Note though that the runtime could call this at any point after `reduce`, and
             // messages may be dropped as a result.
-            Ok(AfterProcess::Stop)
+            Ok(After::Stop)
         }
     }
 }

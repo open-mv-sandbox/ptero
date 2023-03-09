@@ -7,17 +7,17 @@ use anyhow::{bail, Error};
 use bytemuck::{bytes_of_mut, Zeroable};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
 use ptero_io::{ReadResult, ReadResultF, ReadWriteCmd};
-use stewart::{Actor, AddrT, AfterProcess, AfterReduce, Id, System};
+use stewart::{Actor, AddrT, After, Id, System};
 use tracing::{event, instrument, Level};
 
-use crate::manager::ManagerMsg;
+use crate::manager::FileManagerMsg;
 
 #[instrument("read-header", skip_all)]
 pub fn start_read_header(
     system: &mut System,
     parent: Id,
     read_write: AddrT<ReadWriteCmd>,
-    manager: AddrT<ManagerMsg>,
+    manager: AddrT<FileManagerMsg>,
 ) -> Result<(), Error> {
     event!(Level::INFO, "reading header");
 
@@ -37,13 +37,13 @@ pub fn start_read_header(
 }
 
 struct ReadHeaderActor {
-    manager: AddrT<ManagerMsg>,
+    manager: AddrT<FileManagerMsg>,
 }
 
 impl Actor for ReadHeaderActor {
     type Family = ReadResultF;
 
-    fn reduce(&mut self, system: &mut System, message: ReadResult) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, system: &mut System, message: ReadResult) -> Result<After, Error> {
         let data = message?;
 
         // Validate signature
@@ -56,13 +56,13 @@ impl Actor for ReadHeaderActor {
         bytes_of_mut(&mut header).copy_from_slice(&data[8..]);
 
         // Pass it to the manager
-        system.handle(self.manager, ManagerMsg::Header(header));
+        system.handle(self.manager, FileManagerMsg::Header(header));
 
-        Ok(AfterReduce::Process)
+        Ok(After::Process)
     }
 
-    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
-        Ok(AfterProcess::Stop)
+    fn process(&mut self, _system: &mut System) -> Result<After, Error> {
+        Ok(After::Stop)
     }
 }
 
@@ -73,7 +73,7 @@ pub fn start_read_entries(
     read_write: AddrT<ReadWriteCmd>,
     start: u64,
     length: usize,
-    manager: AddrT<ManagerMsg>,
+    manager: AddrT<FileManagerMsg>,
 ) -> Result<(), Error> {
     event!(Level::INFO, "reading entries");
 
@@ -93,14 +93,14 @@ pub fn start_read_entries(
 }
 
 struct ReadEntriesActor {
-    manager: AddrT<ManagerMsg>,
+    manager: AddrT<FileManagerMsg>,
     length: usize,
 }
 
 impl Actor for ReadEntriesActor {
     type Family = ReadResultF;
 
-    fn reduce(&mut self, system: &mut System, message: ReadResult) -> Result<AfterReduce, Error> {
+    fn reduce(&mut self, system: &mut System, message: ReadResult) -> Result<After, Error> {
         let data = message?;
 
         let mut entries = Vec::new();
@@ -113,12 +113,12 @@ impl Actor for ReadEntriesActor {
         }
 
         // Reply with the read data
-        system.handle(self.manager, ManagerMsg::Entries(entries));
+        system.handle(self.manager, FileManagerMsg::Entries(entries));
 
-        Ok(AfterReduce::Process)
+        Ok(After::Process)
     }
 
-    fn process(&mut self, _system: &mut System) -> Result<AfterProcess, Error> {
-        Ok(AfterProcess::Stop)
+    fn process(&mut self, _system: &mut System) -> Result<After, Error> {
+        Ok(After::Stop)
     }
 }
