@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{Id, System};
+use stewart::System;
 use stewart_scheduler::{run_until_idle, start_scheduler};
 use tracing::{event, Level};
 
@@ -13,8 +13,8 @@ fn main() -> Result<(), Error> {
     let mut system = System::new();
 
     // Start the hello service
-    let process = start_scheduler(&mut system, Id::root())?;
-    let sender = start_hello(&mut system, Id::root(), process)?;
+    let (process, scheduler) = start_scheduler(&mut system, None)?;
+    let sender = start_hello(&mut system, None, process)?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -27,7 +27,7 @@ fn main() -> Result<(), Error> {
 
     // Process actors until idle
     event!(Level::DEBUG, "processing actors");
-    run_until_idle(&mut system, process)?;
+    run_until_idle(&mut system, scheduler)?;
 
     Ok(())
 }
@@ -50,7 +50,7 @@ mod hello_serivce {
     #[instrument("hello", skip_all)]
     pub fn start_hello(
         system: &mut System,
-        parent: Id,
+        parent: Option<Id>,
         process: SenderT<ProcessItem>,
     ) -> Result<Sender<HelloMsgF>, Error> {
         event!(Level::DEBUG, "creating service");

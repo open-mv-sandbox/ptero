@@ -10,7 +10,7 @@ pub trait Process {
 
 pub struct ProcessItem {
     id: Id,
-    apply: fn(system: &mut System, id: Id) -> Result<(), Error>,
+    apply: fn(&mut System, Id) -> Result<(), Error>,
 }
 
 impl ProcessItem {
@@ -22,7 +22,7 @@ impl ProcessItem {
     }
 }
 
-fn apply_process<A: Process + Actor + 'static>(system: &mut System, id: Id) -> Result<(), Error> {
+fn apply_process<A: Process + 'static>(system: &mut System, id: Id) -> Result<(), Error> {
     // Take the actor out of the system
     let (span, mut actor) = system.borrow_actor::<A>(id)?;
     let _enter = span.enter();
@@ -47,7 +47,12 @@ fn apply_process<A: Process + Actor + 'static>(system: &mut System, id: Id) -> R
 }
 
 #[instrument("scheduler", skip_all)]
-pub fn start_scheduler(system: &mut System, parent: Id) -> Result<SenderT<ProcessItem>, Error> {
+pub fn start_scheduler(
+    system: &mut System,
+    parent: Option<Id>,
+) -> Result<(SenderT<ProcessItem>, Id), Error> {
+    // TODO: Encapsulate Id
+
     // Create the scheduler
     let info = system.create_actor(parent)?;
     let actor = SchedulerActor {
@@ -55,7 +60,7 @@ pub fn start_scheduler(system: &mut System, parent: Id) -> Result<SenderT<Proces
     };
     system.start_actor(info, actor)?;
 
-    Ok(info.sender())
+    Ok((info.sender(), info.id()))
 }
 
 struct SchedulerActor {
@@ -76,10 +81,10 @@ impl ActorT for SchedulerActor {
 ///
 /// Running a process task may spawn new process tasks, so this is not guaranteed to ever
 /// return.
-pub fn run_until_idle(system: &mut System, process: SenderT<ProcessItem>) -> Result<(), Error> {
+pub fn run_until_idle(system: &mut System, scheduler: Id) -> Result<(), Error> {
     system.cleanup_pending()?;
 
-    while let Some(item) = take_next(system, process) {
+    while let Some(item) = take_next(system, scheduler) {
         // Apply process
         (item.apply)(system, item.id)?;
 
@@ -89,9 +94,9 @@ pub fn run_until_idle(system: &mut System, process: SenderT<ProcessItem>) -> Res
     Ok(())
 }
 
-fn take_next(system: &mut System, process: SenderT<ProcessItem>) -> Option<ProcessItem> {
-    // Downcast to get the scheduler itself
-    let scheduler = system.get_mut(process);
-    let scheduler: &mut SchedulerActor = scheduler.downcast_mut().unwrap();
+fn take_next(system: &mut System, scheduler: Id) -> Option<ProcessItem> {
+    let scheduler = system
+        .get_mut::<SchedulerActor>(scheduler)
+        .expect("failed to get scheduler");
     scheduler.queue.pop_front()
 }

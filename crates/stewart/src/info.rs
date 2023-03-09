@@ -13,7 +13,7 @@ use crate::{Actor, Sender};
 /// `Info` is intentionally !Send + !Sync. In most cases sending an addr between threads is a
 /// mistake, as it's only valid for one `System`, and `System` is !Send + !Sync.
 pub struct Info<A> {
-    index: Index,
+    pub(crate) index: Index,
     _a: PhantomData<AtomicPtr<A>>,
 }
 
@@ -28,12 +28,8 @@ where
         }
     }
 
-    pub(crate) fn index(&self) -> Index {
-        self.index
-    }
-
     pub fn id(self) -> Id {
-        Id(Some(self.index))
+        Id { index: self.index }
     }
 
     pub fn sender(self) -> Sender<A::Family> {
@@ -49,17 +45,8 @@ impl<A> Clone for Info<A> {
 
 impl<A> Copy for Info<A> {}
 
+/// Untyped identifier of an actor.
 #[derive(PartialEq, Eq, Clone, Copy)]
-pub struct Id(pub(crate) Option<Index>);
-
-impl Id {
-    /// Address ID of the root of the system.
-    ///
-    /// You can use this to start actors with no parent other than the system root. These actors
-    /// live until explicitly stopped, or until the system is dropped. This is useful if you don't
-    /// have any actors yet, or if you want to start an actor that isn't a child of any other
-    /// actor and thus lives longer.
-    pub fn root() -> Self {
-        Self(None)
-    }
+pub struct Id {
+    pub(crate) index: Index,
 }

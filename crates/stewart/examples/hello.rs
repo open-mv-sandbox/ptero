@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{Id, System};
+use stewart::System;
 use tracing::{event, Level};
 
 use crate::hello_serivce::{start_hello, HelloMsg};
@@ -12,7 +12,7 @@ fn main() -> Result<(), Error> {
     let mut system = System::new();
 
     // Start the hello service
-    let sender = start_hello(&mut system, Id::root())?;
+    let sender = start_hello(&mut system, None)?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -41,7 +41,10 @@ mod hello_serivce {
     /// The start function uses the concrete actor internally, the actor itself is never public.
     /// By instrumenting the start function, your actor's callbacks will use it automatically.
     #[instrument("hello", skip_all)]
-    pub fn start_hello(system: &mut System, parent: Id) -> Result<Sender<HelloMsgF>, Error> {
+    pub fn start_hello(
+        system: &mut System,
+        parent: Option<Id>,
+    ) -> Result<Sender<HelloMsgF>, Error> {
         event!(Level::DEBUG, "creating service");
 
         let info = system.create_actor(parent)?;

@@ -16,7 +16,7 @@ where
     F: Family,
 {
     pub(crate) index: Index,
-    apply: fn(&mut System, id: Id, F::Member<'_>),
+    apply: fn(&mut System, Id, F::Member<'_>),
     _p: PhantomData<*const F>,
 }
 
@@ -42,7 +42,7 @@ where
 {
     pub fn send<'a>(self, system: &mut System, message: impl Into<F::Member<'a>>) {
         let message = message.into();
-        (self.apply)(system, Id(Some(self.index)), message)
+        (self.apply)(system, Id { index: self.index }, message)
     }
 }
 

@@ -1,12 +1,11 @@
 use std::any::Any;
 
 use anyhow::{Context, Error};
-use family::Family;
 use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::{Actor, After, Id, Info, Sender};
+use crate::{Actor, After, Id, Info};
 
 /// Thread-local cooperative multitasking actor scheduler.
 #[derive(Default)]
@@ -26,15 +25,15 @@ impl System {
     /// The actor's address will not be available for handling messages until `start` is called.
     pub fn create_actor<A: Actor + 'static>(
         &mut self,
-        parent: Id,
+        parent: Option<Id>,
     ) -> Result<Info<A>, CreateActorError> {
         // Continual span is inherited from the create addr callsite
         let span = Span::current();
 
         // Link to the parent
-        if let Some(parent) = parent.0 {
+        if let Some(parent) = parent {
             self.actors
-                .get_mut(parent)
+                .get_mut(parent.index)
                 .ok_or(CreateActorError::ParentDoesNotExist)?;
         }
 
@@ -63,14 +62,14 @@ impl System {
         let index = self
             .pending_start
             .iter()
-            .position(|i| *i == info.index())
+            .position(|i| *i == info.index)
             .ok_or(StartActorError::ActorNotPending)?;
         self.pending_start.remove(index);
 
         // Retrieve the slot
         let entry = self
             .actors
-            .get_mut(info.index())
+            .get_mut(info.index)
             .ok_or(StartActorError::ActorNotFound)?;
 
         // Fill the slot
@@ -102,25 +101,21 @@ impl System {
         Ok(())
     }
 
-    pub fn borrow_actor<A: 'static>(&mut self, id: Id) -> Result<(Span, Box<A>), BorrowError> {
-        // TODO: Cleanup borrow/return now that only public ones are called
+    /// Temporarily borrow an actor without taking it.
+    pub fn get_mut<A: 'static>(&mut self, id: Id) -> Option<&mut A> {
+        let index = id.index;
 
-        let index = id.0.ok_or(BorrowError::CantBorrowRoot)?;
-        let (span, actor) = self.borrow_actor_inner(index)?;
+        let entry = self.actors.get_mut(index)?;
+        let actor = entry.actor.as_mut()?;
 
-        // Downcast the actor to the desired type
-        // TODO: Return the actor again on failure, or prevent it from being taken in the
-        // first place
-        let actor = actor.downcast().map_err(|_| BorrowError::ActorWrongType)?;
-
-        Ok((span, actor))
+        actor.as_mut().downcast_mut()
     }
 
-    fn borrow_actor_inner(&mut self, index: Index) -> Result<(Span, Box<dyn Any>), BorrowError> {
+    pub fn borrow_actor<A: 'static>(&mut self, id: Id) -> Result<(Span, Box<A>), BorrowError> {
         // Find the actor's entry
         let entry = self
             .actors
-            .get_mut(index)
+            .get_mut(id.index)
             .ok_or(BorrowError::ActorNotFound)?;
 
         // Take the actor from the slot
@@ -131,41 +126,40 @@ impl System {
             name: entry.debug_name,
         })?;
 
+        // Downcast the actor to the desired type
+        // TODO: Return the actor again on failure, or prevent it from being taken in the
+        // first place
+        let actor = actor
+            .downcast()
+            .map_err(|_| BorrowError::ActorInvalidType)?;
+
         Ok((entry.span.clone(), actor))
     }
 
-    pub fn return_actor<A: Actor + 'static>(
+    pub fn return_actor<A: 'static>(
         &mut self,
         id: Id,
         actor: Box<A>,
         after: After,
     ) -> Result<(), BorrowError> {
-        // TODO: Validate same type
-        let index = id.0.ok_or(BorrowError::CantBorrowRoot)?;
+        // TODO: Validate same type slot
 
         // If we got told to stop the actor, do that instead of returning
         if after == After::Stop {
             event!(Level::INFO, "stopping actor");
             drop(actor);
-            self.actors.remove(index);
+            self.actors.remove(id.index);
             return Ok(());
         }
 
         // Put the actor back in the slot
         let entry = self
             .actors
-            .get_mut(index)
+            .get_mut(id.index)
             .ok_or(BorrowError::ActorDisappeared)?;
         entry.actor = Some(actor);
 
         Ok(())
-    }
-
-    // TODO: Clean this up
-    pub fn get_mut<F: Family>(&mut self, addr: Sender<F>) -> &mut dyn Any {
-        let entry = self.actors.get_mut(addr.index).unwrap();
-        let actor = entry.actor.as_mut().unwrap();
-        actor.as_mut()
     }
 }
 
@@ -220,14 +214,12 @@ pub enum StartActorError {
 
 #[derive(Error, Debug)]
 pub enum BorrowError {
-    #[error("failed to borrow actor, cannot borrow root actor")]
-    CantBorrowRoot,
-    #[error("failed to borrow actor, wrong type")]
-    ActorWrongType,
     #[error("failed to borrow actor, no actor exists at the given address")]
     ActorNotFound,
     #[error("failed to borrow actor, actor ({name}) at the address exists, but is not currently available")]
     ActorNotAvailable { name: &'static str },
     #[error("failed to return actor, the actor disappeared before it could be returned")]
     ActorDisappeared,
+    #[error("failed to borrow or return actor, invalid type")]
+    ActorInvalidType,
 }
