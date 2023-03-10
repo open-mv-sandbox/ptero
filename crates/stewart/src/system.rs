@@ -189,7 +189,11 @@ impl System {
 impl Drop for System {
     fn drop(&mut self) {
         let mut debug_names = Vec::new();
-        for (_, entry) in self.actors.drain() {
+        for (id, entry) in self.actors.drain() {
+            if id == self.root {
+                continue;
+            }
+
             debug_names.push(entry.debug_name);
         }
 

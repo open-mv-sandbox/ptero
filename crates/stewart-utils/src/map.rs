@@ -29,7 +29,7 @@ where
     };
     system.start_actor(info, actor)?;
 
-    Ok(SenderT::new(info))
+    Ok(SenderT::actor(info))
 }
 
 struct MapActor<F, A, B>

@@ -17,7 +17,7 @@ where
     F: Family,
 {
     id: Id,
-    apply: fn(&mut System, Id, F::Member<'_>),
+    apply: fn(Apply, F::Member<'_>) -> Result<(), Error>,
     _p: PhantomData<*const F>,
 }
 
@@ -25,36 +25,45 @@ impl<F> Sender<F>
 where
     F: Family,
 {
-    pub fn new<A>(info: Info<A>) -> Sender<A::Family>
+    /// Create a new `Sender`, with a custom ID and apply function.
+    ///
+    /// Currently, rust's type system doesn't quite coerce types right when passing to this
+    /// function. You can get the compiler to accept your apply function by adding `as _` to
+    /// explicitly tell the type system to perform the coercion.
+    pub fn new(id: Id, apply: fn(Apply, F::Member<'_>) -> Result<(), Error>) -> Sender<F> {
+        Self {
+            id,
+            apply,
+            _p: PhantomData,
+        }
+    }
+
+    /// Create a new `Sender` for an actor.
+    pub fn actor<A>(info: Info<A>) -> Sender<A::Family>
     where
         A: Handler<Family = F> + 'static,
     {
-        Self {
-            id: info.id(),
-            apply: apply_handle::<A, IdentityMap<A::Family>>,
-            _p: PhantomData,
-        }
-    }
-
-    pub fn mapped<A, M>(info: Info<A>) -> Sender<M::In>
-    where
-        A: Handler + 'static,
-        M: Map<In = F, Out = A::Family>,
-    {
-        Self {
-            id: info.id(),
-            apply: apply_handle::<A, M>,
-            _p: PhantomData,
-        }
+        Self::new(info.id(), apply::<A>)
     }
 
     /// Send a message to an actor, which will handle it in-place.
-    ///
-    /// TODO: Errors are intentionally ignored, but maybe it would be useful to have a unified way
-    /// to handle sending errors of any kind (including over a network).
     pub fn send<'a>(self, system: &mut System, message: impl Into<F::Member<'a>>) {
         let message = message.into();
-        (self.apply)(system, self.id, message)
+        let apply = Apply {
+            system,
+            id: self.id,
+        };
+        let result = (self.apply)(apply, message);
+
+        // TODO: Errors are intentionally ignored, but maybe it would be useful to have a unified way
+        // to handle sending errors of any kind (including over a network).
+        match result {
+            Ok(value) => value,
+            Err(error) => {
+                // TODO: What to do with this?
+                event!(Level::WARN, "failed to handle message\n{:?}", error);
+            }
+        }
     }
 }
 
@@ -69,27 +78,18 @@ where
 
 impl<F> Copy for Sender<F> where F: Family {}
 
-fn apply_handle<A, M>(system: &mut System, id: Id, message: <M::In as Family>::Member<'_>)
-where
-    A: Handler + 'static,
-    M: Map<Out = A::Family>,
-{
-    let message = M::map(message);
-    let result = apply_handle_try::<A>(system, id, message);
-    match result {
-        Ok(value) => value,
-        Err(error) => {
-            // TODO: What to do with this?
-            event!(Level::WARN, "failed to handle message\n{:?}", error);
-        }
-    }
+/// Context data for apply.
+pub struct Apply<'a> {
+    system: &'a mut System,
+    id: Id,
 }
 
-fn apply_handle_try<A: Handler + 'static>(
-    system: &mut System,
-    id: Id,
+pub fn apply<A: Handler + 'static>(
+    apply: Apply,
     message: <A::Family as Family>::Member<'_>,
 ) -> Result<(), Error> {
+    let Apply { system, id } = apply;
+
     // Attempt to borrow the actor for handling
     let (span, mut actor) = system.borrow_actor::<A>(id)?;
     let _entry = span.enter();
@@ -115,26 +115,3 @@ fn apply_handle_try<A: Handler + 'static>(
 
 /// Convenience alias for sender to a `HandlerT`.
 pub type SenderT<T> = Sender<FamilyT<T>>;
-
-pub trait Map {
-    type In: Family;
-    type Out: Family;
-
-    fn map(value: <Self::In as Family>::Member<'_>) -> <Self::Out as Family>::Member<'_>;
-}
-
-pub struct IdentityMap<F> {
-    _f: PhantomData<F>,
-}
-
-impl<F> Map for IdentityMap<F>
-where
-    F: Family,
-{
-    type In = F;
-    type Out = F;
-
-    fn map(value: F::Member<'_>) -> F::Member<'_> {
-        value
-    }
-}

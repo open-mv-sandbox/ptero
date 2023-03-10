@@ -134,7 +134,7 @@ impl AddIndexActor {
 
         let command = GetComponentCommand {
             id: INDEX_COMPONENT_UUID,
-            on_result: SenderT::new(info),
+            on_result: SenderT::actor(info),
         };
         let command = FileManagerCommand::GetComponent(command);
         data.file_manager.send(system, command);

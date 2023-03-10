@@ -66,7 +66,7 @@ mod hello_serivce {
         };
         system.start_actor(info, actor)?;
 
-        Ok(Sender::new(info))
+        Ok(Sender::actor(info))
     }
 
     /// The actor implementation below remains entirely private to the module.

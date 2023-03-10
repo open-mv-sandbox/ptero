@@ -2,17 +2,31 @@ use std::{collections::VecDeque, mem::size_of};
 
 use anyhow::{Context, Error};
 use daicon::{ComponentEntry, ComponentTableHeader};
+use family::utils::MemberT;
 use ptero_io::ReadWriteCmd;
 use stewart::{
-    handler::{HandlerT, SenderT},
+    handler::{apply, Apply, HandlerT, SenderT},
     schedule::{Process, Schedule},
     After, Id, Info, System,
 };
-use stewart_utils::start_map;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
 use crate::read::{start_read_entries, start_read_header};
+
+pub enum FileManagerCommand {
+    GetComponent(GetComponentCommand),
+}
+
+pub struct GetComponentCommand {
+    pub id: Uuid,
+    pub on_result: SenderT<GetComponentResult>,
+}
+
+pub struct GetComponentResult {
+    pub offset: u64,
+    pub entry: ComponentEntry,
+}
 
 /// Start a daicon file manager.
 #[instrument("file-manager", skip_all)]
@@ -24,13 +38,7 @@ pub fn start_file_manager(
 ) -> Result<SenderT<FileManagerCommand>, Error> {
     let info = system.create_actor(parent)?;
 
-    // Public API mapping actor
-    let api_addr = start_map(
-        system,
-        info.id(),
-        SenderT::new(info),
-        FileManagerMsg::Command,
-    )?;
+    let api_sender = SenderT::new(info.id(), apply_command);
 
     // Start the root manager actor
     let actor = FileManagerActor {
@@ -46,23 +54,14 @@ pub fn start_file_manager(
     system.start_actor(info, actor)?;
 
     // Immediately start reading the first header
-    start_read_header(system, info.id(), read_write, SenderT::new(info))?;
+    start_read_header(system, info.id(), read_write, SenderT::actor(info))?;
 
-    Ok(api_addr)
+    Ok(api_sender)
 }
 
-pub enum FileManagerCommand {
-    GetComponent(GetComponentCommand),
-}
-
-pub struct GetComponentCommand {
-    pub id: Uuid,
-    pub on_result: SenderT<GetComponentResult>,
-}
-
-pub struct GetComponentResult {
-    pub offset: u64,
-    pub entry: ComponentEntry,
+fn apply_command(a: Apply, value: MemberT<FileManagerCommand>) -> Result<(), Error> {
+    let message = FileManagerMsg::Command(value.0).into();
+    apply::<FileManagerActor>(a, message)
 }
 
 struct FileManagerActor {
@@ -96,7 +95,7 @@ impl FileManagerActor {
                     self.read_write,
                     8 + size_of::<ComponentTableHeader>() as u64,
                     header.length() as usize,
-                    SenderT::new(self.info),
+                    SenderT::actor(self.info),
                 )?;
 
                 // TODO: Follow additional headers

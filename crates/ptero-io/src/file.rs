@@ -40,7 +40,7 @@ pub fn start_file_read_write(
     };
     system.start_actor(info, actor)?;
 
-    Ok(SenderT::new(info))
+    Ok(SenderT::actor(info))
 }
 
 struct FileReadWriteActor {

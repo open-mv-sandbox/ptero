@@ -29,7 +29,7 @@ pub fn start_read_header(
     let msg = ReadWriteCmd::Read {
         start: 0,
         length: (SIGNATURE.len() + size_of::<ComponentTableHeader>()) as u64,
-        on_result: Sender::new(info),
+        on_result: Sender::actor(info),
     };
     read_write.send(system, msg);
 
@@ -81,7 +81,7 @@ pub fn start_read_entries(
     let msg = ReadWriteCmd::Read {
         start,
         length: (length * size_of::<ComponentEntry>()) as u64,
-        on_result: Sender::new(info),
+        on_result: Sender::actor(info),
     };
     read_write.send(system, msg);
 

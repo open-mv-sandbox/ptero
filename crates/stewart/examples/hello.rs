@@ -33,9 +33,9 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_serivce {
     use anyhow::Error;
-    use family::{Family, Member};
+    use family::Member;
     use stewart::{
-        handler::{Handler, Map, Sender},
+        handler::{apply, Apply, Handler, Sender},
         After, Id, System,
     };
     use tracing::{event, instrument, Level};
@@ -61,23 +61,18 @@ mod hello_serivce {
         system.start_actor(info, HelloActor)?;
 
         // You can handle messages directly
-        let sender = Sender::new(info);
+        let sender = Sender::actor(info);
 
-        // You can pass a static mapper implementation, at no additional dispatch cost
-        let mapped = Sender::mapped::<_, TrimMap>(info);
+        // You can pass your own apply implementation function
+        // This will let you do basic message mapping at no additional cost
+        let mapped = Sender::new(info.id(), apply_trim as _);
 
         Ok((sender, mapped))
     }
 
-    enum TrimMap {}
-
-    impl Map for TrimMap {
-        type In = PaddedHelloMsgF;
-        type Out = HelloMsgF;
-
-        fn map(value: <Self::In as Family>::Member<'_>) -> HelloMsg {
-            HelloMsg(value.0.trim())
-        }
+    fn apply_trim(a: Apply, message: PaddedHelloMsg) -> Result<(), Error> {
+        let message = HelloMsg(message.0.trim());
+        apply::<HelloActor>(a, message)
     }
 
     /// The actor implementation below remains entirely private to the module.
