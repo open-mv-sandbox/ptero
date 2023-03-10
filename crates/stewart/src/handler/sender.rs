@@ -8,7 +8,7 @@ use crate::{After, Id, Info, System};
 
 use super::Handler;
 
-/// Address for sending messages to an actor.
+/// Sender type for sending messages to an actor.
 ///
 /// `Addr` is intentionally !Send + !Sync. In most cases sending an addr between threads is a
 /// mistake, as it's only valid for one `System`, and `System` is !Send + !Sync.

@@ -4,7 +4,7 @@ use anyhow::Error;
 use stewart::{schedule::Schedule, System};
 use tracing::{event, Level};
 
-use crate::hello_serivce::{start_hello, HelloMsg};
+use crate::hello_serivce::{start_schedule_hello, HelloMsg};
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
@@ -14,16 +14,14 @@ fn main() -> Result<(), Error> {
 
     // Start the hello service
     let root = system.root_id();
-    let sender = start_hello(&mut system, root, schedule.clone())?;
+    let sender = start_schedule_hello(&mut system, root, schedule.clone())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
     sender.send(&mut system, HelloMsg("World"));
     sender.send(&mut system, HelloMsg("Actors"));
-
-    // You can also use temporary borrows!
-    let data = String::from("Borrowed");
-    sender.send(&mut system, HelloMsg(data.as_str()));
+    sender.send(&mut system, HelloMsg("Schedule"));
+    sender.send(&mut system, HelloMsg("All At Once"));
 
     // Process actors until idle
     event!(Level::DEBUG, "processing actors");
@@ -32,7 +30,6 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-/// To demonstrate encapsulation, an inner module is used here.
 mod hello_serivce {
     use anyhow::Error;
     use family::Member;
@@ -43,15 +40,11 @@ mod hello_serivce {
     };
     use tracing::{event, instrument, Level};
 
-    /// When creating a borrowed message, you need to implement the `Member` and `Family` traits.
-    /// For common cases, you can just use the derive macro, however you can do this yourself too.
     #[derive(Member)]
     pub struct HelloMsg<'a>(pub &'a str);
 
-    /// The start function uses the concrete actor internally, the actor itself is never public.
-    /// By instrumenting the start function, your actor's callbacks will use it automatically.
-    #[instrument("hello", skip_all)]
-    pub fn start_hello(
+    #[instrument("schedule-hello", skip_all)]
+    pub fn start_schedule_hello(
         system: &mut System,
         parent: Id,
         schedule: Schedule,
@@ -59,7 +52,7 @@ mod hello_serivce {
         event!(Level::DEBUG, "creating service");
 
         let info = system.create_actor(parent)?;
-        let actor = HelloActor {
+        let actor = ScheduleHelloActor {
             info,
             queue: Vec::new(),
             schedule,
@@ -69,14 +62,13 @@ mod hello_serivce {
         Ok(Sender::actor(info))
     }
 
-    /// The actor implementation below remains entirely private to the module.
-    struct HelloActor {
+    struct ScheduleHelloActor {
         info: Info<Self>,
         queue: Vec<String>,
         schedule: Schedule,
     }
 
-    impl Handler for HelloActor {
+    impl Handler for ScheduleHelloActor {
         type Family = HelloMsgF;
 
         fn handle(&mut self, _system: &mut System, message: HelloMsg) -> Result<After, Error> {
@@ -92,13 +84,14 @@ mod hello_serivce {
         }
     }
 
-    impl Process for HelloActor {
+    // Schedule processing looks for the `Process` trait on your actor
+    impl Process for ScheduleHelloActor {
         fn process(&mut self, _system: &mut System) -> Result<After, Error> {
             event!(Level::DEBUG, "processing scheduled messages");
 
-            for entry in self.queue.drain(..) {
-                event!(Level::INFO, "Hello, {}!", entry);
-            }
+            let entries = self.queue.join(", ");
+            event!(Level::INFO, "Hello, {}!", entries);
+            self.queue.clear();
 
             Ok(After::Nothing)
         }

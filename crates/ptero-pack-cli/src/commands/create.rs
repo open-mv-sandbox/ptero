@@ -1,5 +1,6 @@
 use anyhow::Error;
 use clap::Args;
+use ptero_pack::{start_package_manager, PackageManagerCommand};
 use stewart::System;
 use tracing::{event, instrument, Level};
 
@@ -18,7 +19,8 @@ pub fn start(system: &mut System, data: CreateCommand) -> Result<(), Error> {
     let info = system.create_actor(system.root_id())?;
     system.start_actor(info, CreateCommandActor)?;
 
-    ptero_pack::create_package(&data.package)?;
+    let package = start_package_manager(system, info.id())?;
+    package.send(system, PackageManagerCommand::Create(data.package));
 
     Ok(())
 }

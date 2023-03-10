@@ -1,5 +1,7 @@
 //! Pterodactil implementation of the "Dacti Package" format.
 
+mod manager;
+
 use std::{
     fs::OpenOptions,
     io::{Seek, SeekFrom, Write},
@@ -22,8 +24,10 @@ use stewart::{
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
+pub use self::manager::{start_package_manager, PackageManagerCommand};
+
 /// TODO: Change to actor
-pub fn create_package(path: &str) -> Result<(), Error> {
+fn create_package(path: &str) -> Result<(), Error> {
     // Reserve 1kb for header and component table
     let indices_offset: u32 = 1024;
 

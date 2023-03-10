@@ -133,7 +133,7 @@ impl FileManagerActor {
 
                 // We found a matching component!
                 event!(
-                    Level::DEBUG,
+                    Level::INFO,
                     id = ?entry.type_id(),
                     "sending found component back"
                 );

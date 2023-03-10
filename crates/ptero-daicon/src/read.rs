@@ -22,7 +22,7 @@ pub fn start_read_header(
     read_write: SenderT<ReadWriteCmd>,
     manager: SenderT<FileManagerMsg>,
 ) -> Result<(), Error> {
-    event!(Level::INFO, "reading header");
+    event!(Level::DEBUG, "reading header");
 
     let info = system.create_actor(parent)?;
 
@@ -74,7 +74,7 @@ pub fn start_read_entries(
     length: usize,
     manager: SenderT<FileManagerMsg>,
 ) -> Result<(), Error> {
-    event!(Level::INFO, "reading entries");
+    event!(Level::DEBUG, "reading entries");
 
     let info = system.create_actor(parent)?;
 

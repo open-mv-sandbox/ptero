@@ -8,7 +8,7 @@ use thunderdome::Index;
 /// type are assumed to come from the actor itself. Sending this type around to other places would
 /// likely be incorrect.
 ///
-/// `Info` is intentionally !Send + !Sync. In most cases sending an addr between threads is a
+/// `Info` is intentionally !Send + !Sync. In most cases sending an `Info` between threads is a
 /// mistake, as it's only valid for one `System`, and `System` is !Send + !Sync.
 pub struct Info<A> {
     pub(crate) index: Index,
