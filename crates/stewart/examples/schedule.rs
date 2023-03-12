@@ -34,8 +34,8 @@ mod hello_serivce {
     use anyhow::Error;
     use family::Member;
     use stewart::{
-        handler::{Handler, Sender},
-        schedule::{Process, Schedule},
+        handler::{Actor, Sender},
+        schedule::Schedule,
         After, Id, Info, System,
     };
     use tracing::{event, instrument, Level};
@@ -68,7 +68,47 @@ mod hello_serivce {
         schedule: Schedule,
     }
 
-    impl Handler for ScheduleHelloActor {
+    impl ScheduleHelloActor {
+        fn process(&mut self, _system: &mut System) -> Result<After, Error> {
+            event!(Level::DEBUG, "processing scheduled messages");
+
+            let entries = self.queue.join(", ");
+            event!(Level::INFO, "Hello, {}!", entries);
+            self.queue.clear();
+
+            Ok(After::Nothing)
+        }
+
+        fn apply(system: &mut System, id: Id) -> Result<(), Error> {
+            // Take the actor out of the system
+            let (span, mut actor) = system.borrow_actor::<Self>(id)?;
+            let _enter = span.enter();
+
+            // Perform processing
+            let result = actor.process(system);
+
+            // Handle result
+            let after = match result {
+                Ok(value) => value,
+                Err(error) => {
+                    // TODO: What to do with this?
+                    event!(
+                        Level::ERROR,
+                        "actor failed to apply queue item\n{:?}",
+                        error
+                    );
+                    After::Nothing
+                }
+            };
+
+            // Return the actor
+            system.return_actor(id, actor, after)?;
+
+            Ok(())
+        }
+    }
+
+    impl Actor for ScheduleHelloActor {
         type Family = HelloMsgF;
 
         fn handle(&mut self, _system: &mut System, message: HelloMsg) -> Result<After, Error> {
@@ -78,20 +118,7 @@ mod hello_serivce {
             self.queue.push(message.0.to_string());
 
             // Add this actor to the schedule for processing
-            self.schedule.push(self.info)?;
-
-            Ok(After::Nothing)
-        }
-    }
-
-    // Schedule processing looks for the `Process` trait on your actor
-    impl Process for ScheduleHelloActor {
-        fn process(&mut self, _system: &mut System) -> Result<After, Error> {
-            event!(Level::DEBUG, "processing scheduled messages");
-
-            let entries = self.queue.join(", ");
-            event!(Level::INFO, "Hello, {}!", entries);
-            self.queue.clear();
+            self.schedule.push(self.info.id(), Self::apply)?;
 
             Ok(After::Nothing)
         }

@@ -8,7 +8,7 @@ use bytemuck::{bytes_of_mut, Zeroable};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
 use ptero_io::{ReadResult, ReadResultF, ReadWriteCmd};
 use stewart::{
-    handler::{Handler, Sender, SenderT},
+    handler::{Actor, Sender, SenderT},
     After, Id, System,
 };
 use tracing::{event, instrument, Level};
@@ -43,7 +43,7 @@ struct ReadHeaderActor {
     manager: SenderT<FileManagerMsg>,
 }
 
-impl Handler for ReadHeaderActor {
+impl Actor for ReadHeaderActor {
     type Family = ReadResultF;
 
     fn handle(&mut self, system: &mut System, message: ReadResult) -> Result<After, Error> {
@@ -96,7 +96,7 @@ struct ReadEntriesActor {
     length: usize,
 }
 
-impl Handler for ReadEntriesActor {
+impl Actor for ReadEntriesActor {
     type Family = ReadResultF;
 
     fn handle(&mut self, system: &mut System, message: ReadResult) -> Result<After, Error> {

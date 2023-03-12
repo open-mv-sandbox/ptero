@@ -1,6 +1,6 @@
 use anyhow::Error;
 use stewart::{
-    handler::{HandlerT, SenderT},
+    handler::{ActorT, SenderT},
     After, Id, System,
 };
 use tracing::{event, instrument, Level};
@@ -22,7 +22,7 @@ pub fn start_package_manager(
 
 struct PackageManagerActor {}
 
-impl HandlerT for PackageManagerActor {
+impl ActorT for PackageManagerActor {
     type Message = PackageManagerCommand;
 
     fn handle(&mut self, _system: &mut System, message: Self::Message) -> Result<After, Error> {

@@ -4,7 +4,7 @@ use family::{utils::FamilyT, Family};
 use crate::{After, System};
 
 /// Message handling interface.
-pub trait Handler {
+pub trait Actor {
     type Family: Family;
 
     /// Handle a message in-place.
@@ -18,18 +18,18 @@ pub trait Handler {
 /// Convenience `Handler` specialization that operates on messages with a static lifetime.
 ///
 /// See `family::utils` module for more information.
-pub trait HandlerT {
+pub trait ActorT {
     type Message: 'static;
 
     /// Handle a message in-place.
     fn handle(&mut self, system: &mut System, message: Self::Message) -> Result<After, Error>;
 }
 
-impl<A> Handler for A
+impl<A> Actor for A
 where
-    A: HandlerT,
+    A: ActorT,
 {
-    type Family = FamilyT<<Self as HandlerT>::Message>;
+    type Family = FamilyT<<Self as ActorT>::Message>;
 
     fn handle(
         &mut self,

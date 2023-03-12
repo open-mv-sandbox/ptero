@@ -17,7 +17,7 @@ use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{FileManagerCommand, GetComponentCommand, GetComponentResult};
 use ptero_io::ReadWriteCmd;
 use stewart::{
-    handler::{HandlerT, SenderT},
+    handler::{ActorT, SenderT},
     schedule::{Process, Schedule},
     After, Id, Info, System,
 };
@@ -156,7 +156,7 @@ impl AddIndexActor {
     }
 }
 
-impl HandlerT for AddIndexActor {
+impl ActorT for AddIndexActor {
     type Message = GetComponentResult;
 
     fn handle(

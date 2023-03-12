@@ -1,9 +1,11 @@
 //! Message dispatching and handling.
 
-mod handler;
+// TODO: Move back into core
+
+mod actor;
 mod sender;
 
 pub use self::{
-    handler::{Handler, HandlerT},
+    actor::{Actor, ActorT},
     sender::{apply, Apply, Sender, SenderT},
 };

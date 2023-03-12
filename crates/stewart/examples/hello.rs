@@ -35,7 +35,7 @@ mod hello_serivce {
     use anyhow::Error;
     use family::Member;
     use stewart::{
-        handler::{apply, Apply, Handler, Sender},
+        handler::{apply, Actor, Apply, Sender},
         After, Id, System,
     };
     use tracing::{event, instrument, Level};
@@ -78,7 +78,7 @@ mod hello_serivce {
     /// The actor implementation below remains entirely private to the module.
     struct HelloActor;
 
-    impl Handler for HelloActor {
+    impl Actor for HelloActor {
         type Family = HelloMsgF;
 
         fn handle(&mut self, _system: &mut System, message: HelloMsg) -> Result<After, Error> {

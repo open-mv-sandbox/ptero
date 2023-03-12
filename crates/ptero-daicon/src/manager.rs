@@ -5,7 +5,7 @@ use daicon::{ComponentEntry, ComponentTableHeader};
 use family::utils::MemberT;
 use ptero_io::ReadWriteCmd;
 use stewart::{
-    handler::{apply, Apply, HandlerT, SenderT},
+    handler::{apply, ActorT, Apply, SenderT},
     schedule::{Process, Schedule},
     After, Id, Info, System,
 };
@@ -155,7 +155,7 @@ impl FileManagerActor {
     }
 }
 
-impl HandlerT for FileManagerActor {
+impl ActorT for FileManagerActor {
     type Message = FileManagerMsg;
 
     fn handle(&mut self, _system: &mut System, message: FileManagerMsg) -> Result<After, Error> {

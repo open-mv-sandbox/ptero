@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Context as ContextExt, Error};
 use stewart::{
-    handler::{HandlerT, SenderT},
+    handler::{ActorT, SenderT},
     schedule::{Process, Schedule},
     After, Id, Info, System,
 };
@@ -51,7 +51,7 @@ struct FileReadWriteActor {
     scratch_buffer: Vec<u8>,
 }
 
-impl HandlerT for FileReadWriteActor {
+impl ActorT for FileReadWriteActor {
     type Message = ReadWriteCmd;
 
     fn handle<'a>(&mut self, _system: &mut System, message: ReadWriteCmd) -> Result<After, Error> {

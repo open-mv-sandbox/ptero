@@ -2,9 +2,8 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use anyhow::Error;
 use thiserror::Error;
-use tracing::{event, Level};
 
-use crate::{schedule::Process, After, Id, Info, System};
+use crate::{Id, System};
 
 /// Shared thread-local processing schedule.
 #[derive(Clone, Default)]
@@ -17,23 +16,23 @@ impl Schedule {
         Self::default()
     }
 
-    /// Add an actor to the schedule for processing.
-    pub fn push<A>(&mut self, info: Info<A>) -> Result<(), ScheduleError>
-    where
-        A: Process + 'static,
-    {
+    /// Add an actor function to the schedule for processing.
+    pub fn push(
+        &mut self,
+        id: Id,
+        apply: fn(&mut System, Id) -> Result<(), Error>,
+    ) -> Result<(), ScheduleError> {
+        // TODO: Type safe? No requirement for manualy borrow-return?
+
         let mut queue = self.queue.try_borrow_mut().map_err(|_| ScheduleError)?;
 
         // If the queue already contains this actor, skip
-        if queue.iter().any(|v| v.id == info.id()) {
+        if queue.iter().any(|v| v.id == id) {
             return Ok(());
         }
 
         // Add the actor to the queue
-        let item = Item {
-            id: info.id(),
-            apply: apply_process::<A>,
-        };
+        let item = Item { id, apply };
         queue.push_back(item);
 
         Ok(())
@@ -73,28 +72,4 @@ pub struct ScheduleError;
 struct Item {
     id: Id,
     apply: fn(&mut System, Id) -> Result<(), Error>,
-}
-
-fn apply_process<A: Process + 'static>(system: &mut System, id: Id) -> Result<(), Error> {
-    // Take the actor out of the system
-    let (span, mut actor) = system.borrow_actor::<A>(id)?;
-    let _enter = span.enter();
-
-    // Perform processing
-    let result = actor.process(system);
-
-    // Handle the result
-    let after = match result {
-        Ok(value) => value,
-        Err(error) => {
-            // TODO: What to do with this?
-            event!(Level::ERROR, "actor failed to process\n{:?}", error);
-            After::Nothing
-        }
-    };
-
-    // Return the actor
-    system.return_actor(id, actor, after)?;
-
-    Ok(())
 }

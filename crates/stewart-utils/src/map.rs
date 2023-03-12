@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicPtr;
 
 use anyhow::Error;
 use stewart::{
-    handler::{HandlerT, SenderT},
+    handler::{ActorT, SenderT},
     After, Id, System,
 };
 use tracing::instrument;
@@ -41,7 +41,7 @@ where
     _a: PhantomData<AtomicPtr<A>>,
 }
 
-impl<F, A, B> HandlerT for MapActor<F, A, B>
+impl<F, A, B> ActorT for MapActor<F, A, B>
 where
     F: FnMut(A) -> B + 'static,
     A: 'static,

@@ -6,7 +6,7 @@ use tracing::{event, Level};
 
 use crate::{After, Id, Info, System};
 
-use super::Handler;
+use super::Actor;
 
 /// Sender type for sending messages to an actor.
 ///
@@ -41,7 +41,7 @@ where
     /// Create a new `Sender` for an actor.
     pub fn actor<A>(info: Info<A>) -> Sender<A::Family>
     where
-        A: Handler<Family = F> + 'static,
+        A: Actor<Family = F> + 'static,
     {
         Self::new(info.id(), apply::<A>)
     }
@@ -84,7 +84,7 @@ pub struct Apply<'a> {
     id: Id,
 }
 
-pub fn apply<A: Handler + 'static>(
+pub fn apply<A: Actor + 'static>(
     apply: Apply,
     message: <A::Family as Family>::Member<'_>,
 ) -> Result<(), Error> {
