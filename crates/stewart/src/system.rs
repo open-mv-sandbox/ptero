@@ -1,22 +1,19 @@
 use std::collections::VecDeque;
 
 use anyhow::{Context, Error};
-use thiserror::Error;
 use thunderdome::Index;
 use tracing::{event, Level};
 
 use crate::{
-    actors::{Actors, BorrowError},
-    slot::ActorSlot,
-    Actor, Addr, After, CreateActorError, Id, Info,
+    actors::Actors,
+    slot::{OptionActorSlot, VecActorSlot},
+    Actor, Addr, After, CreateActorError, Id, Info, StartActorError,
 };
 
 /// Thread-local actor execution system.
 pub struct System {
     actors: Actors,
-    pending_start: Vec<Index>,
     queue: VecDeque<Index>,
-    // TODO: Message mapping/apply addresses.
 }
 
 impl System {
@@ -24,7 +21,6 @@ impl System {
     pub fn new() -> Self {
         Self {
             actors: Actors::new(),
-            pending_start: Vec::new(),
             queue: VecDeque::new(),
         }
     }
@@ -45,9 +41,6 @@ impl System {
     {
         let index = self.actors.create::<A>(parent.index)?;
 
-        // Track the address so we can clean it up if it doesn't get started in time
-        self.pending_start.push(index);
-
         Ok(Info::new(index))
     }
 
@@ -58,21 +51,27 @@ impl System {
     {
         event!(Level::INFO, "starting actor");
 
-        // Remove pending, starting is what it's pending for
-        let index = self
-            .pending_start
-            .iter()
-            .position(|i| *i == info.index)
-            .ok_or(StartActorError::ActorNotPending)?;
-        self.pending_start.remove(index);
-
-        // Fill the actor slot
-        let slot = ActorSlot {
+        let slot = VecActorSlot {
             bin: Vec::new(),
             actor,
         };
-        self.actors
-            .return_actor(info.index, Box::new(slot), After::Nothing)?;
+        self.actors.start_actor(info.index, Box::new(slot))?;
+
+        Ok(())
+    }
+
+    /// Start a "mapping" actor on the system.
+    ///
+    /// Mapping actors are assumed to need priority processing on messages, as they only relay the
+    /// message to another system.
+    pub fn start_mapping_actor<A>(&mut self, info: Info<A>, actor: A) -> Result<(), StartActorError>
+    where
+        A: Actor,
+    {
+        event!(Level::INFO, "starting actor");
+
+        let slot = OptionActorSlot { bin: None, actor };
+        self.actors.start_actor(info.index, Box::new(slot))?;
 
         Ok(())
     }
@@ -81,7 +80,7 @@ impl System {
     where
         M: 'static,
     {
-        let result = self.try_send(addr, message.into());
+        let result = self.try_send(addr.index, message.into());
 
         // TODO: Figure out what to do with this, it may be useful to have a unified "send error"
         // system, but in some cases a definitive error may never happen until the implementor
@@ -93,53 +92,66 @@ impl System {
         }
     }
 
-    pub fn try_send<M>(&mut self, addr: Addr<M>, message: M) -> Result<(), Error>
+    pub fn try_send<M>(&mut self, index: Index, message: M) -> Result<(), Error>
     where
         M: 'static,
     {
-        let slot = self.actors.get_mut(addr.index)?;
+        let entry = self.actors.get_mut(index)?;
+        let slot = entry.slot.as_mut().context("actor not available")?;
 
-        let bin: &mut Vec<M> = slot
-            .bin()
-            .downcast_mut()
-            .context("failed to downcast bin")?;
-        bin.push(message);
+        let (immediate, bin) = slot.bin_any();
 
-        if !self.queue.contains(&addr.index) {
-            self.queue.push_back(addr.index);
+        if immediate {
+            let bin: &mut Option<M> = bin.downcast_mut().context("failed to downcast bin")?;
+            *bin = Some(message);
+
+            // Handle immediate
+            self.process(index)?;
+        } else {
+            let bin: &mut Vec<M> = bin.downcast_mut().context("failed to downcast bin")?;
+            bin.push(message);
+
+            if !self.queue.contains(&index) {
+                self.queue.push_back(index);
+            }
         }
 
         Ok(())
     }
 
     pub fn run_until_idle(&mut self) -> Result<(), Error> {
-        self.cleanup_pending()?;
+        self.actors.cleanup_pending()?;
 
         while let Some(index) = self.queue.pop_front() {
-            let (span, mut actor) = self.actors.borrow_actor(index)?;
-            let _enter = span.enter();
+            self.process(index)?;
 
-            // Run the actor's handler
-            let after = actor.handle_binned(self);
-
-            self.actors.return_actor(index, actor, after)?;
+            self.actors.cleanup_pending()?;
         }
 
         Ok(())
     }
 
-    /// Clean up actors that didn't start in time, and thus failed.
-    fn cleanup_pending(&mut self) -> Result<(), Error> {
-        // Intentionally in reverse order, clean up children before parents
-        while let Some(index) = self.pending_start.pop() {
-            self.cleanup_pending_at(index)?;
+    fn process(&mut self, index: Index) -> Result<(), Error> {
+        // Borrow the actor
+        let entry = self.actors.get_mut(index)?;
+        let span = entry.span.clone();
+        let _enter = span.enter();
+        let mut slot = entry.borrow_slot()?;
+
+        // Run the actor's handler
+        let after = slot.process(self);
+
+        // If we got told to stop the actor, do that instead of returning
+        if after == After::Stop {
+            event!(Level::INFO, "stopping actor");
+            drop(slot);
+            self.actors.remove(index)?;
+            return Ok(());
         }
 
-        Ok(())
-    }
+        // Return the actor
+        self.actors.get_mut(index)?.return_slot(slot)?;
 
-    fn cleanup_pending_at(&mut self, index: Index) -> Result<(), Error> {
-        self.actors.fail_remove(index, "failed to start in time")?;
         Ok(())
     }
 }
@@ -156,13 +168,4 @@ impl Drop for System {
             );
         }
     }
-}
-
-#[derive(Error, Debug)]
-#[non_exhaustive]
-pub enum StartActorError {
-    #[error("failed to start actor, actor isn't pending to be started")]
-    ActorNotPending,
-    #[error("failed to start actor, error while returning to slot")]
-    BorrowError(#[from] BorrowError),
 }

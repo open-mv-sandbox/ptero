@@ -4,7 +4,15 @@ use crate::{Actor, After, System};
 
 use tracing::{event, Level};
 
-pub struct ActorSlot<A>
+pub trait AnyActorSlot {
+    /// Returns true if this needs the message to be handled immediately.
+    fn bin_any(&mut self) -> (bool, &mut dyn Any);
+
+    /// Handle processing if queued.
+    fn process(&mut self, system: &mut System) -> After;
+}
+
+pub struct VecActorSlot<A>
 where
     A: Actor,
 {
@@ -12,21 +20,15 @@ where
     pub actor: A,
 }
 
-pub trait AnyActorSlot {
-    fn bin(&mut self) -> &mut dyn Any;
-
-    fn handle_binned(&mut self, system: &mut System) -> After;
-}
-
-impl<A> AnyActorSlot for ActorSlot<A>
+impl<A> AnyActorSlot for VecActorSlot<A>
 where
     A: Actor,
 {
-    fn bin(&mut self) -> &mut dyn Any {
-        &mut self.bin
+    fn bin_any(&mut self) -> (bool, &mut dyn Any) {
+        (false, &mut self.bin)
     }
 
-    fn handle_binned(&mut self, system: &mut System) -> After {
+    fn process(&mut self, system: &mut System) -> After {
         for message in self.bin.drain(..) {
             let result = self.actor.handle(system, message);
 
@@ -46,5 +48,42 @@ where
         }
 
         After::Nothing
+    }
+}
+
+pub struct OptionActorSlot<A>
+where
+    A: Actor,
+{
+    pub bin: Option<A::Message>,
+    pub actor: A,
+}
+
+impl<A> AnyActorSlot for OptionActorSlot<A>
+where
+    A: Actor,
+{
+    fn bin_any(&mut self) -> (bool, &mut dyn Any) {
+        (true, &mut self.bin)
+    }
+
+    fn process(&mut self, system: &mut System) -> After {
+        if let Some(message) = self.bin.take() {
+            let result = self.actor.handle(system, message);
+
+            let after = match result {
+                Ok(value) => value,
+                Err(error) => {
+                    // TODO: What to do with this?
+                    event!(Level::ERROR, ?error, "actor failed to process message");
+
+                    After::Nothing
+                }
+            };
+
+            after
+        } else {
+            After::Nothing
+        }
     }
 }

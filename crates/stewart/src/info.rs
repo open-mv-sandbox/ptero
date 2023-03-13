@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::atomic::AtomicPtr};
 
 use thunderdome::Index;
 
-use crate::{Actor, Addr};
+use crate::Actor;
 
 /// Identifying handle of a created actor.
 ///
@@ -50,3 +50,25 @@ impl<A> Copy for Info<A> {}
 pub struct Id {
     pub(crate) index: Index,
 }
+
+pub struct Addr<M> {
+    pub(crate) index: Index,
+    _m: PhantomData<AtomicPtr<M>>,
+}
+
+impl<M> Addr<M> {
+    pub(crate) fn new(index: Index) -> Self {
+        Addr {
+            index,
+            _m: PhantomData,
+        }
+    }
+}
+
+impl<M> Clone for Addr<M> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M> Copy for Addr<M> {}

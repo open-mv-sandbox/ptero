@@ -3,10 +3,11 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::{slot::AnyActorSlot, After};
+use crate::slot::AnyActorSlot;
 
 pub struct Actors {
     actors: Arena<ActorEntry>,
+    pending_start: Vec<Index>,
     root: Index,
 }
 
@@ -22,7 +23,11 @@ impl Actors {
         };
         let root = actors.insert(actor);
 
-        Self { actors, root }
+        Self {
+            actors,
+            pending_start: Vec::new(),
+            root,
+        }
     }
 
     pub fn root(&self) -> Index {
@@ -46,77 +51,61 @@ impl Actors {
         };
         let index = self.actors.insert(entry);
 
+        // Track the address so we can clean it up if it doesn't get started in time
+        self.pending_start.push(index);
+
         Ok(index)
     }
 
-    pub fn fail_remove(&mut self, index: Index, reason: &str) -> Result<(), Error> {
-        let entry = self
-            .actors
-            .remove(index)
-            .context("failed to remove actor for failure, doesn't exist")?;
+    pub fn start_actor(
+        &mut self,
+        index: Index,
+        slot: Box<dyn AnyActorSlot>,
+    ) -> Result<(), StartActorError> {
+        // Remove pending, starting is what it's pending for
+        let pending_index = self
+            .pending_start
+            .iter()
+            .position(|i| *i == index)
+            .ok_or(StartActorError::ActorNotPending)?;
+        self.pending_start.remove(pending_index);
 
-        let _enter = entry.span.enter();
-        event!(Level::INFO, reason, "actor failed, removing");
+        self.get_mut(index)?.return_slot(slot)?;
 
         Ok(())
     }
 
-    pub fn get_mut(&mut self, index: Index) -> Result<&mut dyn AnyActorSlot, BorrowError> {
-        let entry = self
-            .actors
-            .get_mut(index)
-            .ok_or(BorrowError::ActorNotFound)?;
-        let slot = entry.slot.as_mut().ok_or(BorrowError::ActorNotAvailable {
-            name: entry.debug_name,
-        })?;
+    /// Clean up actors that didn't start in time, and thus failed.
+    pub fn cleanup_pending(&mut self) -> Result<(), Error> {
+        // Intentionally in reverse order, clean up children before parents
+        while let Some(index) = self.pending_start.pop() {
+            self.cleanup_pending_at(index)?;
+        }
 
-        Ok(slot.as_mut())
+        Ok(())
     }
 
-    pub fn borrow_actor(
-        &mut self,
-        index: Index,
-    ) -> Result<(Span, Box<dyn AnyActorSlot>), BorrowError> {
+    fn cleanup_pending_at(&mut self, index: Index) -> Result<(), Error> {
+        let entry = self.remove(index)?;
+
+        let _enter = entry.span.enter();
+        event!(Level::INFO, "actor failed to start in time");
+
+        Ok(())
+    }
+
+    pub fn get_mut(&mut self, index: Index) -> Result<&mut ActorEntry, BorrowError> {
         // Find the actor's entry
         let entry = self
             .actors
             .get_mut(index)
             .ok_or(BorrowError::ActorNotFound)?;
 
-        // Take the actor from the slot
-        let slot = std::mem::replace(&mut entry.slot, None);
-
-        // If the actor wasn't in the slot, return an error
-        let slot = slot.ok_or(BorrowError::ActorNotAvailable {
-            name: entry.debug_name,
-        })?;
-
-        Ok((entry.span.clone(), slot))
+        Ok(entry)
     }
 
-    pub fn return_actor(
-        &mut self,
-        index: Index,
-        slot: Box<dyn AnyActorSlot>,
-        after: After,
-    ) -> Result<(), BorrowError> {
-        // If we got told to stop the actor, do that instead of returning
-        if after == After::Stop {
-            event!(Level::INFO, "stopping actor");
-            drop(slot);
-            self.actors.remove(index);
-            return Ok(());
-        }
-
-        // Put the actor back in the slot
-        // TODO: Check if already present
-        let entry = self
-            .actors
-            .get_mut(index)
-            .ok_or(BorrowError::ActorDisappeared)?;
-        entry.slot = Some(slot);
-
-        Ok(())
+    pub fn remove(&mut self, index: Index) -> Result<ActorEntry, Error> {
+        self.actors.remove(index).context("actor doesn't exist")
     }
 
     /// Get the debug names of all active actors, except root.
@@ -142,12 +131,34 @@ fn debug_name<T>() -> &'static str {
     after_modules
 }
 
-struct ActorEntry {
+pub struct ActorEntry {
     /// Debugging identification name, not intended for anything other than warn/err reporting.
-    debug_name: &'static str,
+    pub debug_name: &'static str,
     /// Persistent logging span, groups logging that happenened under this actor.
-    span: Span,
-    slot: Option<Box<dyn AnyActorSlot>>,
+    pub span: Span,
+    pub slot: Option<Box<dyn AnyActorSlot>>,
+}
+
+impl ActorEntry {
+    pub fn borrow_slot(&mut self) -> Result<Box<dyn AnyActorSlot>, BorrowError> {
+        // Take the actor from the slot
+        let slot = std::mem::replace(&mut self.slot, None);
+
+        // If the actor wasn't in the slot, return an error
+        let slot = slot.ok_or(BorrowError::ActorNotAvailable {
+            name: self.debug_name,
+        })?;
+
+        Ok(slot)
+    }
+
+    pub fn return_slot(&mut self, slot: Box<dyn AnyActorSlot>) -> Result<(), BorrowError> {
+        // Put the actor back in the slot
+        // TODO: Check if already present
+        self.slot = Some(slot);
+
+        Ok(())
+    }
 }
 
 #[derive(Error, Debug)]
@@ -159,11 +170,18 @@ pub enum CreateActorError {
 
 #[derive(Error, Debug)]
 #[non_exhaustive]
+pub enum StartActorError {
+    #[error("failed to start actor, actor isn't pending to be started")]
+    ActorNotPending,
+    #[error("failed to start actor, error while returning to slot")]
+    BorrowError(#[from] BorrowError),
+}
+
+#[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum BorrowError {
     #[error("failed to borrow actor, no actor exists at the given address")]
     ActorNotFound,
     #[error("failed to borrow actor, actor ({name}) at the address exists, but is not currently available")]
     ActorNotAvailable { name: &'static str },
-    #[error("failed to return actor, the actor disappeared before it could be returned")]
-    ActorDisappeared,
 }

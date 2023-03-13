@@ -5,15 +5,13 @@
 
 mod actor;
 mod actors;
-mod addr;
 mod info;
 mod slot;
 mod system;
 
 pub use self::{
     actor::{Actor, After},
-    actors::CreateActorError,
-    addr::Addr,
-    info::{Id, Info},
-    system::{StartActorError, System},
+    actors::{CreateActorError, StartActorError},
+    info::{Addr, Id, Info},
+    system::System,
 };
