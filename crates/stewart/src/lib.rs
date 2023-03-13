@@ -4,13 +4,15 @@
 //! stewart book.
 
 mod actor;
+mod actors;
 mod addr;
 mod info;
 mod system;
 
 pub use self::{
     actor::{Actor, After},
+    actors::CreateActorError,
     addr::Addr,
     info::{Id, Info},
-    system::{CreateActorError, StartActorError, System},
+    system::{StartActorError, System},
 };
