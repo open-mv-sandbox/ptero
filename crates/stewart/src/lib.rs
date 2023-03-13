@@ -7,6 +7,7 @@ mod actor;
 mod actors;
 mod addr;
 mod info;
+mod slot;
 mod system;
 
 pub use self::{

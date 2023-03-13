@@ -1,12 +1,13 @@
-use std::{any::Any, collections::VecDeque};
+use std::collections::VecDeque;
 
-use anyhow::Error;
+use anyhow::{Context, Error};
 use thiserror::Error;
 use thunderdome::Index;
 use tracing::{event, Level};
 
 use crate::{
     actors::{Actors, BorrowError},
+    slot::ActorSlot,
     Actor, Addr, After, CreateActorError, Id, Info,
 };
 
@@ -14,9 +15,8 @@ use crate::{
 pub struct System {
     actors: Actors,
     pending_start: Vec<Index>,
-    // TODO: Bin messages into type-specific Vecs.
-    queue: VecDeque<(Index, Box<dyn Any>)>,
-    // TODO: Bin-adding + mapping address slots.
+    queue: VecDeque<Index>,
+    // TODO: Message mapping/apply addresses.
 }
 
 impl System {
@@ -66,10 +66,13 @@ impl System {
             .ok_or(StartActorError::ActorNotPending)?;
         self.pending_start.remove(index);
 
-        // Retrieve the slot
-        let actor = Box::new(actor);
+        // Fill the actor slot
+        let slot = ActorSlot {
+            bin: Vec::new(),
+            actor,
+        };
         self.actors
-            .return_actor(info.index, actor, After::Nothing)?;
+            .return_actor(info.index, Box::new(slot), After::Nothing)?;
 
         Ok(())
     }
@@ -78,29 +81,46 @@ impl System {
     where
         M: 'static,
     {
-        let message = Box::new(message.into());
-        self.queue.push_back((addr.index, message));
+        let result = self.try_send(addr, message.into());
+
+        // TODO: Figure out what to do with this, it may be useful to have a unified "send error"
+        // system, but in some cases a definitive error may never happen until the implementor
+        // decides that it's too long?
+        // Some cases, it's an error with the receiver, some cases it's an error with the sender.
+        // This needs more thought before making an API decision.
+        if let Err(error) = result {
+            event!(Level::ERROR, ?error, "failed to send message");
+        }
+    }
+
+    pub fn try_send<M>(&mut self, addr: Addr<M>, message: M) -> Result<(), Error>
+    where
+        M: 'static,
+    {
+        let slot = self.actors.get_mut(addr.index)?;
+
+        let bin: &mut Vec<M> = slot
+            .bin()
+            .downcast_mut()
+            .context("failed to downcast bin")?;
+        bin.push(message);
+
+        if !self.queue.contains(&addr.index) {
+            self.queue.push_back(addr.index);
+        }
+
+        Ok(())
     }
 
     pub fn run_until_idle(&mut self) -> Result<(), Error> {
         self.cleanup_pending()?;
 
-        while let Some((index, message)) = self.queue.pop_front() {
+        while let Some(index) = self.queue.pop_front() {
             let (span, mut actor) = self.actors.borrow_actor(index)?;
             let _enter = span.enter();
 
             // Run the actor's handler
-            let result = actor.handle(self, message);
-
-            // Log the result
-            let after = match result {
-                Ok(value) => value,
-                Err(error) => {
-                    event!(Level::ERROR, ?error, "actor failed to process message");
-
-                    After::Nothing
-                }
-            };
+            let after = actor.handle_binned(self);
 
             self.actors.return_actor(index, actor, after)?;
         }
@@ -143,6 +163,6 @@ impl Drop for System {
 pub enum StartActorError {
     #[error("failed to start actor, actor isn't pending to be started")]
     ActorNotPending,
-    #[error("failed to start actor, error while returning actor slot")]
+    #[error("failed to start actor, error while returning to slot")]
     BorrowError(#[from] BorrowError),
 }

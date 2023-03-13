@@ -1,11 +1,9 @@
-use std::any::Any;
-
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error};
 use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::{Actor, After, System};
+use crate::{slot::AnyActorSlot, After};
 
 pub struct Actors {
     actors: Arena<ActorEntry>,
@@ -20,7 +18,7 @@ impl Actors {
         let actor = ActorEntry {
             debug_name: "Root",
             span: Span::current(),
-            actor: None,
+            slot: None,
         };
         let root = actors.insert(actor);
 
@@ -44,7 +42,7 @@ impl Actors {
         let entry = ActorEntry {
             debug_name: debug_name::<A>(),
             span,
-            actor: None,
+            slot: None,
         };
         let index = self.actors.insert(entry);
 
@@ -63,7 +61,22 @@ impl Actors {
         Ok(())
     }
 
-    pub fn borrow_actor(&mut self, index: Index) -> Result<(Span, Box<dyn AnyActor>), BorrowError> {
+    pub fn get_mut(&mut self, index: Index) -> Result<&mut dyn AnyActorSlot, BorrowError> {
+        let entry = self
+            .actors
+            .get_mut(index)
+            .ok_or(BorrowError::ActorNotFound)?;
+        let slot = entry.slot.as_mut().ok_or(BorrowError::ActorNotAvailable {
+            name: entry.debug_name,
+        })?;
+
+        Ok(slot.as_mut())
+    }
+
+    pub fn borrow_actor(
+        &mut self,
+        index: Index,
+    ) -> Result<(Span, Box<dyn AnyActorSlot>), BorrowError> {
         // Find the actor's entry
         let entry = self
             .actors
@@ -71,26 +84,26 @@ impl Actors {
             .ok_or(BorrowError::ActorNotFound)?;
 
         // Take the actor from the slot
-        let actor = std::mem::replace(&mut entry.actor, None);
+        let slot = std::mem::replace(&mut entry.slot, None);
 
         // If the actor wasn't in the slot, return an error
-        let actor = actor.ok_or(BorrowError::ActorNotAvailable {
+        let slot = slot.ok_or(BorrowError::ActorNotAvailable {
             name: entry.debug_name,
         })?;
 
-        Ok((entry.span.clone(), actor))
+        Ok((entry.span.clone(), slot))
     }
 
     pub fn return_actor(
         &mut self,
         index: Index,
-        actor: Box<dyn AnyActor>,
+        slot: Box<dyn AnyActorSlot>,
         after: After,
     ) -> Result<(), BorrowError> {
         // If we got told to stop the actor, do that instead of returning
         if after == After::Stop {
             event!(Level::INFO, "stopping actor");
-            drop(actor);
+            drop(slot);
             self.actors.remove(index);
             return Ok(());
         }
@@ -101,7 +114,7 @@ impl Actors {
             .actors
             .get_mut(index)
             .ok_or(BorrowError::ActorDisappeared)?;
-        entry.actor = Some(actor);
+        entry.slot = Some(slot);
 
         Ok(())
     }
@@ -134,23 +147,7 @@ struct ActorEntry {
     debug_name: &'static str,
     /// Persistent logging span, groups logging that happenened under this actor.
     span: Span,
-    actor: Option<Box<dyn AnyActor>>,
-}
-
-pub trait AnyActor {
-    fn handle(&mut self, system: &mut System, message: Box<dyn Any>) -> Result<After, Error>;
-}
-
-impl<A> AnyActor for A
-where
-    A: Actor,
-{
-    fn handle(&mut self, system: &mut System, message: Box<dyn Any>) -> Result<After, Error> {
-        let message = message
-            .downcast()
-            .map_err(|_| anyhow!("failed to downcast message"))?;
-        Actor::handle(self, system, *message)
-    }
+    slot: Option<Box<dyn AnyActorSlot>>,
 }
 
 #[derive(Error, Debug)]
