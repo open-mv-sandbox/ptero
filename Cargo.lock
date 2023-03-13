@@ -320,25 +320,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "family"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "878ff4851ab6f53348093775bac08e464f6b91ff3ed4dac646c12dead3733393"
-dependencies = [
- "family-derive",
-]
-
-[[package]]
-name = "family-derive"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0139a7b93e7b39c390eb2f89563d702ec23dadf2cb57210c1e7bdd1dde6aa14a"
-dependencies = [
- "quote",
- "syn",
-]
-
-[[package]]
 name = "foreign-types"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -797,7 +778,6 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "daicon",
- "family",
  "ptero-io",
  "stewart",
  "stewart-utils",
@@ -810,7 +790,6 @@ name = "ptero-io"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "family",
  "stewart",
  "tracing",
 ]
@@ -986,7 +965,6 @@ name = "stewart"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "family",
  "thiserror",
  "thunderdome",
  "tracing",

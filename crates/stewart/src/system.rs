@@ -1,17 +1,20 @@
-use std::any::Any;
+use std::{any::Any, collections::VecDeque};
 
-use anyhow::{Context, Error};
+use anyhow::{anyhow, Context, Error};
 use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::{After, Id, Info};
+use crate::{Actor, Addr, After, Id, Info};
 
-/// Thread-local actor collection and lifetime manager.
+/// Thread-local actor execution system.
 pub struct System {
+    // TODO: Extract actor collection.
     actors: Arena<ActorEntry>,
     pending_start: Vec<Index>,
     root: Index,
+    // TODO: Bin messages into type-specific Vecs.
+    queue: VecDeque<(Index, Box<dyn Any>)>,
 }
 
 impl System {
@@ -31,6 +34,7 @@ impl System {
             actors,
             pending_start: Vec::new(),
             root,
+            queue: VecDeque::new(),
         }
     }
 
@@ -42,7 +46,10 @@ impl System {
     /// Create an actor on the system.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create_actor<A: 'static>(&mut self, parent: Id) -> Result<Info<A>, CreateActorError> {
+    pub fn create_actor<A>(&mut self, parent: Id) -> Result<Info<A>, CreateActorError>
+    where
+        A: Actor,
+    {
         // Continual span is inherited from the create addr callsite
         let span = Span::current();
 
@@ -68,7 +75,7 @@ impl System {
     /// Start an actor on the system, making it available for handling messages.
     pub fn start_actor<A>(&mut self, info: Info<A>, actor: A) -> Result<(), StartActorError>
     where
-        A: 'static,
+        A: Actor,
     {
         event!(Level::INFO, "starting actor");
 
@@ -93,8 +100,42 @@ impl System {
         Ok(())
     }
 
+    pub fn send<M>(&mut self, addr: Addr<M>, message: impl Into<M>)
+    where
+        M: 'static,
+    {
+        let message = Box::new(message.into());
+        self.queue.push_back((addr.index, message));
+    }
+
+    pub fn run_until_idle(&mut self) -> Result<(), Error> {
+        self.cleanup_pending()?;
+
+        while let Some((index, message)) = self.queue.pop_front() {
+            let (span, mut actor) = self.borrow_actor(index)?;
+            let _enter = span.enter();
+
+            // Run the actor's handler
+            let result = actor.handle(self, message);
+
+            // Log the result
+            let after = match result {
+                Ok(value) => value,
+                Err(error) => {
+                    event!(Level::ERROR, ?error, "actor failed to process message");
+
+                    After::Nothing
+                }
+            };
+
+            self.return_actor(index, actor, after)?;
+        }
+
+        Ok(())
+    }
+
     /// Clean up actors that didn't start in time, and thus failed.
-    pub fn cleanup_pending(&mut self) -> Result<(), Error> {
+    fn cleanup_pending(&mut self) -> Result<(), Error> {
         // Intentionally in reverse order, clean up children before parents
         while let Some(index) = self.pending_start.pop() {
             self.cleanup_pending_at(index)?;
@@ -115,27 +156,11 @@ impl System {
         Ok(())
     }
 
-    /// Temporarily borrow an actor without taking it.
-    pub fn get_mut<A>(&mut self, id: Id) -> Option<&mut A>
-    where
-        A: 'static,
-    {
-        let index = id.index;
-
-        let entry = self.actors.get_mut(index)?;
-        let actor = entry.actor.as_mut()?;
-
-        actor.as_mut().downcast_mut()
-    }
-
-    pub fn borrow_actor<A>(&mut self, id: Id) -> Result<(Span, Box<A>), BorrowError>
-    where
-        A: 'static,
-    {
+    fn borrow_actor(&mut self, index: Index) -> Result<(Span, Box<dyn AnyActor>), BorrowError> {
         // Find the actor's entry
         let entry = self
             .actors
-            .get_mut(id.index)
+            .get_mut(index)
             .ok_or(BorrowError::ActorNotFound)?;
 
         // Take the actor from the slot
@@ -146,39 +171,29 @@ impl System {
             name: entry.debug_name,
         })?;
 
-        // Downcast the actor to the desired type
-        // TODO: Return the actor again on failure, or prevent it from being taken in the
-        // first place
-        let actor = actor
-            .downcast()
-            .map_err(|_| BorrowError::ActorInvalidType)?;
-
         Ok((entry.span.clone(), actor))
     }
 
-    pub fn return_actor<A>(
+    fn return_actor(
         &mut self,
-        id: Id,
-        actor: Box<A>,
+        index: Index,
+        actor: Box<dyn AnyActor>,
         after: After,
-    ) -> Result<(), BorrowError>
-    where
-        A: 'static,
-    {
+    ) -> Result<(), BorrowError> {
         // TODO: Validate same type slot
 
         // If we got told to stop the actor, do that instead of returning
         if after == After::Stop {
             event!(Level::INFO, "stopping actor");
             drop(actor);
-            self.actors.remove(id.index);
+            self.actors.remove(index);
             return Ok(());
         }
 
         // Put the actor back in the slot
         let entry = self
             .actors
-            .get_mut(id.index)
+            .get_mut(index)
             .ok_or(BorrowError::ActorDisappeared)?;
         entry.actor = Some(actor);
 
@@ -220,7 +235,23 @@ struct ActorEntry {
     debug_name: &'static str,
     /// Persistent logging span, groups logging that happenened under this actor.
     span: Span,
-    actor: Option<Box<dyn Any>>,
+    actor: Option<Box<dyn AnyActor>>,
+}
+
+trait AnyActor {
+    fn handle(&mut self, system: &mut System, message: Box<dyn Any>) -> Result<After, Error>;
+}
+
+impl<A> AnyActor for A
+where
+    A: Actor,
+{
+    fn handle(&mut self, system: &mut System, message: Box<dyn Any>) -> Result<After, Error> {
+        let message = message
+            .downcast()
+            .map_err(|_| anyhow!("failed to downcast message"))?;
+        Actor::handle(self, system, *message)
+    }
 }
 
 #[derive(Error, Debug)]
@@ -243,13 +274,11 @@ pub enum StartActorError {
 
 #[derive(Error, Debug)]
 #[non_exhaustive]
-pub enum BorrowError {
+enum BorrowError {
     #[error("failed to borrow actor, no actor exists at the given address")]
     ActorNotFound,
     #[error("failed to borrow actor, actor ({name}) at the address exists, but is not currently available")]
     ActorNotAvailable { name: &'static str },
     #[error("failed to return actor, the actor disappeared before it could be returned")]
     ActorDisappeared,
-    #[error("failed to borrow or return actor, invalid type")]
-    ActorInvalidType,
 }

@@ -3,21 +3,14 @@
 //! This is an API reference for the stewart rust library. For a detailed user guide, read the
 //! stewart book.
 
-pub mod handler;
+mod actor;
+mod addr;
 mod info;
-pub mod schedule;
 mod system;
 
 pub use self::{
+    actor::{Actor, After},
+    addr::Addr,
     info::{Id, Info},
-    system::{BorrowError, CreateActorError, StartActorError, System},
+    system::{CreateActorError, StartActorError, System},
 };
-
-/// The operation to perform with the actor after performing an operation on it.
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
-pub enum After {
-    /// Do nothing, no changes are made.
-    Nothing,
-    /// Stop the actor and remove it from the system.
-    Stop,
-}

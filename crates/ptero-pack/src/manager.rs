@@ -1,8 +1,5 @@
 use anyhow::Error;
-use stewart::{
-    handler::{ActorT, SenderT},
-    After, Id, System,
-};
+use stewart::{Actor, Addr, After, Id, System};
 use tracing::{event, instrument, Level};
 
 pub enum PackageManagerCommand {
@@ -13,16 +10,16 @@ pub enum PackageManagerCommand {
 pub fn start_package_manager(
     system: &mut System,
     parent: Id,
-) -> Result<SenderT<PackageManagerCommand>, Error> {
+) -> Result<Addr<PackageManagerCommand>, Error> {
     let info = system.create_actor(parent)?;
     system.start_actor(info, PackageManagerActor {})?;
 
-    Ok(SenderT::actor(info))
+    Ok(info.addr())
 }
 
 struct PackageManagerActor {}
 
-impl ActorT for PackageManagerActor {
+impl Actor for PackageManagerActor {
     type Message = PackageManagerCommand;
 
     fn handle(&mut self, _system: &mut System, message: Self::Message) -> Result<After, Error> {

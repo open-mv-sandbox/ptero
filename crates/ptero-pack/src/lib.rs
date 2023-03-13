@@ -16,11 +16,7 @@ use dacti_index::{
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{FileManagerCommand, GetComponentCommand, GetComponentResult};
 use ptero_io::ReadWriteCmd;
-use stewart::{
-    handler::{ActorT, SenderT},
-    schedule::{Process, Schedule},
-    After, Id, Info, System,
-};
+use stewart::{Actor, Addr, After, Id, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -65,12 +61,7 @@ fn create_package(path: &str) -> Result<(), Error> {
 }
 
 #[instrument("add-data", skip_all)]
-pub fn start_add_data(
-    system: &mut System,
-    parent: Id,
-    schedule: Schedule,
-    data: AddData,
-) -> Result<(), Error> {
+pub fn start_add_data(system: &mut System, parent: Id, data: AddData) -> Result<(), Error> {
     event!(Level::DEBUG, "adding data to package");
 
     let info = system.create_actor(parent)?;
@@ -91,7 +82,7 @@ pub fn start_add_data(
         file_manager: data.file_manager,
         value: index_entry,
     };
-    AddIndexActor::start(system, info.id(), schedule, add_index)?;
+    AddIndexActor::start(system, info.id(), add_index)?;
 
     // Write the file to the package
     event!(Level::DEBUG, "writing file data to package");
@@ -99,54 +90,51 @@ pub fn start_add_data(
         start: data_start,
         data: data.data,
     };
-    data.file.send(system, write);
+    system.send(data.file, write);
 
     Ok(())
 }
 
 pub struct AddData {
-    pub file: SenderT<ReadWriteCmd>,
-    pub file_manager: SenderT<FileManagerCommand>,
+    pub file: Addr<ReadWriteCmd>,
+    pub file_manager: Addr<FileManagerCommand>,
     pub data: Vec<u8>,
     pub uuid: Uuid,
 }
 
 struct AddDataActor;
 
+impl Actor for AddDataActor {
+    type Message = ();
+
+    fn handle(&mut self, _system: &mut System, _message: ()) -> Result<After, Error> {
+        unimplemented!()
+    }
+}
+
 struct AddIndex {
-    file: SenderT<ReadWriteCmd>,
-    file_manager: SenderT<FileManagerCommand>,
+    file: Addr<ReadWriteCmd>,
+    file_manager: Addr<FileManagerCommand>,
     value: IndexEntry,
 }
 
 struct AddIndexActor {
-    info: Info<Self>,
-    schedule: Schedule,
-    message: Option<GetComponentResult>,
-    file: SenderT<ReadWriteCmd>,
+    file: Addr<ReadWriteCmd>,
     value: IndexEntry,
 }
 
 impl AddIndexActor {
-    fn start(
-        system: &mut System,
-        parent: Id,
-        schedule: Schedule,
-        data: AddIndex,
-    ) -> Result<(), Error> {
+    fn start(system: &mut System, parent: Id, data: AddIndex) -> Result<(), Error> {
         let info = system.create_actor(parent)?;
 
         let command = GetComponentCommand {
             id: INDEX_COMPONENT_UUID,
-            on_result: SenderT::actor(info),
+            on_result: info.addr(),
         };
         let command = FileManagerCommand::GetComponent(command);
-        data.file_manager.send(system, command);
+        system.send(data.file_manager, command);
 
         let actor = Self {
-            info,
-            schedule,
-            message: None,
             file: data.file,
             value: data.value,
         };
@@ -156,24 +144,10 @@ impl AddIndexActor {
     }
 }
 
-impl ActorT for AddIndexActor {
+impl Actor for AddIndexActor {
     type Message = GetComponentResult;
 
-    fn handle(
-        &mut self,
-        _system: &mut System,
-        message: GetComponentResult,
-    ) -> Result<After, Error> {
-        self.message = Some(message);
-        self.schedule.push(self.info)?;
-        Ok(After::Nothing)
-    }
-}
-
-impl Process for AddIndexActor {
-    fn process(&mut self, system: &mut System) -> Result<After, Error> {
-        let message = self.message.take().context("incorrect state")?;
-
+    fn handle(&mut self, system: &mut System, message: GetComponentResult) -> Result<After, Error> {
         let region = from_bytes::<RegionData>(message.entry.data());
         let component_offset = region.offset(message.offset);
 
@@ -187,7 +161,7 @@ impl Process for AddIndexActor {
             start: component_offset,
             data,
         };
-        self.file.send(system, msg);
+        system.send(self.file, msg);
 
         Ok(After::Stop)
     }

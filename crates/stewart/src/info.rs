@@ -2,6 +2,8 @@ use std::{marker::PhantomData, sync::atomic::AtomicPtr};
 
 use thunderdome::Index;
 
+use crate::{Actor, Addr};
+
 /// Identifying handle of a created actor.
 ///
 /// This can be used to manipulate the actor's data in an elevated way. Operations done using this
@@ -15,7 +17,10 @@ pub struct Info<A> {
     _a: PhantomData<AtomicPtr<A>>,
 }
 
-impl<A> Info<A> {
+impl<A> Info<A>
+where
+    A: Actor,
+{
     pub(crate) fn new(index: Index) -> Self {
         Self {
             index,
@@ -25,6 +30,10 @@ impl<A> Info<A> {
 
     pub fn id(self) -> Id {
         Id { index: self.index }
+    }
+
+    pub fn addr(self) -> Addr<A::Message> {
+        Addr::new(self.index)
     }
 }
 

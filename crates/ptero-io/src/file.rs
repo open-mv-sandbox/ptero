@@ -4,11 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as ContextExt, Error};
-use stewart::{
-    handler::{ActorT, SenderT},
-    schedule::{Process, Schedule},
-    After, Id, Info, System,
-};
+use stewart::{Actor, Addr, After, Id, System};
 use tracing::{event, instrument, Level};
 
 use crate::ReadWriteCmd;
@@ -18,10 +14,9 @@ use crate::ReadWriteCmd;
 pub fn start_file_read_write(
     system: &mut System,
     parent: Id,
-    schedule: Schedule,
     path: String,
     truncate: bool,
-) -> Result<SenderT<ReadWriteCmd>, Error> {
+) -> Result<Addr<ReadWriteCmd>, Error> {
     let info = system.create_actor(parent)?;
 
     let package_file = OpenOptions::new()
@@ -31,68 +26,40 @@ pub fn start_file_read_write(
         .open(path)
         .context("failed to open target package for writing")?;
 
-    let actor = FileReadWriteActor {
-        info,
-        schedule,
-        queue: Vec::new(),
-        package_file,
-        scratch_buffer: Vec::new(),
-    };
+    let actor = FileReadWriteActor { package_file };
     system.start_actor(info, actor)?;
 
-    Ok(SenderT::actor(info))
+    Ok(info.addr())
 }
 
 struct FileReadWriteActor {
-    info: Info<Self>,
-    schedule: Schedule,
-    queue: Vec<ReadWriteCmd>,
     package_file: File,
-    scratch_buffer: Vec<u8>,
 }
 
-impl ActorT for FileReadWriteActor {
+impl Actor for FileReadWriteActor {
     type Message = ReadWriteCmd;
 
-    fn handle<'a>(&mut self, _system: &mut System, message: ReadWriteCmd) -> Result<After, Error> {
-        self.queue.push(message);
-        self.schedule.push(self.info)?;
+    fn handle<'a>(&mut self, system: &mut System, message: ReadWriteCmd) -> Result<After, Error> {
+        event!(Level::INFO, "handling {}", message.kind());
 
-        Ok(After::Nothing)
-    }
-}
+        match message {
+            ReadWriteCmd::Read {
+                start,
+                length,
+                on_result,
+            } => {
+                let mut buffer = vec![0u8; length as usize];
 
-impl Process for FileReadWriteActor {
-    fn process(&mut self, system: &mut System) -> Result<After, Error> {
-        event!(
-            Level::INFO,
-            count = self.queue.len(),
-            "processing operations"
-        );
+                self.package_file.seek(SeekFrom::Start(start))?;
+                self.package_file.read_exact(&mut buffer)?;
 
-        for message in self.queue.drain(..) {
-            event!(Level::INFO, "performing {}", message.kind());
-
-            match message {
-                ReadWriteCmd::Read {
-                    start,
-                    length,
-                    on_result: reply,
-                } => {
-                    self.scratch_buffer.resize(length as usize, 0);
-
-                    self.package_file.seek(SeekFrom::Start(start))?;
-                    self.package_file.read_exact(&mut self.scratch_buffer)?;
-                    let msg = Ok(self.scratch_buffer.as_slice());
-                    reply.send(system, msg);
-                }
-                ReadWriteCmd::Write { start, data } => {
-                    self.package_file.seek(SeekFrom::Start(start))?;
-                    self.package_file.write_all(&data)?;
-                }
+                system.send(on_result, buffer);
+            }
+            ReadWriteCmd::Write { start, data } => {
+                self.package_file.seek(SeekFrom::Start(start))?;
+                self.package_file.write_all(&data)?;
             }
         }
-
         Ok(After::Nothing)
     }
 }

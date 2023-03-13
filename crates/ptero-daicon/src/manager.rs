@@ -1,14 +1,10 @@
-use std::{collections::VecDeque, mem::size_of};
+use std::mem::size_of;
 
 use anyhow::{Context, Error};
 use daicon::{ComponentEntry, ComponentTableHeader};
-use family::utils::MemberT;
 use ptero_io::ReadWriteCmd;
-use stewart::{
-    handler::{apply, ActorT, Apply, SenderT},
-    schedule::{Process, Schedule},
-    After, Id, Info, System,
-};
+use stewart::{Actor, Addr, After, Id, Info, System};
+use stewart_utils::start_map;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -20,7 +16,7 @@ pub enum FileManagerCommand {
 
 pub struct GetComponentCommand {
     pub id: Uuid,
-    pub on_result: SenderT<GetComponentResult>,
+    pub on_result: Addr<GetComponentResult>,
 }
 
 pub struct GetComponentResult {
@@ -33,18 +29,15 @@ pub struct GetComponentResult {
 pub fn start_file_manager(
     system: &mut System,
     parent: Id,
-    schedule: Schedule,
-    read_write: SenderT<ReadWriteCmd>,
-) -> Result<SenderT<FileManagerCommand>, Error> {
+    read_write: Addr<ReadWriteCmd>,
+) -> Result<Addr<FileManagerCommand>, Error> {
     let info = system.create_actor(parent)?;
 
-    let api_sender = SenderT::new(info.id(), apply_command);
+    let command = start_map(system, parent, info.addr(), FileManagerMessage::Command)?;
 
     // Start the root manager actor
     let actor = FileManagerActor {
         info,
-        schedule,
-        queue: VecDeque::new(),
         read_write,
 
         pending: Vec::new(),
@@ -54,21 +47,14 @@ pub fn start_file_manager(
     system.start_actor(info, actor)?;
 
     // Immediately start reading the first header
-    start_read_header(system, info.id(), read_write, SenderT::actor(info))?;
+    start_read_header(system, info.id(), read_write, info.addr())?;
 
-    Ok(api_sender)
-}
-
-fn apply_command(a: Apply, value: MemberT<FileManagerCommand>) -> Result<(), Error> {
-    let message = FileManagerMsg::Command(value.0).into();
-    apply::<FileManagerActor>(a, message)
+    Ok(command)
 }
 
 struct FileManagerActor {
     info: Info<Self>,
-    schedule: Schedule,
-    queue: VecDeque<FileManagerMsg>,
-    read_write: SenderT<ReadWriteCmd>,
+    read_write: Addr<ReadWriteCmd>,
 
     pending: Vec<GetComponentCommand>,
     header: Option<ComponentTableHeader>,
@@ -76,40 +62,6 @@ struct FileManagerActor {
 }
 
 impl FileManagerActor {
-    fn on_message(
-        &mut self,
-        system: &mut System,
-        message: FileManagerMsg,
-        entries_changed: &mut bool,
-    ) -> Result<(), Error> {
-        match message {
-            FileManagerMsg::Command(command) => self.on_command(command)?,
-            FileManagerMsg::Header(header) => {
-                event!(Level::DEBUG, "caching header");
-                self.header = Some(header);
-
-                // Start reading the entries for this header
-                start_read_entries(
-                    system,
-                    self.info.id(),
-                    self.read_write,
-                    8 + size_of::<ComponentTableHeader>() as u64,
-                    header.length() as usize,
-                    SenderT::actor(self.info),
-                )?;
-
-                // TODO: Follow additional headers
-            }
-            FileManagerMsg::Entries(entries) => {
-                event!(Level::DEBUG, length = entries.len(), "caching entries");
-                self.entries = Some(entries);
-                *entries_changed = true;
-            }
-        };
-
-        Ok(())
-    }
-
     fn on_command(&mut self, command: FileManagerCommand) -> Result<(), Error> {
         match command {
             FileManagerCommand::GetComponent(command) => {
@@ -142,7 +94,7 @@ impl FileManagerActor {
                     offset: header.entries_offset(),
                     entry: *entry,
                 };
-                pending.on_result.send(system, result);
+                system.send(pending.on_result, result);
                 return false;
             }
 
@@ -155,24 +107,36 @@ impl FileManagerActor {
     }
 }
 
-impl ActorT for FileManagerActor {
-    type Message = FileManagerMsg;
+impl Actor for FileManagerActor {
+    type Message = FileManagerMessage;
 
-    fn handle(&mut self, _system: &mut System, message: FileManagerMsg) -> Result<After, Error> {
-        self.queue.push_back(message);
-        self.schedule.push(self.info)?;
-        Ok(After::Nothing)
-    }
-}
-
-impl Process for FileManagerActor {
-    fn process(&mut self, system: &mut System) -> Result<After, Error> {
+    fn handle(&mut self, system: &mut System, message: FileManagerMessage) -> Result<After, Error> {
         let mut entries_changed = false;
 
-        // Handle pending messages
-        while let Some(message) = self.queue.pop_front() {
-            self.on_message(system, message, &mut entries_changed)?;
-        }
+        match message {
+            FileManagerMessage::Command(command) => self.on_command(command)?,
+            FileManagerMessage::Header(header) => {
+                event!(Level::DEBUG, "caching header");
+                self.header = Some(header);
+
+                // Start reading the entries for this header
+                start_read_entries(
+                    system,
+                    self.info.id(),
+                    self.read_write,
+                    8 + size_of::<ComponentTableHeader>() as u64,
+                    header.length() as usize,
+                    self.info.addr(),
+                )?;
+
+                // TODO: Follow additional headers
+            }
+            FileManagerMessage::Entries(entries) => {
+                event!(Level::DEBUG, length = entries.len(), "caching entries");
+                self.entries = Some(entries);
+                entries_changed = true;
+            }
+        };
 
         // Check if we can resolve any pending requests
         if entries_changed {
@@ -183,7 +147,7 @@ impl Process for FileManagerActor {
     }
 }
 
-pub enum FileManagerMsg {
+pub enum FileManagerMessage {
     Command(FileManagerCommand),
     Header(ComponentTableHeader),
     Entries(Vec<ComponentEntry>),

@@ -1,8 +1,6 @@
 mod file;
 
-use anyhow::Error;
-use family::{Family, Member};
-use stewart::handler::Sender;
+use stewart::Addr;
 
 pub use self::file::start_file_read_write;
 
@@ -11,7 +9,7 @@ pub enum ReadWriteCmd {
     Read {
         start: u64,
         length: u64,
-        on_result: Sender<ReadResultF>,
+        on_result: Addr<ReadResult>,
     },
     Write {
         start: u64,
@@ -28,12 +26,5 @@ impl ReadWriteCmd {
     }
 }
 
-pub type ReadResult<'a> = Result<&'a [u8], Error>;
-
-pub enum ReadResultF {}
-
-impl Family for ReadResultF {
-    type Member<'a> = ReadResult<'a>;
-}
-
-impl<'a> Member<ReadResultF> for ReadResult<'a> {}
+// TODO: Get a better option than sending around disposable vecs.
+pub type ReadResult = Vec<u8>;

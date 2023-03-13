@@ -2,57 +2,51 @@ use std::marker::PhantomData;
 use std::sync::atomic::AtomicPtr;
 
 use anyhow::Error;
-use stewart::{
-    handler::{ActorT, SenderT},
-    After, Id, System,
-};
+use stewart::{Actor, Addr, After, Id, System};
 use tracing::instrument;
 
 /// Start actor that maps a value into another one.
 #[instrument("map", skip_all)]
-pub fn start_map<F, A, B>(
+pub fn start_map<F, I, O>(
     system: &mut System,
     parent: Id,
-    target: SenderT<B>,
+    target: Addr<O>,
     function: F,
-) -> Result<SenderT<A>, Error>
+) -> Result<Addr<I>, Error>
 where
-    F: FnMut(A) -> B + 'static,
-    A: 'static,
-    B: 'static,
+    F: FnMut(I) -> O + 'static,
+    I: 'static,
+    O: 'static,
 {
     let info = system.create_actor(parent)?;
-    let actor = MapActor::<F, A, B> {
+    let actor = MapActor::<F, I, O> {
         function,
         target,
         _a: PhantomData,
     };
     system.start_actor(info, actor)?;
 
-    Ok(SenderT::actor(info))
+    Ok(info.addr())
 }
 
-struct MapActor<F, A, B>
-where
-    B: 'static,
-{
+struct MapActor<F, I, O> {
     function: F,
-    target: SenderT<B>,
-    _a: PhantomData<AtomicPtr<A>>,
+    target: Addr<O>,
+    _a: PhantomData<AtomicPtr<I>>,
 }
 
-impl<F, A, B> ActorT for MapActor<F, A, B>
+impl<F, I, O> Actor for MapActor<F, I, O>
 where
-    F: FnMut(A) -> B + 'static,
-    A: 'static,
-    B: 'static,
+    F: FnMut(I) -> O + 'static,
+    I: 'static,
+    O: 'static,
 {
-    type Message = A;
+    type Message = I;
 
-    fn handle(&mut self, system: &mut System, message: A) -> Result<After, Error> {
+    fn handle(&mut self, system: &mut System, message: I) -> Result<After, Error> {
         // Immediately re-route the message
         let message = (self.function)(message);
-        self.target.send(system, message);
+        system.send(self.target, message);
         Ok(After::Nothing)
     }
 }
