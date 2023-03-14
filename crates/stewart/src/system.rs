@@ -10,6 +10,7 @@ use crate::{
 };
 
 /// Thread-local actor execution system.
+#[derive(Default)]
 pub struct System {
     actors: ActorTree,
     queue: VecDeque<Index>,
@@ -18,10 +19,7 @@ pub struct System {
 impl System {
     /// Create a new empty `System`.
     pub fn new() -> Self {
-        Self {
-            actors: ActorTree::new(),
-            queue: VecDeque::new(),
-        }
+        Self::default()
     }
 
     /// Get root actor ID.

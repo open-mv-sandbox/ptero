@@ -124,6 +124,12 @@ impl ActorTree {
     }
 }
 
+impl Default for ActorTree {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum CreateActorError {
