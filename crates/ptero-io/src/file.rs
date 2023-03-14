@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as ContextExt, Error};
-use stewart::{Actor, Addr, After, Id, System};
+use stewart::{Actor, Addr, After, Id, Options, System};
 use tracing::{event, instrument, Level};
 
 use crate::ReadWriteCmd;
@@ -17,8 +17,6 @@ pub fn start_file_read_write(
     path: String,
     truncate: bool,
 ) -> Result<Addr<ReadWriteCmd>, Error> {
-    let info = system.create_actor(parent)?;
-
     let package_file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -26,8 +24,9 @@ pub fn start_file_read_write(
         .open(path)
         .context("failed to open target package for writing")?;
 
+    let info = system.create(parent)?;
     let actor = FileReadWriteActor { package_file };
-    system.start_actor(info, actor)?;
+    system.start(info, actor, Options::default())?;
 
     Ok(info.addr())
 }

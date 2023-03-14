@@ -3,7 +3,7 @@ use std::mem::size_of;
 use anyhow::{Context, Error};
 use daicon::{ComponentEntry, ComponentTableHeader};
 use ptero_io::ReadWriteCmd;
-use stewart::{Actor, Addr, After, Id, Info, System};
+use stewart::{Actor, Addr, After, Id, Info, Options, System};
 use stewart_utils::start_map;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -31,7 +31,7 @@ pub fn start_file_manager(
     parent: Id,
     read_write: Addr<ReadWriteCmd>,
 ) -> Result<Addr<FileManagerCommand>, Error> {
-    let info = system.create_actor(parent)?;
+    let info = system.create(parent)?;
 
     let command = start_map(system, parent, info.addr(), FileManagerMessage::Command)?;
 
@@ -44,7 +44,7 @@ pub fn start_file_manager(
         header: None,
         entries: None,
     };
-    system.start_actor(info, actor)?;
+    system.start(info, actor, Options::default())?;
 
     // Immediately start reading the first header
     start_read_header(system, info.id(), read_write, info.addr())?;

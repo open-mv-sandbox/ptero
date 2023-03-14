@@ -1,5 +1,5 @@
 use anyhow::Error;
-use stewart::{Actor, Addr, After, Id, System};
+use stewart::{Actor, Addr, After, Id, Options, System};
 use tracing::{event, instrument, Level};
 
 pub enum PackageManagerCommand {
@@ -11,8 +11,8 @@ pub fn start_package_manager(
     system: &mut System,
     parent: Id,
 ) -> Result<Addr<PackageManagerCommand>, Error> {
-    let info = system.create_actor(parent)?;
-    system.start_actor(info, PackageManagerActor {})?;
+    let info = system.create(parent)?;
+    system.start(info, PackageManagerActor {}, Options::default())?;
 
     Ok(info.addr())
 }

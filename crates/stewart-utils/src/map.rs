@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::sync::atomic::AtomicPtr;
 
 use anyhow::Error;
-use stewart::{Actor, Addr, After, Id, System};
+use stewart::{Actor, Addr, After, Id, Options, System};
 use tracing::instrument;
 
 /// Start actor that maps a value into another one.
@@ -18,13 +18,13 @@ where
     I: 'static,
     O: 'static,
 {
-    let info = system.create_actor(parent)?;
+    let info = system.create(parent)?;
     let actor = MapActor::<F, I, O> {
         function,
         target,
         _a: PhantomData,
     };
-    system.start_mapping_actor(info, actor)?;
+    system.start(info, actor, Options::default().mapping())?;
 
     Ok(info.addr())
 }

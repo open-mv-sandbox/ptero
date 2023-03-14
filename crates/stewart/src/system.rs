@@ -5,14 +5,13 @@ use thunderdome::Index;
 use tracing::{event, Level};
 
 use crate::{
-    actors::Actors,
-    slot::{OptionActorSlot, VecActorSlot},
-    Actor, Addr, After, CreateActorError, Id, Info, StartActorError,
+    actor_tree::ActorTree, slot::ActorSlot, Actor, Addr, After, CreateActorError, Id, Info,
+    Options, StartActorError,
 };
 
 /// Thread-local actor execution system.
 pub struct System {
-    actors: Actors,
+    actors: ActorTree,
     queue: VecDeque<Index>,
 }
 
@@ -20,7 +19,7 @@ impl System {
     /// Create a new empty `System`.
     pub fn new() -> Self {
         Self {
-            actors: Actors::new(),
+            actors: ActorTree::new(),
             queue: VecDeque::new(),
         }
     }
@@ -35,43 +34,33 @@ impl System {
     /// Create an actor on the system.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create_actor<A>(&mut self, parent: Id) -> Result<Info<A>, CreateActorError>
+    pub fn create<A>(&mut self, parent: Id) -> Result<Info<A>, CreateActorError>
     where
         A: Actor,
     {
         let index = self.actors.create::<A>(parent.index)?;
+        let info = Info::new(index);
 
-        Ok(Info::new(index))
+        Ok(info)
     }
 
     /// Start an actor on the system, making it available for handling messages.
-    pub fn start_actor<A>(&mut self, info: Info<A>, actor: A) -> Result<(), StartActorError>
+    pub fn start<A>(
+        &mut self,
+        info: Info<A>,
+        actor: A,
+        options: Options,
+    ) -> Result<(), StartActorError>
     where
         A: Actor,
     {
         event!(Level::INFO, "starting actor");
 
-        let slot = VecActorSlot {
+        let slot = ActorSlot {
             bin: Vec::new(),
             actor,
         };
-        self.actors.start_actor(info.index, Box::new(slot))?;
-
-        Ok(())
-    }
-
-    /// Start a "mapping" actor on the system.
-    ///
-    /// Mapping actors are assumed to need priority processing on messages, as they only relay the
-    /// message to another system.
-    pub fn start_mapping_actor<A>(&mut self, info: Info<A>, actor: A) -> Result<(), StartActorError>
-    where
-        A: Actor,
-    {
-        event!(Level::INFO, "starting actor");
-
-        let slot = OptionActorSlot { bin: None, actor };
-        self.actors.start_actor(info.index, Box::new(slot))?;
+        self.actors.start(info.index, Box::new(slot), options)?;
 
         Ok(())
     }
@@ -96,24 +85,20 @@ impl System {
     where
         M: 'static,
     {
-        let entry = self.actors.get_mut(index)?;
-        let slot = entry.slot.as_mut().context("actor not available")?;
+        let node = self.actors.get_mut(index)?;
+        let slot = node.slot.as_mut().context("actor not available")?;
 
-        let (immediate, bin) = slot.bin_any();
+        let mut message = Some(message);
+        slot.handle(&mut message)?;
 
-        if immediate {
-            let bin: &mut Option<M> = bin.downcast_mut().context("failed to downcast bin")?;
-            *bin = Some(message);
-
-            // Handle immediate
-            self.process(index)?;
-        } else {
-            let bin: &mut Vec<M> = bin.downcast_mut().context("failed to downcast bin")?;
-            bin.push(message);
-
+        if !node.options.mapping {
+            // Queue for later processing
             if !self.queue.contains(&index) {
                 self.queue.push_back(index);
             }
+        } else {
+            // Process in-place
+            self.process(index)?;
         }
 
         Ok(())
@@ -133,10 +118,10 @@ impl System {
 
     fn process(&mut self, index: Index) -> Result<(), Error> {
         // Borrow the actor
-        let entry = self.actors.get_mut(index)?;
-        let span = entry.span.clone();
+        let node = self.actors.get_mut(index)?;
+        let span = node.span.clone();
         let _enter = span.enter();
-        let mut slot = entry.borrow_slot()?;
+        let mut slot = node.borrow_slot()?;
 
         // Run the actor's handler
         let after = slot.process(self);

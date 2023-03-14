@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_pack::{start_package_manager, PackageManagerCommand};
-use stewart::{Actor, After, System};
+use stewart::{Actor, After, Options, System};
 use tracing::{event, instrument, Level};
 
 /// Create a new dacti package.
@@ -16,8 +16,8 @@ pub struct CreateCommand {
 pub fn start(system: &mut System, data: CreateCommand) -> Result<(), Error> {
     event!(Level::INFO, "creating package");
 
-    let info = system.create_actor(system.root_id())?;
-    system.start_actor(info, CreateCommandActor)?;
+    let info = system.create(system.root_id())?;
+    system.start(info, CreateCommandActor, Options::default())?;
 
     let package = start_package_manager(system, info.id())?;
     system.send(package, PackageManagerCommand::Create(data.package));

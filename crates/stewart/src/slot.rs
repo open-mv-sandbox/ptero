@@ -1,18 +1,20 @@
 use std::any::Any;
 
-use crate::{Actor, After, System};
-
+use anyhow::{Context, Error};
 use tracing::{event, Level};
 
+use crate::{Actor, After, System};
+
 pub trait AnyActorSlot {
-    /// Returns true if this needs the message to be handled immediately.
-    fn bin_any(&mut self) -> (bool, &mut dyn Any);
+    /// Handle the message in the slot, returns true if needing to be queued, false if processed
+    /// immediately.
+    fn handle(&mut self, slot: &mut dyn Any) -> Result<(), Error>;
 
     /// Handle processing if queued.
     fn process(&mut self, system: &mut System) -> After;
 }
 
-pub struct VecActorSlot<A>
+pub struct ActorSlot<A>
 where
     A: Actor,
 {
@@ -20,27 +22,23 @@ where
     pub actor: A,
 }
 
-impl<A> AnyActorSlot for VecActorSlot<A>
+impl<A> AnyActorSlot for ActorSlot<A>
 where
     A: Actor,
 {
-    fn bin_any(&mut self) -> (bool, &mut dyn Any) {
-        (false, &mut self.bin)
+    fn handle(&mut self, slot: &mut dyn Any) -> Result<(), Error> {
+        let slot: &mut Option<A::Message> =
+            slot.downcast_mut().context("failed to downcast bin")?;
+        let message = slot.take().context("slot was empty")?;
+        self.bin.push(message);
+
+        Ok(())
     }
 
     fn process(&mut self, system: &mut System) -> After {
         for message in self.bin.drain(..) {
             let result = self.actor.handle(system, message);
-
-            let after = match result {
-                Ok(value) => value,
-                Err(error) => {
-                    // TODO: What to do with this?
-                    event!(Level::ERROR, ?error, "actor failed to process message");
-
-                    After::Nothing
-                }
-            };
+            let after = handle_process_result(result);
 
             if after == After::Stop {
                 return After::Stop;
@@ -51,38 +49,13 @@ where
     }
 }
 
-pub struct OptionActorSlot<A>
-where
-    A: Actor,
-{
-    pub bin: Option<A::Message>,
-    pub actor: A,
-}
+fn handle_process_result(result: Result<After, Error>) -> After {
+    match result {
+        Ok(value) => value,
+        Err(error) => {
+            // TODO: What to do with this?
+            event!(Level::ERROR, ?error, "actor failed to process message");
 
-impl<A> AnyActorSlot for OptionActorSlot<A>
-where
-    A: Actor,
-{
-    fn bin_any(&mut self) -> (bool, &mut dyn Any) {
-        (true, &mut self.bin)
-    }
-
-    fn process(&mut self, system: &mut System) -> After {
-        if let Some(message) = self.bin.take() {
-            let result = self.actor.handle(system, message);
-
-            let after = match result {
-                Ok(value) => value,
-                Err(error) => {
-                    // TODO: What to do with this?
-                    event!(Level::ERROR, ?error, "actor failed to process message");
-
-                    After::Nothing
-                }
-            };
-
-            after
-        } else {
             After::Nothing
         }
     }

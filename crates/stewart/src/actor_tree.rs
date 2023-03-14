@@ -3,28 +3,28 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::slot::AnyActorSlot;
+use crate::{
+    node::{BorrowError, Node},
+    slot::AnyActorSlot,
+    Options,
+};
 
-pub struct Actors {
-    actors: Arena<ActorEntry>,
+pub struct ActorTree {
+    nodes: Arena<Node>,
     pending_start: Vec<Index>,
     root: Index,
 }
 
-impl Actors {
+impl ActorTree {
     pub fn new() -> Self {
         let mut actors = Arena::new();
 
         // Insert a no-op root actor for tracking purposes
-        let actor = ActorEntry {
-            debug_name: "Root",
-            span: Span::current(),
-            slot: None,
-        };
+        let actor = Node::new("Root", Span::current());
         let root = actors.insert(actor);
 
         Self {
-            actors,
+            nodes: actors,
             pending_start: Vec::new(),
             root,
         }
@@ -37,19 +37,16 @@ impl Actors {
     pub fn create<A>(&mut self, parent: Index) -> Result<Index, CreateActorError> {
         // Continual span is inherited from the create addr callsite
         let span = Span::current();
+        let debug_name = debug_name::<A>();
 
         // Link to the parent
-        self.actors
+        self.nodes
             .get_mut(parent)
             .ok_or(CreateActorError::ParentDoesNotExist)?;
 
-        // Create the entry
-        let entry = ActorEntry {
-            debug_name: debug_name::<A>(),
-            span,
-            slot: None,
-        };
-        let index = self.actors.insert(entry);
+        // Create the node
+        let node = Node::new(debug_name, span);
+        let index = self.nodes.insert(node);
 
         // Track the address so we can clean it up if it doesn't get started in time
         self.pending_start.push(index);
@@ -57,10 +54,11 @@ impl Actors {
         Ok(index)
     }
 
-    pub fn start_actor(
+    pub fn start(
         &mut self,
         index: Index,
         slot: Box<dyn AnyActorSlot>,
+        options: Options,
     ) -> Result<(), StartActorError> {
         // Remove pending, starting is what it's pending for
         let pending_index = self
@@ -70,7 +68,9 @@ impl Actors {
             .ok_or(StartActorError::ActorNotPending)?;
         self.pending_start.remove(pending_index);
 
-        self.get_mut(index)?.return_slot(slot)?;
+        let node = self.get_mut(index)?;
+        node.options = options;
+        node.return_slot(slot)?;
 
         Ok(())
     }
@@ -86,78 +86,41 @@ impl Actors {
     }
 
     fn cleanup_pending_at(&mut self, index: Index) -> Result<(), Error> {
-        let entry = self.remove(index)?;
+        let node = self.remove(index)?;
 
-        let _enter = entry.span.enter();
+        let _enter = node.span.enter();
         event!(Level::INFO, "actor failed to start in time");
 
         Ok(())
     }
 
-    pub fn get_mut(&mut self, index: Index) -> Result<&mut ActorEntry, BorrowError> {
-        // Find the actor's entry
-        let entry = self
-            .actors
+    pub fn get_mut(&mut self, index: Index) -> Result<&mut Node, BorrowError> {
+        // Find the actor's node
+        let node = self
+            .nodes
             .get_mut(index)
             .ok_or(BorrowError::ActorNotFound)?;
 
-        Ok(entry)
+        Ok(node)
     }
 
-    pub fn remove(&mut self, index: Index) -> Result<ActorEntry, Error> {
-        self.actors.remove(index).context("actor doesn't exist")
+    pub fn remove(&mut self, index: Index) -> Result<Node, Error> {
+        self.nodes.remove(index).context("actor doesn't exist")
     }
 
     /// Get the debug names of all active actors, except root.
     pub fn debug_names(&self) -> Vec<&'static str> {
         let mut debug_names = Vec::new();
 
-        for (id, entry) in &self.actors {
+        for (id, node) in &self.nodes {
             if id == self.root {
                 continue;
             }
 
-            debug_names.push(entry.debug_name);
+            debug_names.push(node.debug_name);
         }
 
         debug_names
-    }
-}
-
-fn debug_name<T>() -> &'static str {
-    let name = std::any::type_name::<T>();
-    let before_generics = name.split('<').next().unwrap_or("Unknown");
-    let after_modules = before_generics.split("::").last().unwrap_or("Unknown");
-    after_modules
-}
-
-pub struct ActorEntry {
-    /// Debugging identification name, not intended for anything other than warn/err reporting.
-    pub debug_name: &'static str,
-    /// Persistent logging span, groups logging that happenened under this actor.
-    pub span: Span,
-    pub slot: Option<Box<dyn AnyActorSlot>>,
-}
-
-impl ActorEntry {
-    pub fn borrow_slot(&mut self) -> Result<Box<dyn AnyActorSlot>, BorrowError> {
-        // Take the actor from the slot
-        let slot = std::mem::replace(&mut self.slot, None);
-
-        // If the actor wasn't in the slot, return an error
-        let slot = slot.ok_or(BorrowError::ActorNotAvailable {
-            name: self.debug_name,
-        })?;
-
-        Ok(slot)
-    }
-
-    pub fn return_slot(&mut self, slot: Box<dyn AnyActorSlot>) -> Result<(), BorrowError> {
-        // Put the actor back in the slot
-        // TODO: Check if already present
-        self.slot = Some(slot);
-
-        Ok(())
     }
 }
 
@@ -177,11 +140,9 @@ pub enum StartActorError {
     BorrowError(#[from] BorrowError),
 }
 
-#[derive(Error, Debug)]
-#[non_exhaustive]
-pub enum BorrowError {
-    #[error("failed to borrow actor, no actor exists at the given address")]
-    ActorNotFound,
-    #[error("failed to borrow actor, actor ({name}) at the address exists, but is not currently available")]
-    ActorNotAvailable { name: &'static str },
+fn debug_name<T>() -> &'static str {
+    let name = std::any::type_name::<T>();
+    let before_generics = name.split('<').next().unwrap_or("Unknown");
+    let after_modules = before_generics.split("::").last().unwrap_or("Unknown");
+    after_modules
 }

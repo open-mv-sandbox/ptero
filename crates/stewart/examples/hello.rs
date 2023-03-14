@@ -29,7 +29,7 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_serivce {
     use anyhow::Error;
-    use stewart::{Actor, Addr, After, Id, System};
+    use stewart::{Actor, Addr, After, Id, Options, System};
     use tracing::{event, instrument, Level};
 
     /// The start function uses the concrete actor internally, the actor itself is never public.
@@ -38,8 +38,8 @@ mod hello_serivce {
     pub fn start_hello(system: &mut System, parent: Id) -> Result<Addr<String>, Error> {
         event!(Level::DEBUG, "creating service");
 
-        let info = system.create_actor(parent)?;
-        system.start_actor(info, HelloActor)?;
+        let info = system.create(parent)?;
+        system.start(info, HelloActor, Options::default())?;
 
         Ok(info.addr())
     }

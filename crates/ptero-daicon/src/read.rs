@@ -7,7 +7,7 @@ use anyhow::{bail, Error};
 use bytemuck::{bytes_of_mut, Zeroable};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
 use ptero_io::{ReadResult, ReadWriteCmd};
-use stewart::{Actor, Addr, After, Id, System};
+use stewart::{Actor, Addr, After, Id, Options, System};
 use tracing::{event, instrument, Level};
 
 use crate::manager::FileManagerMessage;
@@ -21,7 +21,7 @@ pub fn start_read_header(
 ) -> Result<(), Error> {
     event!(Level::DEBUG, "reading header");
 
-    let info = system.create_actor(parent)?;
+    let info = system.create(parent)?;
 
     let msg = ReadWriteCmd::Read {
         start: 0,
@@ -31,7 +31,7 @@ pub fn start_read_header(
     system.send(read_write, msg);
 
     let actor = ReadHeaderActor { manager };
-    system.start_actor(info, actor)?;
+    system.start(info, actor, Options::default())?;
 
     Ok(())
 }
@@ -73,7 +73,7 @@ pub fn start_read_entries(
 ) -> Result<(), Error> {
     event!(Level::DEBUG, "reading entries");
 
-    let info = system.create_actor(parent)?;
+    let info = system.create(parent)?;
 
     let msg = ReadWriteCmd::Read {
         start,
@@ -83,7 +83,7 @@ pub fn start_read_entries(
     system.send(read_write, msg);
 
     let actor = ReadEntriesActor { manager, length };
-    system.start_actor(info, actor)?;
+    system.start(info, actor, Options::default())?;
 
     Ok(())
 }

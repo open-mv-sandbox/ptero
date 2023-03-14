@@ -16,7 +16,7 @@ use dacti_index::{
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
 use ptero_daicon::{FileManagerCommand, GetComponentCommand, GetComponentResult};
 use ptero_io::ReadWriteCmd;
-use stewart::{Actor, Addr, After, Id, System};
+use stewart::{Actor, Addr, After, Id, Options, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -64,8 +64,8 @@ fn create_package(path: &str) -> Result<(), Error> {
 pub fn start_add_data(system: &mut System, parent: Id, data: AddData) -> Result<(), Error> {
     event!(Level::DEBUG, "adding data to package");
 
-    let info = system.create_actor(parent)?;
-    system.start_actor(info, AddDataActor)?;
+    let info = system.create(parent)?;
+    system.start(info, AddDataActor, Options::default())?;
 
     // The first 64kb is reserved for components and indices
     // TODO: Actually find a free spot
@@ -125,7 +125,7 @@ struct AddIndexActor {
 
 impl AddIndexActor {
     fn start(system: &mut System, parent: Id, data: AddIndex) -> Result<(), Error> {
-        let info = system.create_actor(parent)?;
+        let info = system.create(parent)?;
 
         let command = GetComponentCommand {
             id: INDEX_COMPONENT_UUID,
@@ -138,7 +138,7 @@ impl AddIndexActor {
             file: data.file,
             value: data.value,
         };
-        system.start_actor(info, actor)?;
+        system.start(info, actor, Options::default())?;
 
         Ok(())
     }

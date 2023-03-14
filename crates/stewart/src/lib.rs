@@ -4,14 +4,16 @@
 //! stewart book.
 
 mod actor;
-mod actors;
+mod actor_tree;
 mod info;
+mod node;
 mod slot;
 mod system;
 
 pub use self::{
     actor::{Actor, After},
-    actors::{CreateActorError, StartActorError},
+    actor_tree::{CreateActorError, StartActorError},
     info::{Addr, Id, Info},
+    node::{BorrowError, Options},
     system::System,
 };

@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_pack::AddData;
-use stewart::{Actor, After, System};
+use stewart::{Actor, After, Options, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -25,7 +25,7 @@ pub struct AddCommand {
 pub fn start(system: &mut System, data: AddCommand) -> Result<(), Error> {
     event!(Level::INFO, "adding file to package");
 
-    let info = system.create_actor(system.root_id())?;
+    let info = system.create(system.root_id())?;
 
     let input = std::fs::read(&data.input)?;
 
@@ -42,7 +42,7 @@ pub fn start(system: &mut System, data: AddCommand) -> Result<(), Error> {
     };
     ptero_pack::start_add_data(system, info.id(), add_data)?;
 
-    system.start_actor(info, AddCommandActor)?;
+    system.start(info, AddCommandActor, Options::default())?;
 
     Ok(())
 }
