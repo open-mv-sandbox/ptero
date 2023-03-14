@@ -42,7 +42,7 @@ pub fn start(system: &mut System, data: AddCommand) -> Result<(), Error> {
     };
     ptero_pack::start_add_data(system, info.id(), add_data)?;
 
-    system.start(info, AddCommandActor, Options::default())?;
+    system.start(info, Options::default(), AddCommandActor)?;
 
     Ok(())
 }

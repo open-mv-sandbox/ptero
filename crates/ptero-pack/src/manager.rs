@@ -12,7 +12,7 @@ pub fn start_package_manager(
     parent: Id,
 ) -> Result<Addr<PackageManagerCommand>, Error> {
     let info = system.create(parent)?;
-    system.start(info, PackageManagerActor {}, Options::default())?;
+    system.start(info, Options::default(), PackageManagerActor {})?;
 
     Ok(info.addr())
 }

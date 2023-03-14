@@ -4,7 +4,7 @@ use anyhow::Error;
 use stewart::System;
 use tracing::{event, Level};
 
-use crate::hello_serivce::start_hello;
+use crate::hello_service::start_hello;
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
@@ -27,7 +27,7 @@ fn main() -> Result<(), Error> {
 }
 
 /// To demonstrate encapsulation, an inner module is used here.
-mod hello_serivce {
+mod hello_service {
     use anyhow::Error;
     use stewart::{Actor, Addr, After, Id, Options, System};
     use tracing::{event, instrument, Level};
@@ -39,7 +39,7 @@ mod hello_serivce {
         event!(Level::DEBUG, "creating service");
 
         let info = system.create(parent)?;
-        system.start(info, HelloActor, Options::default())?;
+        system.start(info, Options::default(), HelloActor)?;
 
         Ok(info.addr())
     }

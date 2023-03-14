@@ -17,7 +17,7 @@ pub fn start(system: &mut System, data: CreateCommand) -> Result<(), Error> {
     event!(Level::INFO, "creating package");
 
     let info = system.create(system.root_id())?;
-    system.start(info, CreateCommandActor, Options::default())?;
+    system.start(info, Options::default(), CreateCommandActor)?;
 
     let package = start_package_manager(system, info.id())?;
     system.send(package, PackageManagerCommand::Create(data.package));

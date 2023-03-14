@@ -57,8 +57,8 @@ impl ActorTree {
     pub fn start(
         &mut self,
         index: Index,
-        slot: Box<dyn AnyActorSlot>,
         options: Options,
+        slot: Box<dyn AnyActorSlot>,
     ) -> Result<(), StartActorError> {
         // Remove pending, starting is what it's pending for
         let pending_index = self

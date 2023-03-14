@@ -45,7 +45,7 @@ impl Node {
 
 #[derive(Default)]
 pub struct Options {
-    pub mapping: bool,
+    pub(crate) mapping: bool,
 }
 
 impl Options {

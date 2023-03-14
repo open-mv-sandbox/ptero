@@ -65,7 +65,7 @@ pub fn start_add_data(system: &mut System, parent: Id, data: AddData) -> Result<
     event!(Level::DEBUG, "adding data to package");
 
     let info = system.create(parent)?;
-    system.start(info, AddDataActor, Options::default())?;
+    system.start(info, Options::default(), AddDataActor)?;
 
     // The first 64kb is reserved for components and indices
     // TODO: Actually find a free spot
@@ -138,7 +138,7 @@ impl AddIndexActor {
             file: data.file,
             value: data.value,
         };
-        system.start(info, actor, Options::default())?;
+        system.start(info, Options::default(), actor)?;
 
         Ok(())
     }

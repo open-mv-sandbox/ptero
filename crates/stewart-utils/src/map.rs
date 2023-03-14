@@ -24,7 +24,7 @@ where
         target,
         _a: PhantomData,
     };
-    system.start(info, actor, Options::default().mapping())?;
+    system.start(info, Options::default().mapping(), actor)?;
 
     Ok(info.addr())
 }

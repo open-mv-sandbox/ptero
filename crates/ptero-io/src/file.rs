@@ -26,7 +26,7 @@ pub fn start_file_read_write(
 
     let info = system.create(parent)?;
     let actor = FileReadWriteActor { package_file };
-    system.start(info, actor, Options::default())?;
+    system.start(info, Options::default(), actor)?;
 
     Ok(info.addr())
 }

@@ -48,8 +48,8 @@ impl System {
     pub fn start<A>(
         &mut self,
         info: Info<A>,
-        actor: A,
         options: Options,
+        actor: A,
     ) -> Result<(), StartActorError>
     where
         A: Actor,
@@ -60,7 +60,7 @@ impl System {
             bin: Vec::new(),
             actor,
         };
-        self.actors.start(info.index, Box::new(slot), options)?;
+        self.actors.start(info.index, options, Box::new(slot))?;
 
         Ok(())
     }

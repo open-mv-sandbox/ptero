@@ -44,7 +44,7 @@ pub fn start_file_manager(
         header: None,
         entries: None,
     };
-    system.start(info, actor, Options::default())?;
+    system.start(info, Options::default(), actor)?;
 
     // Immediately start reading the first header
     start_read_header(system, info.id(), read_write, info.addr())?;

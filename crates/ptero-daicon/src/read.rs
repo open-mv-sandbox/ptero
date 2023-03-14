@@ -31,7 +31,7 @@ pub fn start_read_header(
     system.send(read_write, msg);
 
     let actor = ReadHeaderActor { manager };
-    system.start(info, actor, Options::default())?;
+    system.start(info, Options::default(), actor)?;
 
     Ok(())
 }
@@ -83,7 +83,7 @@ pub fn start_read_entries(
     system.send(read_write, msg);
 
     let actor = ReadEntriesActor { manager, length };
-    system.start(info, actor, Options::default())?;
+    system.start(info, Options::default(), actor)?;
 
     Ok(())
 }
