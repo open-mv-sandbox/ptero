@@ -24,7 +24,7 @@ where
         target,
         _a: PhantomData,
     };
-    system.start(info, Options::default().high_priority(), actor)?;
+    system.start(info, Options::default().with_high_priority(), actor)?;
 
     Ok(info.addr())
 }

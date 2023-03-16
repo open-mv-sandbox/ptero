@@ -29,11 +29,15 @@ impl System {
     where
         A: Actor,
     {
-        let index = self.actors.create::<A>(Some(parent.index))?;
+        let parent = Some(parent.index);
+        let index = self.actors.create::<A>(parent)?;
         let info = Info::new(index);
         Ok(info)
     }
 
+    /// Create a root actor on the system.
+    ///
+    /// Root actors do not have a parent, and will not be stopped by any other actor stopping.
     pub fn create_root<A>(&mut self) -> Result<Info<A>, CreateActorError>
     where
         A: Actor,

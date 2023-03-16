@@ -14,6 +14,6 @@ pub use self::{
     actor::{Actor, After},
     actor_tree::{CreateActorError, StartActorError},
     info::{Addr, Id, Info},
-    node::{Options, StoreError, TakeError},
+    node::Options,
     system::System,
 };

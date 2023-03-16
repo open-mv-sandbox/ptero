@@ -71,17 +71,20 @@ impl Node {
 
 /// Options to inform the system on how to treat an actor.
 #[derive(Default, Debug, Clone)]
+#[non_exhaustive]
 pub struct Options {
-    pub(crate) high_priority: bool,
+    /// Sets if this actor's messages are 'high-priority'.
+    ///
+    /// Typically, this means the system will always place the actor at the *start* of the queue.
+    /// This is useful for actors that simply relay messages to other systems.
+    /// In those cases, the message waiting at the end of the queue would hurt performance by
+    /// fragmenting batches, increase latency drastically.
+    pub high_priority: bool,
 }
 
 impl Options {
-    /// Set this actor's messages to be high-priority.
-    ///
-    /// Typically, this means the system will always place the actor at the *start* of the queue.
-    /// This is useful for actors that simply relay messages to other systems, where the message
-    /// waiting at the end of the queue would hurt performance, and increase latency drastically.
-    pub fn high_priority(mut self) -> Self {
+    /// Sets `high_priority` to true.
+    pub fn with_high_priority(mut self) -> Self {
         self.high_priority = true;
         self
     }

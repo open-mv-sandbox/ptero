@@ -45,7 +45,7 @@ impl ActorTree {
             .pending_start
             .iter()
             .position(|i| *i == index)
-            .ok_or(StartActorError::ActorStarted)?;
+            .ok_or(StartActorError::ActorAlreadyStarted)?;
         self.pending_start.remove(pending_index);
 
         // Apply the start
@@ -107,7 +107,7 @@ pub enum CreateActorError {
 #[non_exhaustive]
 pub enum StartActorError {
     #[error("failed to start actor, actor already started")]
-    ActorStarted,
+    ActorAlreadyStarted,
     #[error("failed to start actor, internal error")]
     Internal(#[from] Error),
 }
