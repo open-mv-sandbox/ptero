@@ -23,7 +23,7 @@ impl Node {
     }
 
     pub fn debug_name(&self) -> &'static str {
-        &self.debug_name
+        self.debug_name
     }
 
     pub fn span(&self) -> Span {

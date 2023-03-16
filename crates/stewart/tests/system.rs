@@ -28,7 +28,7 @@ fn send_message_to_actor() -> Result<(), Error> {
 }
 
 fn start_actor(system: &mut System) -> Result<(Addr<()>, Rc<AtomicUsize>), Error> {
-    let info = system.create(system.root_id())?;
+    let info = system.create_root()?;
     let actor = TestActor::default();
     let count = actor.count.clone();
     system.start(info, Options::default(), actor)?;

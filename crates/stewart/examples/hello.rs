@@ -12,8 +12,7 @@ fn main() -> Result<(), Error> {
     let mut system = System::new();
 
     // Start the hello service
-    let root = system.root_id();
-    let hello = start_hello(&mut system, root)?;
+    let hello = start_hello(&mut system)?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -29,16 +28,16 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{Actor, Addr, After, Id, Options, System};
+    use stewart::{Actor, Addr, After, Options, System};
     use tracing::{event, instrument, Level};
 
     /// The start function uses the concrete actor internally, the actor itself is never public.
     /// By instrumenting the start function, your actor's callbacks will use it automatically.
     #[instrument("hello", skip_all)]
-    pub fn start_hello(system: &mut System, parent: Id) -> Result<Addr<String>, Error> {
+    pub fn start_hello(system: &mut System) -> Result<Addr<String>, Error> {
         event!(Level::DEBUG, "creating service");
 
-        let info = system.create(parent)?;
+        let info = system.create_root()?;
         system.start(info, Options::default(), HelloActor)?;
 
         Ok(info.addr())

@@ -22,13 +22,6 @@ impl System {
         Self::default()
     }
 
-    /// Get root actor ID.
-    pub fn root_id(&self) -> Id {
-        Id {
-            index: self.actors.root(),
-        }
-    }
-
     /// Create an actor on the system.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
@@ -36,9 +29,17 @@ impl System {
     where
         A: Actor,
     {
-        let index = self.actors.create::<A>(parent.index)?;
+        let index = self.actors.create::<A>(Some(parent.index))?;
         let info = Info::new(index);
+        Ok(info)
+    }
 
+    pub fn create_root<A>(&mut self) -> Result<Info<A>, CreateActorError>
+    where
+        A: Actor,
+    {
+        let index = self.actors.create::<A>(None)?;
+        let info = Info::new(index);
         Ok(info)
     }
 

@@ -25,7 +25,7 @@ pub struct AddCommand {
 pub fn start(system: &mut System, data: AddCommand) -> Result<(), Error> {
     event!(Level::INFO, "adding file to package");
 
-    let info = system.create(system.root_id())?;
+    let info = system.create_root()?;
 
     let input = std::fs::read(&data.input)?;
 

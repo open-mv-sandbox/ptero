@@ -5,40 +5,24 @@ use tracing::{event, Level, Span};
 
 use crate::{node::Node, slot::AnyActorSlot, Options};
 
+#[derive(Default)]
 pub struct ActorTree {
     nodes: Arena<Node>,
     pending_start: Vec<Index>,
-    root: Index,
 }
 
 impl ActorTree {
-    pub fn new() -> Self {
-        let mut actors = Arena::new();
-
-        // Insert a no-op root actor for tracking purposes
-        let actor = Node::new("Root", Span::current());
-        let root = actors.insert(actor);
-
-        Self {
-            nodes: actors,
-            pending_start: Vec::new(),
-            root,
-        }
-    }
-
-    pub fn root(&self) -> Index {
-        self.root
-    }
-
-    pub fn create<A>(&mut self, parent: Index) -> Result<Index, CreateActorError> {
+    pub fn create<A>(&mut self, parent: Option<Index>) -> Result<Index, CreateActorError> {
         // Continual span is inherited from the create addr callsite
         let span = Span::current();
         let debug_name = debug_name::<A>();
 
         // Link to the parent
-        self.nodes
-            .get_mut(parent)
-            .ok_or(CreateActorError::ParentDoesNotExist)?;
+        if let Some(parent) = parent {
+            self.nodes
+                .get_mut(parent)
+                .ok_or(CreateActorError::ParentDoesNotExist)?;
+        }
 
         // Create the node
         let node = Node::new(debug_name, span);
@@ -104,21 +88,11 @@ impl ActorTree {
     pub fn debug_names(&self) -> Vec<&'static str> {
         let mut debug_names = Vec::new();
 
-        for (id, node) in &self.nodes {
-            if id == self.root {
-                continue;
-            }
-
+        for (_, node) in &self.nodes {
             debug_names.push(node.debug_name());
         }
 
         debug_names
-    }
-}
-
-impl Default for ActorTree {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
