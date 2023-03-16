@@ -3,11 +3,7 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::{
-    node::{BorrowError, Node},
-    slot::AnyActorSlot,
-    Options,
-};
+use crate::{node::Node, slot::AnyActorSlot, Options};
 
 pub struct ActorTree {
     nodes: Arena<Node>,
@@ -60,17 +56,18 @@ impl ActorTree {
         options: Options,
         slot: Box<dyn AnyActorSlot>,
     ) -> Result<(), StartActorError> {
-        // Remove pending, starting is what it's pending for
+        // Check if it's pending, and remove it
         let pending_index = self
             .pending_start
             .iter()
             .position(|i| *i == index)
-            .ok_or(StartActorError::ActorNotPending)?;
+            .ok_or(StartActorError::ActorStarted)?;
         self.pending_start.remove(pending_index);
 
-        let node = self.get_mut(index)?;
-        node.options = options;
-        node.return_slot(slot)?;
+        // Apply the start
+        let node = self.get_mut(index).context("failed to get node")?;
+        node.set_options(options);
+        node.store(slot).context("failed to store actor")?;
 
         Ok(())
     }
@@ -88,20 +85,15 @@ impl ActorTree {
     fn cleanup_pending_at(&mut self, index: Index) -> Result<(), Error> {
         let node = self.remove(index)?;
 
-        let _enter = node.span.enter();
+        let span = node.span();
+        let _enter = span.enter();
         event!(Level::INFO, "actor failed to start in time");
 
         Ok(())
     }
 
-    pub fn get_mut(&mut self, index: Index) -> Result<&mut Node, BorrowError> {
-        // Find the actor's node
-        let node = self
-            .nodes
-            .get_mut(index)
-            .ok_or(BorrowError::ActorNotFound)?;
-
-        Ok(node)
+    pub fn get_mut(&mut self, index: Index) -> Option<&mut Node> {
+        self.nodes.get_mut(index)
     }
 
     pub fn remove(&mut self, index: Index) -> Result<Node, Error> {
@@ -117,7 +109,7 @@ impl ActorTree {
                 continue;
             }
 
-            debug_names.push(node.debug_name);
+            debug_names.push(node.debug_name());
         }
 
         debug_names
@@ -140,10 +132,10 @@ pub enum CreateActorError {
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum StartActorError {
-    #[error("failed to start actor, actor isn't pending to be started")]
-    ActorNotPending,
-    #[error("failed to start actor, error while returning to slot")]
-    BorrowError(#[from] BorrowError),
+    #[error("failed to start actor, actor already started")]
+    ActorStarted,
+    #[error("failed to start actor, internal error")]
+    Internal(#[from] Error),
 }
 
 fn debug_name<T>() -> &'static str {

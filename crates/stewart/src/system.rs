@@ -63,6 +63,10 @@ impl System {
         Ok(())
     }
 
+    /// Send a message to an actor.
+    ///
+    /// This will never be handled in-place. The system will queue up the message to be processed
+    /// at a later time.
     pub fn send<M>(&mut self, addr: Addr<M>, message: impl Into<M>)
     where
         M: 'static,
@@ -79,34 +83,39 @@ impl System {
         }
     }
 
-    pub fn try_send<M>(&mut self, index: Index, message: M) -> Result<(), Error>
+    fn try_send<M>(&mut self, index: Index, message: M) -> Result<(), Error>
     where
         M: 'static,
     {
-        let node = self.actors.get_mut(index)?;
-        let slot = node.slot.as_mut().context("actor not available")?;
+        let node = self.actors.get_mut(index).context("actor not found")?;
+        let slot = node.slot_mut().context("actor not available")?;
 
         let mut message = Some(message);
         slot.handle(&mut message)?;
 
-        if !node.options.mapping {
-            // Queue for later processing
-            if !self.queue.contains(&index) {
+        // Queue for later processing
+        if !self.queue.contains(&index) {
+            if !node.options().high_priority {
                 self.queue.push_back(index);
+            } else {
+                self.queue.push_front(index);
             }
-        } else {
-            // Process in-place
-            self.process(index)?;
         }
 
         Ok(())
     }
 
+    /// Process all pending messages, until none are left.
+    ///
+    /// Processing messages may create more messages, so this is not guaranteed to ever return.
+    /// However, well-behaved actors avoid should behave appropriately for the kind of system
+    /// they're running on. For example, IO actors shouldn't keep the system busy, preventing it
+    /// from handling IO reactor messages.
     pub fn run_until_idle(&mut self) -> Result<(), Error> {
         self.actors.cleanup_pending()?;
 
         while let Some(index) = self.queue.pop_front() {
-            self.process(index)?;
+            self.process(index).context("failed to process")?;
 
             self.actors.cleanup_pending()?;
         }
@@ -116,10 +125,13 @@ impl System {
 
     fn process(&mut self, index: Index) -> Result<(), Error> {
         // Borrow the actor
-        let node = self.actors.get_mut(index)?;
-        let span = node.span.clone();
+        let node = self
+            .actors
+            .get_mut(index)
+            .context("failed to get actor before process")?;
+        let span = node.span();
         let _enter = span.enter();
-        let mut slot = node.borrow_slot()?;
+        let mut slot = node.take()?;
 
         // Run the actor's handler
         let after = slot.process(self);
@@ -133,7 +145,10 @@ impl System {
         }
 
         // Return the actor
-        self.actors.get_mut(index)?.return_slot(slot)?;
+        self.actors
+            .get_mut(index)
+            .context("failed to get actor after process")?
+            .store(slot)?;
 
         Ok(())
     }
