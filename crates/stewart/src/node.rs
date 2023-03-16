@@ -83,6 +83,11 @@ pub struct Options {
 }
 
 impl Options {
+    /// Convenience alias for `Self::default().with_high_priority()`.
+    pub fn high_priority() -> Self {
+        Self::default().with_high_priority()
+    }
+
     /// Sets `high_priority` to true.
     pub fn with_high_priority(mut self) -> Self {
         self.high_priority = true;

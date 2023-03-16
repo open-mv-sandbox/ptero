@@ -30,12 +30,12 @@ pub fn start(system: &mut System, data: AddCommand) -> Result<(), Error> {
     let input = std::fs::read(&data.input)?;
 
     // Start managers for the package
-    let read_write = ptero_io::start_file_read_write(system, info.id(), data.package, false)?;
-    let file_manager = ptero_daicon::start_file_manager(system, info.id(), read_write)?;
+    let (read, write) = ptero_io::start_file(system, info.id(), data.package, false)?;
+    let file_manager = ptero_daicon::start_file_manager(system, info.id(), read)?;
 
     // Start the add data command
     let add_data = AddData {
-        file: read_write,
+        write,
         file_manager,
         data: input,
         uuid: data.uuid,

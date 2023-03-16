@@ -1,34 +1,34 @@
 use std::{
-    io::{Cursor, Read},
+    io::{Cursor, Read as IoRead},
     mem::size_of,
 };
 
 use anyhow::{bail, Error};
 use bytemuck::{bytes_of_mut, Zeroable};
 use daicon::{ComponentEntry, ComponentTableHeader, SIGNATURE};
-use ptero_io::{ReadResult, ReadWriteCmd};
+use ptero_io::{Read, ReadResult};
 use stewart::{Actor, Addr, After, Id, Options, System};
 use tracing::{event, instrument, Level};
 
-use crate::manager::FileManagerMessage;
+use crate::manager::Message;
 
 #[instrument("read-header", skip_all)]
 pub fn start_read_header(
     system: &mut System,
     parent: Id,
-    read_write: Addr<ReadWriteCmd>,
-    manager: Addr<FileManagerMessage>,
+    read: Addr<Read>,
+    manager: Addr<Message>,
 ) -> Result<(), Error> {
     event!(Level::DEBUG, "reading header");
 
     let info = system.create(parent)?;
 
-    let msg = ReadWriteCmd::Read {
+    let msg = Read {
         start: 0,
         length: (SIGNATURE.len() + size_of::<ComponentTableHeader>()) as u64,
         on_result: info.addr(),
     };
-    system.send(read_write, msg);
+    system.send(read, msg);
 
     let actor = ReadHeaderActor { manager };
     system.start(info, Options::default(), actor)?;
@@ -37,7 +37,7 @@ pub fn start_read_header(
 }
 
 struct ReadHeaderActor {
-    manager: Addr<FileManagerMessage>,
+    manager: Addr<Message>,
 }
 
 impl Actor for ReadHeaderActor {
@@ -56,7 +56,7 @@ impl Actor for ReadHeaderActor {
         bytes_of_mut(&mut header).copy_from_slice(&data[8..]);
 
         // Pass it to the manager
-        system.send(self.manager, FileManagerMessage::Header(header));
+        system.send(self.manager, Message::Header(header));
 
         Ok(After::Stop)
     }
@@ -66,30 +66,30 @@ impl Actor for ReadHeaderActor {
 pub fn start_read_entries(
     system: &mut System,
     parent: Id,
-    read_write: Addr<ReadWriteCmd>,
+    read: Addr<Read>,
     start: u64,
     length: usize,
-    manager: Addr<FileManagerMessage>,
+    manager: Addr<Message>,
 ) -> Result<(), Error> {
     event!(Level::DEBUG, "reading entries");
 
     let info = system.create(parent)?;
 
-    let msg = ReadWriteCmd::Read {
+    let msg = Read {
         start,
         length: (length * size_of::<ComponentEntry>()) as u64,
         on_result: info.addr(),
     };
-    system.send(read_write, msg);
+    system.send(read, msg);
 
     let actor = ReadEntriesActor { manager, length };
-    system.start(info, Options::default(), actor)?;
+    system.start(info, Options::high_priority(), actor)?;
 
     Ok(())
 }
 
 struct ReadEntriesActor {
-    manager: Addr<FileManagerMessage>,
+    manager: Addr<Message>,
     length: usize,
 }
 
@@ -109,7 +109,7 @@ impl Actor for ReadEntriesActor {
         }
 
         // Reply with the read data
-        system.send(self.manager, FileManagerMessage::Entries(entries));
+        system.send(self.manager, Message::Entries(entries));
 
         Ok(After::Stop)
     }

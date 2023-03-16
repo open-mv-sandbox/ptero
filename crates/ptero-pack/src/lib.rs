@@ -4,7 +4,7 @@ mod manager;
 
 use std::{
     fs::OpenOptions,
-    io::{Seek, SeekFrom, Write},
+    io::{Seek, SeekFrom, Write as IoWrite},
     mem::size_of,
 };
 
@@ -14,8 +14,8 @@ use dacti_index::{
     IndexEntry, IndexGroupEncoding, IndexGroupHeader, IndexHeader, INDEX_COMPONENT_UUID,
 };
 use daicon::{data::RegionData, ComponentEntry, ComponentTableHeader};
-use ptero_daicon::{FileManagerCommand, GetComponentCommand, GetComponentResult};
-use ptero_io::ReadWriteCmd;
+use ptero_daicon::{FileManagerCommand, Load};
+use ptero_io::Write;
 use stewart::{Actor, Addr, After, Id, Options, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -77,26 +77,27 @@ pub fn start_add_data(system: &mut System, parent: Id, data: AddData) -> Result<
     index_entry.set_region_id(data.uuid);
     index_entry.set_offset(data_start as u32);
     index_entry.set_size(data_len);
-    let add_index = AddIndex {
-        file: data.file,
-        file_manager: data.file_manager,
-        value: index_entry,
-    };
-    AddIndexActor::start(system, info.id(), add_index)?;
+    start_add_index(
+        system,
+        info.id(),
+        data.write,
+        data.file_manager,
+        index_entry,
+    )?;
 
     // Write the file to the package
     event!(Level::DEBUG, "writing file data to package");
-    let write = ReadWriteCmd::Write {
+    let msg = Write {
         start: data_start,
         data: data.data,
     };
-    system.send(data.file, write);
+    system.send(data.write, msg);
 
     Ok(())
 }
 
 pub struct AddData {
-    pub file: Addr<ReadWriteCmd>,
+    pub write: Addr<Write>,
     pub file_manager: Addr<FileManagerCommand>,
     pub data: Vec<u8>,
     pub uuid: Uuid,
@@ -112,44 +113,43 @@ impl Actor for AddDataActor {
     }
 }
 
-struct AddIndex {
-    file: Addr<ReadWriteCmd>,
+fn start_add_index(
+    system: &mut System,
+    parent: Id,
+    write: Addr<Write>,
     file_manager: Addr<FileManagerCommand>,
     value: IndexEntry,
+) -> Result<(), Error> {
+    let info = system.create(parent)?;
+
+    let command = Load {
+        id: INDEX_COMPONENT_UUID,
+        on_result: info.addr(),
+    };
+    let command = FileManagerCommand::Load(command);
+    system.send(file_manager, command);
+
+    let actor = AddIndexActor { write, value };
+    system.start(info, Options::default(), actor)?;
+
+    Ok(())
 }
 
 struct AddIndexActor {
-    file: Addr<ReadWriteCmd>,
+    write: Addr<Write>,
     value: IndexEntry,
 }
 
-impl AddIndexActor {
-    fn start(system: &mut System, parent: Id, data: AddIndex) -> Result<(), Error> {
-        let info = system.create(parent)?;
-
-        let command = GetComponentCommand {
-            id: INDEX_COMPONENT_UUID,
-            on_result: info.addr(),
-        };
-        let command = FileManagerCommand::GetComponent(command);
-        system.send(data.file_manager, command);
-
-        let actor = Self {
-            file: data.file,
-            value: data.value,
-        };
-        system.start(info, Options::default(), actor)?;
-
-        Ok(())
-    }
-}
-
 impl Actor for AddIndexActor {
-    type Message = GetComponentResult;
+    type Message = (ComponentTableHeader, ComponentEntry);
 
-    fn handle(&mut self, system: &mut System, message: GetComponentResult) -> Result<After, Error> {
-        let region = from_bytes::<RegionData>(message.entry.data());
-        let component_offset = region.offset(message.offset);
+    fn handle(
+        &mut self,
+        system: &mut System,
+        (header, entry): (ComponentTableHeader, ComponentEntry),
+    ) -> Result<After, Error> {
+        let region = from_bytes::<RegionData>(entry.data());
+        let component_offset = region.offset(header.entries_offset());
 
         // TODO: Find a free slot rather than just assuming there's no groups and files yet
         // TODO: Update the component's size after adding the new index
@@ -157,11 +157,11 @@ impl Actor for AddIndexActor {
         // Write the new table
         event!(Level::DEBUG, "writing index to package");
         let data = create_table_data(&self.value)?;
-        let msg = ReadWriteCmd::Write {
+        let msg = Write {
             start: component_offset,
             data,
         };
-        system.send(self.file, msg);
+        system.send(self.write, msg);
 
         Ok(After::Stop)
     }

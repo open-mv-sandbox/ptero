@@ -1,23 +1,24 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read as IoRead, Seek, SeekFrom, Write as IoWrite},
 };
 
 use anyhow::{Context as ContextExt, Error};
 use stewart::{Actor, Addr, After, Id, Options, System};
+use stewart_utils::start_map;
 use tracing::{event, instrument, Level};
 
-use crate::ReadWriteCmd;
+use crate::{Read, Write};
 
-/// Start a file actor implementation of the `ReadWriteCmd` message.
-#[instrument("file-read-write", skip_all)]
-pub fn start_file_read_write(
+/// Start a file implementation of `Read` and `Write` messages.
+#[instrument("file", skip_all)]
+pub fn start_file(
     system: &mut System,
     parent: Id,
     path: String,
     truncate: bool,
-) -> Result<Addr<ReadWriteCmd>, Error> {
-    let package_file = OpenOptions::new()
+) -> Result<(Addr<Read>, Addr<Write>), Error> {
+    let file = OpenOptions::new()
         .read(true)
         .write(true)
         .truncate(truncate)
@@ -25,40 +26,54 @@ pub fn start_file_read_write(
         .context("failed to open target package for writing")?;
 
     let info = system.create(parent)?;
-    let actor = FileReadWriteActor { package_file };
+    let actor = FileActor { file };
     system.start(info, Options::default(), actor)?;
 
-    Ok(info.addr())
+    // Individual read/write
+    let read = start_map(system, info.id(), info.addr(), FileCommand::Read)?;
+    let write = start_map(system, info.id(), info.addr(), FileCommand::Write)?;
+
+    Ok((read, write))
 }
 
-struct FileReadWriteActor {
-    package_file: File,
+struct FileActor {
+    file: File,
 }
 
-impl Actor for FileReadWriteActor {
-    type Message = ReadWriteCmd;
+impl Actor for FileActor {
+    type Message = FileCommand;
 
-    fn handle<'a>(&mut self, system: &mut System, message: ReadWriteCmd) -> Result<After, Error> {
-        event!(Level::INFO, "handling {}", message.kind());
+    fn handle<'a>(&mut self, system: &mut System, message: FileCommand) -> Result<After, Error> {
+        event!(Level::INFO, kind = message.kind(), "handling command");
 
         match message {
-            ReadWriteCmd::Read {
-                start,
-                length,
-                on_result,
-            } => {
-                let mut buffer = vec![0u8; length as usize];
+            FileCommand::Read(command) => {
+                let mut buffer = vec![0u8; command.length as usize];
 
-                self.package_file.seek(SeekFrom::Start(start))?;
-                self.package_file.read_exact(&mut buffer)?;
+                self.file.seek(SeekFrom::Start(command.start))?;
+                self.file.read_exact(&mut buffer)?;
 
-                system.send(on_result, buffer);
+                system.send(command.on_result, buffer);
             }
-            ReadWriteCmd::Write { start, data } => {
-                self.package_file.seek(SeekFrom::Start(start))?;
-                self.package_file.write_all(&data)?;
+            FileCommand::Write(command) => {
+                self.file.seek(SeekFrom::Start(command.start))?;
+                self.file.write_all(&command.data)?;
             }
         }
         Ok(After::Nothing)
+    }
+}
+
+enum FileCommand {
+    Read(Read),
+    Write(Write),
+}
+
+impl FileCommand {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Read(_) => "read",
+            Self::Write(_) => "write",
+        }
     }
 }

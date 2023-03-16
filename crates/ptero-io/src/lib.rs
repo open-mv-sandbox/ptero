@@ -2,29 +2,22 @@ mod file;
 
 use stewart::Addr;
 
-pub use self::file::start_file_read_write;
+pub use self::file::start_file;
 
-/// Read or write command.
-pub enum ReadWriteCmd {
-    Read {
-        start: u64,
-        length: u64,
-        on_result: Addr<ReadResult>,
-    },
-    Write {
-        start: u64,
-        data: Vec<u8>,
-    },
+// TODO: Find a better option than sending around disposable mallocs, probably bumpalo.
+// This will be changed once we've got something to profile most likely.
+
+/// IO read command.
+pub struct Read {
+    pub start: u64,
+    pub length: u64,
+    pub on_result: Addr<ReadResult>,
 }
 
-impl ReadWriteCmd {
-    pub fn kind(&self) -> &'static str {
-        match self {
-            ReadWriteCmd::Read { .. } => "read",
-            ReadWriteCmd::Write { .. } => "write",
-        }
-    }
+/// IO write command.
+pub struct Write {
+    pub start: u64,
+    pub data: Vec<u8>,
 }
 
-// TODO: Get a better option than sending around disposable vecs.
 pub type ReadResult = Vec<u8>;
