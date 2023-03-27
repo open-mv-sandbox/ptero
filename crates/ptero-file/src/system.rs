@@ -7,7 +7,7 @@ use anyhow::{Context as ContextExt, Error};
 use stewart::{Actor, Addr, After, Id, Options, System};
 use tracing::{event, instrument, Level};
 
-use crate::FileMessage;
+use crate::{FileMessage, Operation, ReadResult, WriteLocation, WriteResult};
 
 /// Start a file reader/writer from a system file.
 #[instrument("file", skip_all)]
@@ -41,8 +41,8 @@ impl Actor for FileActor {
     fn handle(&mut self, system: &mut System, message: FileMessage) -> Result<After, Error> {
         event!(Level::INFO, "handling message");
 
-        match message {
-            FileMessage::Read {
+        match message.operation {
+            Operation::Read {
                 offset,
                 size,
                 on_result,
@@ -50,16 +50,40 @@ impl Actor for FileActor {
                 // TODO: Currently remaining bytes after EOF are kept zero, but maybe we want to
                 // feedback a lack of remaining bytes.
 
-                let mut buffer = vec![0u8; size as usize];
+                let mut data = vec![0u8; size as usize];
 
                 self.file.seek(SeekFrom::Start(offset))?;
-                read_exact_eof(&mut self.file, &mut buffer)?;
+                read_exact_eof(&mut self.file, &mut data)?;
 
-                system.send(on_result, buffer);
+                // Reply result
+                let result = ReadResult {
+                    id: message.id,
+                    data,
+                };
+                system.send(on_result, result);
             }
-            FileMessage::Write { offset, data } => {
-                self.file.seek(SeekFrom::Start(offset))?;
+            Operation::Write {
+                location,
+                data,
+                on_result,
+            } => {
+                // Seek to given location
+                let from = match location {
+                    WriteLocation::Offset(offset) => SeekFrom::Start(offset),
+                    WriteLocation::Append => SeekFrom::End(0),
+                };
+                self.file.seek(from)?;
+                let offset = self.file.stream_position()?;
+
+                // Perform the write
                 self.file.write_all(&data)?;
+
+                // Reply result
+                let result = WriteResult {
+                    id: message.id,
+                    offset,
+                };
+                system.send(on_result, result);
             }
         }
         Ok(After::Nothing)

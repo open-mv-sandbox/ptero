@@ -1,6 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_daicon::SourceMessage;
+use ptero_file::ReadResult;
 use stewart::{Actor, After, Options, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -12,7 +13,7 @@ pub struct GetCommand {
     #[arg(short, long, value_name = "PATH")]
     target: String,
 
-    /// The UUID of the entry to get.
+    /// UUID of the entry to get.
     #[arg(short = 'd', long, value_name = "UUID")]
     id: Uuid,
 
@@ -51,10 +52,10 @@ struct GetCommandActor {
 }
 
 impl Actor for GetCommandActor {
-    type Message = Vec<u8>;
+    type Message = ReadResult;
 
-    fn handle(&mut self, _system: &mut System, message: Vec<u8>) -> Result<After, Error> {
-        std::fs::write(&self.output, message)?;
+    fn handle(&mut self, _system: &mut System, message: ReadResult) -> Result<After, Error> {
+        std::fs::write(&self.output, message.data)?;
         Ok(After::Stop)
     }
 }

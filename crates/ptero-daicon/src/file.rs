@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     io::{Cursor, Read},
     mem::size_of,
 };
@@ -6,7 +7,7 @@ use std::{
 use anyhow::Error;
 use bytemuck::{bytes_of, bytes_of_mut, cast_slice_mut};
 use daicon::{Entry, Header};
-use ptero_file::FileMessage;
+use ptero_file::{FileMessage, Operation, ReadResult, WriteLocation, WriteResult};
 use stewart::{Actor, Addr, After, Id, Options, System};
 use stewart_utils::start_map;
 use tracing::{event, instrument, Level};
@@ -15,7 +16,10 @@ use uuid::Uuid;
 pub enum SourceMessage {
     /// Get the data associated with a UUID.
     /// TODO: Reply with an inner file actor addr instead.
-    Get { id: Uuid, on_result: Addr<Vec<u8>> },
+    Get {
+        id: Uuid,
+        on_result: Addr<ReadResult>,
+    },
     /// Set the data associated with a UUID.
     Set { id: Uuid, data: Vec<u8> },
 }
@@ -31,41 +35,44 @@ pub fn start_file_source(
 ) -> Result<Addr<SourceMessage>, Error> {
     let info = system.create(parent)?;
 
-    let command = start_map(system, parent, info.addr(), Message::Source)?;
-    let read_table_result = start_map(system, parent, info.addr(), Message::ReadTableResult)?;
+    let source = start_map(system, parent, info.addr(), Message::Source)?;
+    let read_result = start_map(system, parent, info.addr(), Message::ReadResult)?;
+    let write_result = start_map(system, parent, info.addr(), Message::WriteResult)?;
 
     // Start the root manager actor
     let actor = FileSourceActor {
+        write_result,
         file,
-
         table: None,
-        // TODO: Move this to the file handler with an "append" message, replying the location.
-        append_offset: 64 * 1024,
 
         pending_get: Vec::new(),
         pending_set: Vec::new(),
+        pending_append: HashMap::new(),
     };
     system.start(info, Options::default(), actor)?;
 
     // Immediately start table read, assuming at start for now
-    let message = FileMessage::Read {
-        offset: 0,
-        size: 64 * 1024,
-        on_result: read_table_result,
+    let message = FileMessage {
+        id: Uuid::new_v4(),
+        operation: Operation::Read {
+            offset: 0,
+            size: 64 * 1024,
+            on_result: read_result,
+        },
     };
     system.send(file, message);
 
-    Ok(command)
+    Ok(source)
 }
 
 struct FileSourceActor {
+    write_result: Addr<WriteResult>,
     file: Addr<FileMessage>,
-
     table: Option<CachedTable>,
-    append_offset: u64,
 
-    pending_get: Vec<(Uuid, Addr<Vec<u8>>)>,
+    pending_get: Vec<(Uuid, Addr<ReadResult>)>,
     pending_set: Vec<Entry>,
+    pending_append: HashMap<Uuid, (Uuid, u64)>,
 }
 
 impl FileSourceActor {
@@ -82,27 +89,26 @@ impl FileSourceActor {
             SourceMessage::Set { id, data } => {
                 event!(Level::INFO, ?id, bytes = data.len(), "received set");
 
-                // Append to the file
-                let offset = self.append_offset;
+                // Append the data to the file
                 let size = data.len() as u64;
-                self.append_offset = self.append_offset + size;
-                let message = FileMessage::Write { offset, data };
+                let message = FileMessage {
+                    id: Uuid::new_v4(),
+                    operation: Operation::Write {
+                        location: WriteLocation::Append,
+                        data,
+                        on_result: self.write_result,
+                    },
+                };
+                self.pending_append.insert(message.id, (id, size));
                 system.send(self.file, message);
-
-                // Queue to add to a table
-                let mut entry = Entry::default();
-                entry.set_id(id);
-                entry.set_offset(offset);
-                entry.set_size(size);
-                self.pending_set.push(entry);
             }
         }
 
         Ok(())
     }
 
-    fn on_read_table(&mut self, data: Vec<u8>) -> Result<(), Error> {
-        let mut data = Cursor::new(data);
+    fn on_read_result(&mut self, result: ReadResult) -> Result<(), Error> {
+        let mut data = Cursor::new(result.data);
 
         // Read the header
         let mut header = Header::default();
@@ -128,6 +134,24 @@ impl FileSourceActor {
         Ok(())
     }
 
+    fn on_write_result(&mut self, result: WriteResult) -> Result<(), Error> {
+        // Check if this write result is for a pending file append
+        let (id, size) = if let Some(value) = self.pending_append.remove(&result.id) {
+            value
+        } else {
+            return Ok(());
+        };
+
+        // Queue to add to a table
+        let mut entry = Entry::default();
+        entry.set_id(id);
+        entry.set_offset(result.offset);
+        entry.set_size(size);
+        self.pending_set.push(entry);
+
+        Ok(())
+    }
+
     fn check_pending(&mut self, system: &mut System) {
         let table = if let Some(table) = self.table.as_mut() {
             table
@@ -139,7 +163,7 @@ impl FileSourceActor {
         self.pending_get
             .retain(|(id, on_result)| !try_get(system, self.file, table, *id, *on_result));
         self.pending_set
-            .retain(|entry| !try_set(system, self.file, table, *entry));
+            .retain(|entry| !try_set(system, self.write_result, self.file, table, *entry));
 
         // TODO: Reply failure if we ran out of tables to read, and couldn't find it
         // TODO: Allocate new tables if we ran out of free spaces
@@ -154,8 +178,11 @@ impl Actor for FileSourceActor {
             Message::Source(message) => {
                 self.on_source_message(system, message)?;
             }
-            Message::ReadTableResult(data) => {
-                self.on_read_table(data)?;
+            Message::ReadResult(result) => {
+                self.on_read_result(result)?;
+            }
+            Message::WriteResult(result) => {
+                self.on_write_result(result)?;
             }
         };
 
@@ -168,7 +195,8 @@ impl Actor for FileSourceActor {
 
 enum Message {
     Source(SourceMessage),
-    ReadTableResult(Vec<u8>),
+    ReadResult(ReadResult),
+    WriteResult(WriteResult),
 }
 
 fn try_get(
@@ -176,7 +204,7 @@ fn try_get(
     file: Addr<FileMessage>,
     table: &mut CachedTable,
     id: Uuid,
-    on_result: Addr<Vec<u8>>,
+    on_result: Addr<ReadResult>,
 ) -> bool {
     let entry = if let Some(entry) = table.find(id) {
         entry
@@ -191,10 +219,13 @@ fn try_get(
     );
 
     // We found a matching entry, start the read to fetch the inner data
-    let message = FileMessage::Read {
-        offset: entry.offset(),
-        size: entry.size(),
-        on_result,
+    let message = FileMessage {
+        id: Uuid::new_v4(),
+        operation: Operation::Read {
+            offset: entry.offset(),
+            size: entry.size(),
+            on_result,
+        },
     };
     system.send(file, message);
 
@@ -203,6 +234,7 @@ fn try_get(
 
 fn try_set(
     system: &mut System,
+    write_result: Addr<WriteResult>,
     file: Addr<FileMessage>,
     table: &mut CachedTable,
     entry: Entry,
@@ -221,17 +253,25 @@ fn try_set(
 
     // We succeeded, write the new entry
     let entry_offset = entry_offset(table.offset, index);
-    let message = FileMessage::Write {
-        offset: entry_offset,
-        data: bytes_of(&entry).to_owned(),
+    let message = FileMessage {
+        id: Uuid::new_v4(),
+        operation: Operation::Write {
+            location: WriteLocation::Offset(entry_offset),
+            data: bytes_of(&entry).to_owned(),
+            on_result: write_result,
+        },
     };
     system.send(file, message);
 
     // Write the header
     let header = table.create_header();
-    let message = FileMessage::Write {
-        offset: table.offset,
-        data: bytes_of(&header).to_owned(),
+    let message = FileMessage {
+        id: Uuid::new_v4(),
+        operation: Operation::Write {
+            location: WriteLocation::Offset(table.offset),
+            data: bytes_of(&header).to_owned(),
+            on_result: write_result,
+        },
     };
     system.send(file, message);
 

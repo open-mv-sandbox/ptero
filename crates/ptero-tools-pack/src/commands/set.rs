@@ -16,7 +16,7 @@ pub struct SetCommand {
     #[arg(short = 'd', long, value_name = "UUID")]
     id: Uuid,
 
-    /// Path of the input data.
+    /// Path of the input file to read.
     #[arg(short, long, value_name = "PATH")]
     input: String,
 }
