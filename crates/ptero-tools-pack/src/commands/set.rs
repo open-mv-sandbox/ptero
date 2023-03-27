@@ -23,7 +23,7 @@ pub struct SetCommand {
 
 #[instrument("add-command", skip_all)]
 pub fn start(system: &mut System, command: SetCommand) -> Result<(), Error> {
-    event!(Level::INFO, "adding file to package");
+    event!(Level::INFO, "setting file in package");
 
     let info = system.create_root()?;
 

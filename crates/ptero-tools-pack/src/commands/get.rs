@@ -23,7 +23,7 @@ pub struct GetCommand {
 
 #[instrument("add-command", skip_all)]
 pub fn start(system: &mut System, command: GetCommand) -> Result<(), Error> {
-    event!(Level::INFO, "adding file to package");
+    event!(Level::INFO, "getting file from package");
 
     let info = system.create_root()?;
 
