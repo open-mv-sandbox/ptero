@@ -1,6 +1,5 @@
-//! Pterodactil implementation of the "Daicon" format.
+//! Pterodactil implementation of the "daicon" format.
 
-mod manager;
-mod read;
+mod file;
 
-pub use self::manager::{start_file_manager, FileManagerCommand, Load, Store};
+pub use self::file::{start_file_source, SourceMessage};

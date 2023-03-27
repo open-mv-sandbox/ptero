@@ -1,20 +1,18 @@
 [package]
-name = "ptero-pack-cli"
+name = "ptero-tools-pack"
 version = "0.1.0"
 edition = "2021"
-
-[[bin]]
-name = "ptero-pack"
-path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
 bytemuck = { workspace = true, features = ["extern_crate_alloc"] }
 clap = { workspace = true, features = ["derive"] }
+daicon.workspace = true
 stewart.workspace = true
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 uuid.workspace = true
 ptero-daicon.workspace = true
-ptero-io.workspace = true
-ptero-pack.workspace = true
+ptero-file.workspace = true
+
+# TODO: After moving create_package, remove bytemuck and daicon

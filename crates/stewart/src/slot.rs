@@ -54,7 +54,11 @@ fn handle_process_result(result: Result<After, Error>) -> After {
         Ok(value) => value,
         Err(error) => {
             // TODO: What to do with this?
-            event!(Level::ERROR, ?error, "actor failed to process message");
+            event!(
+                Level::ERROR,
+                ?error,
+                "actor failed while processing message"
+            );
 
             After::Nothing
         }

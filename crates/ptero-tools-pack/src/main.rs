@@ -2,17 +2,18 @@ mod commands;
 
 use anyhow::Error;
 use clap::{Parser, Subcommand};
+use commands::get::GetCommand;
 use stewart::System;
 use tracing::{event, Level};
 use tracing_subscriber::{prelude::*, EnvFilter, FmtSubscriber};
 
-use crate::commands::{add::AddCommand, create::CreateCommand};
+use crate::commands::{create::CreateCommand, set::SetCommand};
 
 fn main() {
     let args = CliArgs::parse();
 
     let filter = EnvFilter::builder()
-        .parse("trace,stewart=warn,ptero_io=warn")
+        .parse("trace,stewart=warn,ptero_file=warn")
         .unwrap();
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::TRACE)
@@ -39,7 +40,8 @@ fn try_main(args: CliArgs) -> Result<(), Error> {
     // Start the command actor
     match args.command {
         Command::Create(command) => commands::create::start(&mut system, command)?,
-        Command::Add(command) => commands::add::start(&mut system, command)?,
+        Command::Set(command) => commands::set::start(&mut system, command)?,
+        Command::Get(command) => commands::get::start(&mut system, command)?,
     };
 
     // Run the command until it's done
@@ -60,5 +62,6 @@ struct CliArgs {
 #[derive(Subcommand, Debug)]
 enum Command {
     Create(CreateCommand),
-    Add(AddCommand),
+    Set(SetCommand),
+    Get(GetCommand),
 }

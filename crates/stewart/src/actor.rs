@@ -7,6 +7,8 @@ pub trait Actor: 'static {
     type Message: 'static;
 
     /// Handle a message.
+    ///
+    /// TODO: Bulk operation?
     fn handle(&mut self, system: &mut System, message: Self::Message) -> Result<After, Error>;
 }
 
