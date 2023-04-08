@@ -1,27 +1,28 @@
 use thiserror::Error;
 use tracing::Span;
 
-use crate::slot::AnyActorSlot;
+use crate::{slot::AnyActorSlot, Id};
 
 pub struct Node {
-    /// Debugging identification name, not intended for anything other than warn/err reporting.
     debug_name: &'static str,
-    /// Persistent logging span, groups logging that happenened under this actor.
     span: Span,
     options: Options,
+    parent: Option<Id>,
     slot: Option<Box<dyn AnyActorSlot>>,
 }
 
 impl Node {
-    pub fn new(span: Span) -> Self {
+    pub fn new(span: Span, parent: Option<Id>) -> Self {
         Self {
             debug_name: "PendingStart",
             span,
             options: Options::default(),
+            parent,
             slot: None,
         }
     }
 
+    /// Debugging identification name, not intended for anything other than warn/err reporting.
     pub fn debug_name(&self) -> &'static str {
         self.debug_name
     }
@@ -30,6 +31,7 @@ impl Node {
         self.debug_name = value;
     }
 
+    /// Persistent logging span, groups logging that happenened under this actor.
     pub fn span(&self) -> Span {
         self.span.clone()
     }
@@ -40,6 +42,10 @@ impl Node {
 
     pub fn set_options(&mut self, options: Options) {
         self.options = options;
+    }
+
+    pub fn parent(&self) -> Option<Id> {
+        self.parent
     }
 
     pub fn slot_mut(&mut self) -> Option<&mut Box<dyn AnyActorSlot>> {

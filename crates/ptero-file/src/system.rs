@@ -24,7 +24,7 @@ pub fn start_system_file(
         .open(path)
         .context("failed to open system file for writing")?;
 
-    let (id, addr) = system.create::<FileActor>(parent)?;
+    let (id, addr) = system.create(parent)?;
     let actor = FileActor { file };
     system.start(id, Options::default(), actor)?;
 

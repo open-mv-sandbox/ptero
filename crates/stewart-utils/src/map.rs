@@ -18,7 +18,7 @@ where
     I: 'static,
     O: 'static,
 {
-    let (id, addr) = system.create::<MapActor<F, I, O>>(parent)?;
+    let (id, addr) = system.create(parent)?;
     let actor = MapActor::<F, I, O> {
         function,
         target,

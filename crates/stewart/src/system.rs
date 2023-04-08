@@ -21,10 +21,7 @@ impl System {
     /// Create an actor on the system.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create<A>(&mut self, parent: Id) -> Result<(Id, Addr<A::Message>), CreateActorError>
-    where
-        A: Actor,
-    {
+    pub fn create<M>(&mut self, parent: Id) -> Result<(Id, Addr<M>), CreateActorError> {
         event!(Level::INFO, "creating actor");
 
         let id = self.actors.create(Some(parent))?;

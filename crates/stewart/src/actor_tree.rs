@@ -24,7 +24,7 @@ impl ActorTree {
         }
 
         // Create the node
-        let node = Node::new(span);
+        let node = Node::new(span, parent);
         let index = self.nodes.insert(node);
         let id = Id { index };
 
@@ -87,7 +87,25 @@ impl ActorTree {
     }
 
     pub fn remove(&mut self, id: Id) -> Result<Node, Error> {
-        self.nodes.remove(id.index).context("actor doesn't exist")
+        // Remove all children
+        // TODO: Optimize hierarchy walking
+        let children: Vec<_> = self
+            .nodes
+            .iter()
+            .filter(|(_, n)| n.parent() == Some(id))
+            .map(|(index, _)| Id { index })
+            .collect();
+        for child in children {
+            self.remove(child)?;
+        }
+
+        // Remove the given actor itself
+        let node = self
+            .nodes
+            .remove(id.index)
+            .context("tried to remove actor that doesn't exist")?;
+
+        Ok(node)
     }
 
     /// Get the debug names of all active actors, except root.

@@ -33,7 +33,7 @@ pub fn start_file_source(
     parent: Id,
     file: Addr<FileMessage>,
 ) -> Result<Addr<SourceMessage>, Error> {
-    let (id, addr) = system.create::<FileSourceActor>(parent)?;
+    let (id, addr) = system.create(parent)?;
 
     let source = start_map(system, parent, addr, Message::Source)?;
     let read_result = start_map(system, parent, addr, Message::ReadResult)?;

@@ -4,35 +4,86 @@ use std::{
 };
 
 use anyhow::Error;
-use stewart::{Actor, Addr, After, Options, System};
+use rstest::{fixture, rstest};
+use stewart::{Actor, Addr, After, Id, Options, System};
 use tracing_test::traced_test;
 
-#[test]
+#[rstest]
 #[traced_test]
-fn send_message_to_actor() -> Result<(), Error> {
-    let mut system = System::new();
-    let (addr, count) = start_actor(&mut system)?;
-
+fn system_sends_message_to_actor(mut world: TestWorld) -> Result<(), Error> {
     // Send a message
-    system.send(addr, ());
-    system.run_until_idle()?;
+    world.system.send(world.root.addr, ());
+    world.system.run_until_idle()?;
 
     // Actor will now have removed itself, send again to make sure it doesn't crash
-    system.send(addr, ());
-    system.run_until_idle()?;
+    world.system.send(world.root.addr, ());
+    world.system.run_until_idle()?;
 
     // Make sure it wasn't handled anyways
-    assert_eq!(count.load(Ordering::SeqCst), 1);
+    assert_eq!(world.root.count.load(Ordering::SeqCst), 1);
 
     Ok(())
 }
 
-fn start_actor(system: &mut System) -> Result<(Addr<()>, Rc<AtomicUsize>), Error> {
-    let (id, addr) = system.create_root()?;
+#[rstest]
+#[traced_test]
+fn system_stops_actors(mut world: TestWorld) -> Result<(), Error> {
+    // Send a message to the part
+    world.system.send(world.root.addr, ());
+    world.system.run_until_idle()?;
+
+    // Actor will now have removed itself, try sending a message to the child
+    world.system.send(world.child.addr, ());
+    world.system.run_until_idle()?;
+
+    // Make sure it wasn't handled
+    assert_eq!(world.child.count.load(Ordering::SeqCst), 0);
+
+    Ok(())
+}
+
+#[fixture]
+fn world() -> TestWorld {
+    let mut system = System::new();
+
+    let root = root_actor(&mut system);
+    let child = child_actor(&mut system, &root);
+
+    TestWorld {
+        system,
+        root,
+        child,
+    }
+}
+
+fn root_actor(system: &mut System) -> ActorInfo {
+    let (id, addr) = system.create_root().unwrap();
     let actor = TestActor::default();
     let count = actor.count.clone();
-    system.start(id, Options::default(), actor)?;
-    Ok((addr, count))
+    system.start(id, Options::default(), actor).unwrap();
+
+    ActorInfo { id, addr, count }
+}
+
+fn child_actor(system: &mut System, parent: &ActorInfo) -> ActorInfo {
+    let (id, addr) = system.create(parent.id).unwrap();
+    let actor = TestActor::default();
+    let count = actor.count.clone();
+    system.start(id, Options::default(), actor).unwrap();
+
+    ActorInfo { id, addr, count }
+}
+
+struct TestWorld {
+    system: System,
+    root: ActorInfo,
+    child: ActorInfo,
+}
+
+struct ActorInfo {
+    id: Id,
+    addr: Addr<()>,
+    count: Rc<AtomicUsize>,
 }
 
 #[derive(Default)]
