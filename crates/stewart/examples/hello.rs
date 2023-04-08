@@ -4,7 +4,7 @@ use anyhow::Error;
 use stewart::System;
 use tracing::{event, Level};
 
-use crate::hello_service::start_hello;
+use crate::hello_service::start_hello_service;
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
@@ -12,7 +12,7 @@ fn main() -> Result<(), Error> {
     let mut system = System::new();
 
     // Start the hello service
-    let hello = start_hello(&mut system)?;
+    let hello = start_hello_service(&mut system)?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -34,19 +34,19 @@ mod hello_service {
     /// The start function uses the concrete actor internally, the actor itself is never public.
     /// By instrumenting the start function, your actor's callbacks will use it automatically.
     #[instrument("hello", skip_all)]
-    pub fn start_hello(system: &mut System) -> Result<Addr<String>, Error> {
+    pub fn start_hello_service(system: &mut System) -> Result<Addr<String>, Error> {
         event!(Level::DEBUG, "creating service");
 
-        let info = system.create_root()?;
-        system.start(info, Options::default(), HelloActor)?;
+        let (id, addr) = system.create_root()?;
+        system.start(id, Options::default(), HelloService)?;
 
-        Ok(info.addr())
+        Ok(addr)
     }
 
     /// The actor implementation below remains entirely private to the module.
-    struct HelloActor;
+    struct HelloService;
 
-    impl Actor for HelloActor {
+    impl Actor for HelloService {
         type Message = String;
 
         fn handle(&mut self, _system: &mut System, message: String) -> Result<After, Error> {

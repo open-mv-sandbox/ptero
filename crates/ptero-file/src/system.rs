@@ -24,11 +24,11 @@ pub fn start_system_file(
         .open(path)
         .context("failed to open system file for writing")?;
 
-    let info = system.create(parent)?;
+    let (id, addr) = system.create::<FileActor>(parent)?;
     let actor = FileActor { file };
-    system.start(info, Options::default(), actor)?;
+    system.start(id, Options::default(), actor)?;
 
-    Ok(info.addr())
+    Ok(addr)
 }
 
 struct FileActor {

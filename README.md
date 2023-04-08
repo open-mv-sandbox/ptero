@@ -6,13 +6,21 @@ Pterodactil is a toolkit for working with [dacti formats](https://github.com/ope
 
 ## Dacti Viewer
 
-To explore the development of dacti, this repository contains a reference viewer implementation. This viewer may be eventually split out and renamed to become its own application in the future.
+To explore the development of dacti, this repository contains a reference viewer implementation.
+This viewer may be eventually split out and renamed to become its own application in the future.
 
 ## Building Standalone JS Library
 
-This project uses wasm-bindgen to create the JS bindings around the WebAssembly based package. To generate the package for use in projects, run `wasm-pack build` in the JS crate's directory. See the [wasm-pack documentation](https://rustwasm.github.io/docs/wasm-pack/) for more information.
+This project uses wasm-bindgen to create the JS bindings around the WebAssembly based package.
+To generate the package for use in projects, run `wasm-pack build` in the JS crate's directory.
+See the [wasm-pack documentation](https://rustwasm.github.io/docs/wasm-pack/) for more information.
 
 You do not need to build the library manually for the web example.
+
+## Miri
+
+This project is additionally tested using the [Miri project](https://github.com/rust-lang/miri).
+While no unsafe code is used in ptero, this additionally verifies dependencies are behaving safely too.
 
 ## Related Projects
 

@@ -18,15 +18,15 @@ where
     I: 'static,
     O: 'static,
 {
-    let info = system.create(parent)?;
+    let (id, addr) = system.create::<MapActor<F, I, O>>(parent)?;
     let actor = MapActor::<F, I, O> {
         function,
         target,
         _a: PhantomData,
     };
-    system.start(info, Options::default().with_high_priority(), actor)?;
+    system.start(id, Options::default().with_high_priority(), actor)?;
 
-    Ok(info.addr())
+    Ok(addr)
 }
 
 struct MapActor<F, I, O> {

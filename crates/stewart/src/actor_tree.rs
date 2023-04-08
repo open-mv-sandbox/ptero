@@ -3,55 +3,61 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::{node::Node, slot::AnyActorSlot, Options};
+use crate::{node::Node, slot::ActorSlot, Actor, Options};
 
 #[derive(Default)]
 pub struct ActorTree {
     nodes: Arena<Node>,
-    pending_start: Vec<Index>,
+    pending_start: Vec<Id>,
 }
 
 impl ActorTree {
-    pub fn create<A>(&mut self, parent: Option<Index>) -> Result<Index, CreateActorError> {
+    pub fn create(&mut self, parent: Option<Id>) -> Result<Id, CreateActorError> {
         // Continual span is inherited from the create addr callsite
         let span = Span::current();
-        let debug_name = debug_name::<A>();
 
         // Link to the parent
         if let Some(parent) = parent {
             self.nodes
-                .get_mut(parent)
+                .get_mut(parent.index)
                 .ok_or(CreateActorError::ParentDoesNotExist)?;
         }
 
         // Create the node
-        let node = Node::new(debug_name, span);
+        let node = Node::new(span);
         let index = self.nodes.insert(node);
+        let id = Id { index };
 
         // Track the address so we can clean it up if it doesn't get started in time
-        self.pending_start.push(index);
+        self.pending_start.push(id);
 
-        Ok(index)
+        Ok(id)
     }
 
-    pub fn start(
-        &mut self,
-        index: Index,
-        options: Options,
-        slot: Box<dyn AnyActorSlot>,
-    ) -> Result<(), StartActorError> {
+    pub fn start<A>(&mut self, id: Id, options: Options, actor: A) -> Result<(), StartActorError>
+    where
+        A: Actor,
+    {
         // Check if it's pending, and remove it
         let pending_index = self
             .pending_start
             .iter()
-            .position(|i| *i == index)
+            .position(|i| *i == id)
             .ok_or(StartActorError::ActorAlreadyStarted)?;
         self.pending_start.remove(pending_index);
 
+        // Box the actor, so we can access it dynamically
+        let slot = ActorSlot {
+            bin: Vec::new(),
+            actor,
+        };
+
         // Apply the start
-        let node = self.get_mut(index).context("failed to get node")?;
+        let node = self.get_mut(id).context("failed to get node")?;
+        node.set_debug_name(debug_name::<A>());
         node.set_options(options);
-        node.store(slot).context("failed to store actor")?;
+        node.store(Box::new(slot))
+            .context("failed to store actor")?;
 
         Ok(())
     }
@@ -59,15 +65,15 @@ impl ActorTree {
     /// Clean up actors that didn't start in time, and thus failed.
     pub fn cleanup_pending(&mut self) -> Result<(), Error> {
         // Intentionally in reverse order, clean up children before parents
-        while let Some(index) = self.pending_start.pop() {
-            self.cleanup_pending_at(index)?;
+        while let Some(id) = self.pending_start.pop() {
+            self.cleanup_pending_at(id)?;
         }
 
         Ok(())
     }
 
-    fn cleanup_pending_at(&mut self, index: Index) -> Result<(), Error> {
-        let node = self.remove(index)?;
+    fn cleanup_pending_at(&mut self, id: Id) -> Result<(), Error> {
+        let node = self.remove(id)?;
 
         let span = node.span();
         let _enter = span.enter();
@@ -76,12 +82,12 @@ impl ActorTree {
         Ok(())
     }
 
-    pub fn get_mut(&mut self, index: Index) -> Option<&mut Node> {
-        self.nodes.get_mut(index)
+    pub fn get_mut(&mut self, id: Id) -> Option<&mut Node> {
+        self.nodes.get_mut(id.index)
     }
 
-    pub fn remove(&mut self, index: Index) -> Result<Node, Error> {
-        self.nodes.remove(index).context("actor doesn't exist")
+    pub fn remove(&mut self, id: Id) -> Result<Node, Error> {
+        self.nodes.remove(id.index).context("actor doesn't exist")
     }
 
     /// Get the debug names of all active actors, except root.
@@ -94,6 +100,12 @@ impl ActorTree {
 
         debug_names
     }
+}
+
+/// Untyped identifier of an actor.
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct Id {
+    index: Index,
 }
 
 #[derive(Error, Debug)]

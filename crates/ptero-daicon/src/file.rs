@@ -33,11 +33,11 @@ pub fn start_file_source(
     parent: Id,
     file: Addr<FileMessage>,
 ) -> Result<Addr<SourceMessage>, Error> {
-    let info = system.create(parent)?;
+    let (id, addr) = system.create::<FileSourceActor>(parent)?;
 
-    let source = start_map(system, parent, info.addr(), Message::Source)?;
-    let read_result = start_map(system, parent, info.addr(), Message::ReadResult)?;
-    let write_result = start_map(system, parent, info.addr(), Message::WriteResult)?;
+    let source = start_map(system, parent, addr, Message::Source)?;
+    let read_result = start_map(system, parent, addr, Message::ReadResult)?;
+    let write_result = start_map(system, parent, addr, Message::WriteResult)?;
 
     // Start the root manager actor
     let actor = FileSourceActor {
@@ -49,7 +49,7 @@ pub fn start_file_source(
         pending_set: Vec::new(),
         pending_append: HashMap::new(),
     };
-    system.start(info, Options::default(), actor)?;
+    system.start(id, Options::default(), actor)?;
 
     // Immediately start table read, assuming at start for now
     let message = FileMessage {

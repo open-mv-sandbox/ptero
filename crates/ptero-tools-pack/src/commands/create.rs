@@ -43,8 +43,8 @@ pub struct CreateCommand {
 pub fn start(system: &mut System, command: CreateCommand) -> Result<(), Error> {
     event!(Level::INFO, "creating package");
 
-    let info = system.create_root()?;
-    system.start(info, Options::default(), CreateCommandActor)?;
+    let (id, _) = system.create_root::<()>()?;
+    system.start(id, Options::default(), CreateCommandActor)?;
 
     create_package(&command.target)?;
 

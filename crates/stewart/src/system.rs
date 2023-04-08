@@ -1,19 +1,15 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, marker::PhantomData, sync::atomic::AtomicPtr};
 
 use anyhow::{Context, Error};
-use thunderdome::Index;
 use tracing::{event, Level};
 
-use crate::{
-    actor_tree::ActorTree, slot::ActorSlot, Actor, Addr, After, CreateActorError, Id, Info,
-    Options, StartActorError,
-};
+use crate::{actor_tree::ActorTree, Actor, After, CreateActorError, Id, Options, StartActorError};
 
 /// Thread-local actor execution system.
 #[derive(Default)]
 pub struct System {
     actors: ActorTree,
-    queue: VecDeque<Index>,
+    queue: VecDeque<Id>,
 }
 
 impl System {
@@ -25,45 +21,42 @@ impl System {
     /// Create an actor on the system.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create<A>(&mut self, parent: Id) -> Result<Info<A>, CreateActorError>
+    pub fn create<A>(&mut self, parent: Id) -> Result<(Id, Addr<A::Message>), CreateActorError>
     where
         A: Actor,
     {
-        let parent = Some(parent.index);
-        let index = self.actors.create::<A>(parent)?;
-        let info = Info::new(index);
-        Ok(info)
+        event!(Level::INFO, "creating actor");
+
+        let id = self.actors.create(Some(parent))?;
+
+        let addr = Addr {
+            id,
+            _m: PhantomData,
+        };
+        Ok((id, addr))
     }
 
     /// Create a root actor on the system.
     ///
     /// Root actors do not have a parent, and will not be stopped by any other actor stopping.
-    pub fn create_root<A>(&mut self) -> Result<Info<A>, CreateActorError>
-    where
-        A: Actor,
-    {
-        let index = self.actors.create::<A>(None)?;
-        let info = Info::new(index);
-        Ok(info)
+    pub fn create_root<M>(&mut self) -> Result<(Id, Addr<M>), CreateActorError> {
+        let id = self.actors.create(None)?;
+
+        let addr = Addr {
+            id,
+            _m: PhantomData,
+        };
+        Ok((id, addr))
     }
 
     /// Start an actor on the system, making it available for handling messages.
-    pub fn start<A>(
-        &mut self,
-        info: Info<A>,
-        options: Options,
-        actor: A,
-    ) -> Result<(), StartActorError>
+    pub fn start<A>(&mut self, id: Id, options: Options, actor: A) -> Result<(), StartActorError>
     where
         A: Actor,
     {
         event!(Level::INFO, "starting actor");
 
-        let slot = ActorSlot {
-            bin: Vec::new(),
-            actor,
-        };
-        self.actors.start(info.index, options, Box::new(slot))?;
+        self.actors.start(id, options, actor)?;
 
         Ok(())
     }
@@ -76,7 +69,7 @@ impl System {
     where
         M: 'static,
     {
-        let result = self.try_send(addr.index, message.into());
+        let result = self.try_send(addr.id, message.into());
 
         // TODO: Figure out what to do with this, it may be useful to have a unified "send error"
         // system, but in some cases a definitive error may never happen until the implementor
@@ -88,22 +81,22 @@ impl System {
         }
     }
 
-    fn try_send<M>(&mut self, index: Index, message: M) -> Result<(), Error>
+    fn try_send<M>(&mut self, id: Id, message: M) -> Result<(), Error>
     where
         M: 'static,
     {
-        let node = self.actors.get_mut(index).context("actor not found")?;
+        let node = self.actors.get_mut(id).context("actor not found")?;
         let slot = node.slot_mut().context("actor not available")?;
 
         let mut message = Some(message);
         slot.handle(&mut message)?;
 
         // Queue for later processing
-        if !self.queue.contains(&index) {
+        if !self.queue.contains(&id) {
             if !node.options().high_priority {
-                self.queue.push_back(index);
+                self.queue.push_back(id);
             } else {
-                self.queue.push_front(index);
+                self.queue.push_front(id);
             }
         }
 
@@ -128,11 +121,11 @@ impl System {
         Ok(())
     }
 
-    fn process(&mut self, index: Index) -> Result<(), Error> {
+    fn process(&mut self, id: Id) -> Result<(), Error> {
         // Borrow the actor
         let node = self
             .actors
-            .get_mut(index)
+            .get_mut(id)
             .context("failed to get actor before process")?;
         let span = node.span();
         let _enter = span.enter();
@@ -145,13 +138,13 @@ impl System {
         if after == After::Stop {
             event!(Level::INFO, "stopping actor");
             drop(slot);
-            self.actors.remove(index)?;
+            self.actors.remove(id)?;
             return Ok(());
         }
 
         // Return the actor
         self.actors
-            .get_mut(index)
+            .get_mut(id)
             .context("failed to get actor after process")?
             .store(slot)?;
 
@@ -172,3 +165,23 @@ impl Drop for System {
         }
     }
 }
+
+/// Typed system address of an actor, used for sending messages to the actor.
+///
+/// This address can only be used with one specific system. Using it with another system is
+/// not unsafe, but may result in unexpected behavior.
+///
+/// When distributing work between systems, you can use an 'envoy' actor that relays messages from
+/// one system to another. For example, using an MPSC channel, or even across network.
+pub struct Addr<M> {
+    id: Id,
+    _m: PhantomData<AtomicPtr<M>>,
+}
+
+impl<M> Clone for Addr<M> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M> Copy for Addr<M> {}

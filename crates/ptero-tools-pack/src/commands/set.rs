@@ -25,13 +25,13 @@ pub struct SetCommand {
 pub fn start(system: &mut System, command: SetCommand) -> Result<(), Error> {
     event!(Level::INFO, "setting file in package");
 
-    let info = system.create_root()?;
+    let (id, _) = system.create_root::<()>()?;
 
     let data = std::fs::read(&command.input)?;
 
     // Open up the package for writing in ptero-daicon
-    let file = ptero_file::start_system_file(system, info.id(), &command.target, false)?;
-    let source = ptero_daicon::start_file_source(system, info.id(), file)?;
+    let file = ptero_file::start_system_file(system, id, &command.target, false)?;
+    let source = ptero_daicon::start_file_source(system, id, file)?;
 
     // Add the data to the source
     let message = SourceMessage::Set {
@@ -40,7 +40,7 @@ pub fn start(system: &mut System, command: SetCommand) -> Result<(), Error> {
     };
     system.send(source, message);
 
-    system.start(info, Options::default(), AddCommandActor)?;
+    system.start(id, Options::default(), AddCommandActor)?;
 
     Ok(())
 }

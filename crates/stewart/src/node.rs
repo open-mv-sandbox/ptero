@@ -13,9 +13,9 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(debug_name: &'static str, span: Span) -> Self {
+    pub fn new(span: Span) -> Self {
         Self {
-            debug_name,
+            debug_name: "PendingStart",
             span,
             options: Options::default(),
             slot: None,
@@ -24,6 +24,10 @@ impl Node {
 
     pub fn debug_name(&self) -> &'static str {
         self.debug_name
+    }
+
+    pub fn set_debug_name(&mut self, value: &'static str) {
+        self.debug_name = value;
     }
 
     pub fn span(&self) -> Span {
