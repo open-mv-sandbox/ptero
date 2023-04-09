@@ -1,6 +1,6 @@
 use anyhow::Error;
 
-use crate::System;
+use crate::Context;
 
 /// Message handling interface.
 pub trait Actor: 'static {
@@ -9,7 +9,7 @@ pub trait Actor: 'static {
     /// Handle a message.
     ///
     /// TODO: Bulk operation?
-    fn handle(&mut self, system: &mut System, message: Self::Message) -> Result<After, Error>;
+    fn handle(&mut self, ctx: &mut Context, message: Self::Message) -> Result<After, Error>;
 }
 
 /// The operation to perform with the actor after a message was handled.

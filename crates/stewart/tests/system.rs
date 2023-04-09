@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Error;
 use rstest::{fixture, rstest};
-use stewart::{Actor, Addr, After, Id, Options, Parent, System};
+use stewart::{Actor, Addr, After, Context, Options, System};
 use tracing_test::traced_test;
 
 #[rstest]
@@ -45,9 +45,10 @@ fn system_stops_actors(mut world: TestWorld) -> Result<(), Error> {
 #[fixture]
 fn world() -> TestWorld {
     let mut system = System::new();
+    let mut ctx = system.root();
 
-    let root = create_root_actor(&mut system);
-    let child = create_child_actor(&mut system, &root);
+    let (root, mut ctx) = create_actor(&mut ctx);
+    let (child, _) = create_actor(&mut ctx);
 
     TestWorld {
         system,
@@ -56,22 +57,18 @@ fn world() -> TestWorld {
     }
 }
 
-fn create_root_actor(system: &mut System) -> ActorInfo {
-    let (id, addr) = system.create(Parent::root()).unwrap();
+fn create_actor<'a>(ctx: &'a mut Context) -> (ActorInfo, Context<'a>) {
+    let mut ctx = ctx.create().unwrap();
     let actor = TestActor::default();
     let count = actor.count.clone();
-    system.start(id, Options::default(), actor).unwrap();
+    ctx.start(Options::default(), actor).unwrap();
 
-    ActorInfo { id, addr, count }
-}
+    let info = ActorInfo {
+        addr: ctx.addr().unwrap(),
+        count,
+    };
 
-fn create_child_actor(system: &mut System, parent: &ActorInfo) -> ActorInfo {
-    let (id, addr) = system.create(parent.id.into()).unwrap();
-    let actor = TestActor::default();
-    let count = actor.count.clone();
-    system.start(id, Options::default(), actor).unwrap();
-
-    ActorInfo { id, addr, count }
+    (info, ctx)
 }
 
 struct TestWorld {
@@ -81,7 +78,6 @@ struct TestWorld {
 }
 
 struct ActorInfo {
-    id: Id,
     addr: Addr<()>,
     count: Rc<AtomicUsize>,
 }
@@ -94,7 +90,7 @@ struct TestActor {
 impl Actor for TestActor {
     type Message = ();
 
-    fn handle(&mut self, _system: &mut System, _message: ()) -> Result<After, Error> {
+    fn handle(&mut self, _ctx: &mut Context, _message: ()) -> Result<After, Error> {
         self.count.fetch_add(1, Ordering::SeqCst);
         Ok(After::Stop)
     }

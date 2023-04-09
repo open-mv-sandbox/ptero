@@ -2,31 +2,26 @@ use std::marker::PhantomData;
 use std::sync::atomic::AtomicPtr;
 
 use anyhow::Error;
-use stewart::{Actor, Addr, After, Options, Parent, System};
+use stewart::{Actor, Addr, After, Context, Options};
 use tracing::instrument;
 
 /// Start actor that maps a value into another one.
 #[instrument("map", skip_all)]
-pub fn start_map<F, I, O>(
-    system: &mut System,
-    parent: Parent,
-    target: Addr<O>,
-    function: F,
-) -> Result<Addr<I>, Error>
+pub fn start_map<F, I, O>(ctx: &mut Context, target: Addr<O>, function: F) -> Result<Addr<I>, Error>
 where
     F: FnMut(I) -> O + 'static,
     I: 'static,
     O: 'static,
 {
-    let (id, addr) = system.create(parent)?;
+    let mut ctx = ctx.create()?;
     let actor = MapActor::<F, I, O> {
         function,
         target,
         _a: PhantomData,
     };
-    system.start(id, Options::default().with_high_priority(), actor)?;
+    ctx.start(Options::default().with_high_priority(), actor)?;
 
-    Ok(addr)
+    Ok(ctx.addr()?)
 }
 
 struct MapActor<F, I, O> {
@@ -43,10 +38,10 @@ where
 {
     type Message = I;
 
-    fn handle(&mut self, system: &mut System, message: I) -> Result<After, Error> {
+    fn handle(&mut self, ctx: &mut Context, message: I) -> Result<After, Error> {
         // Immediately re-route the message
         let message = (self.function)(message);
-        system.send(self.target, message);
+        ctx.send(self.target, message);
         Ok(After::Continue)
     }
 }

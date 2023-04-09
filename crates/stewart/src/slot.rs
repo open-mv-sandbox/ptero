@@ -1,9 +1,9 @@
 use std::any::Any;
 
-use anyhow::{Context, Error};
+use anyhow::{Context as AContext, Error};
 use tracing::{event, Level};
 
-use crate::{Actor, After, System};
+use crate::{Actor, After, Context};
 
 pub trait AnyActorSlot {
     /// Handle the message in the slot, returns true if needing to be queued, false if processed
@@ -11,7 +11,7 @@ pub trait AnyActorSlot {
     fn handle(&mut self, slot: &mut dyn Any) -> Result<(), Error>;
 
     /// Handle processing if queued.
-    fn process(&mut self, system: &mut System) -> After;
+    fn process(&mut self, ctx: &mut Context) -> After;
 }
 
 pub struct ActorSlot<A>
@@ -35,9 +35,9 @@ where
         Ok(())
     }
 
-    fn process(&mut self, system: &mut System) -> After {
+    fn process(&mut self, ctx: &mut Context) -> After {
         for message in self.bin.drain(..) {
-            let result = self.actor.handle(system, message);
+            let result = self.actor.handle(ctx, message);
             let after = handle_process_result(result);
 
             if after == After::Stop {

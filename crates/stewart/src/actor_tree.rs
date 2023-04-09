@@ -1,9 +1,8 @@
 use anyhow::{Context, Error};
-use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::{node::Node, slot::ActorSlot, Actor, Options};
+use crate::{node::Node, slot::ActorSlot, Actor, CreateError, Options, StartError};
 
 #[derive(Default)]
 pub struct ActorTree {
@@ -12,7 +11,7 @@ pub struct ActorTree {
 }
 
 impl ActorTree {
-    pub fn create(&mut self, parent: Option<Id>) -> Result<Id, CreateActorError> {
+    pub fn create(&mut self, parent: Option<Id>) -> Result<Id, CreateError> {
         // Continual span is inherited from the create addr callsite
         let span = Span::current();
 
@@ -20,7 +19,7 @@ impl ActorTree {
         if let Some(parent) = parent {
             self.nodes
                 .get_mut(parent.index)
-                .ok_or(CreateActorError::ParentDoesNotExist)?;
+                .ok_or(CreateError::ParentDoesNotExist)?;
         }
 
         // Create the node
@@ -34,7 +33,7 @@ impl ActorTree {
         Ok(id)
     }
 
-    pub fn start<A>(&mut self, id: Id, options: Options, actor: A) -> Result<(), StartActorError>
+    pub fn start<A>(&mut self, id: Id, options: Options, actor: A) -> Result<(), StartError>
     where
         A: Actor,
     {
@@ -43,7 +42,7 @@ impl ActorTree {
             .pending_start
             .iter()
             .position(|i| *i == id)
-            .ok_or(StartActorError::ActorAlreadyStarted)?;
+            .ok_or(StartError::ActorAlreadyStarted)?;
         self.pending_start.remove(pending_index);
 
         // Box the actor, so we can access it dynamically
@@ -124,22 +123,6 @@ impl ActorTree {
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Id {
     index: Index,
-}
-
-#[derive(Error, Debug)]
-#[non_exhaustive]
-pub enum CreateActorError {
-    #[error("failed to start actor, actor isn't pending to be started")]
-    ParentDoesNotExist,
-}
-
-#[derive(Error, Debug)]
-#[non_exhaustive]
-pub enum StartActorError {
-    #[error("failed to start actor, actor already started")]
-    ActorAlreadyStarted,
-    #[error("failed to start actor, internal error")]
-    Internal(#[from] Error),
 }
 
 fn debug_name<T>() -> &'static str {

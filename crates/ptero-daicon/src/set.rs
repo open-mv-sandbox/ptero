@@ -2,21 +2,21 @@ use anyhow::Error;
 use bytemuck::{bytes_of, Zeroable};
 use daicon::Entry;
 use ptero_file::{FileMessage, Operation, WriteLocation, WriteResult};
-use stewart::{Actor, Addr, After, Id, Options, Parent, System};
+use stewart::{Actor, Addr, After, Context, Options};
 use stewart_utils::start_map;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
 #[instrument("set-task", skip_all)]
 pub fn start_set_task(
-    system: &mut System,
-    parent: Parent,
+    ctx: &mut Context,
     file: Addr<FileMessage>,
     id: Uuid,
     data: Vec<u8>,
     on_result: Addr<()>,
 ) -> Result<Addr<u64>, Error> {
-    let (aid, addr) = system.create(parent)?;
+    let mut ctx = ctx.create()?;
+    let addr = ctx.addr()?;
 
     // Start the append immediately
     let size = data.len() as u64;
@@ -25,18 +25,16 @@ pub fn start_set_task(
         operation: Operation::Write {
             location: WriteLocation::Append,
             data,
-            on_result: start_map(system, aid.into(), addr, Message::AppendResult)?,
+            on_result: start_map(&mut ctx, addr, Message::AppendResult)?,
         },
     };
-    system.send(file, message);
+    ctx.send(file, message);
 
     // Create the actor for tracking state of writing
     let mut entry = Entry::zeroed();
     entry.set_id(id);
     entry.set_size(size);
     let task = SetTask {
-        aid,
-        addr,
         file,
         on_result,
 
@@ -44,15 +42,13 @@ pub fn start_set_task(
         data_offset: None,
         entry,
     };
-    system.start(aid, Options::default(), task)?;
+    ctx.start(Options::default(), task)?;
 
-    let slot_addr = start_map(system, aid.into(), addr, Message::Slot)?;
+    let slot_addr = start_map(&mut ctx, addr, Message::Slot)?;
     Ok(slot_addr)
 }
 
 struct SetTask {
-    aid: Id,
-    addr: Addr<Message>,
     file: Addr<FileMessage>,
     on_result: Addr<()>,
 
@@ -64,7 +60,7 @@ struct SetTask {
 impl Actor for SetTask {
     type Message = Message;
 
-    fn handle(&mut self, system: &mut stewart::System, message: Message) -> Result<After, Error> {
+    fn handle(&mut self, ctx: &mut Context, message: Message) -> Result<After, Error> {
         match message {
             Message::Slot(offset) => {
                 self.entry_offset = Some(offset);
@@ -77,7 +73,7 @@ impl Actor for SetTask {
 
                 event!(Level::DEBUG, "success, sending result");
 
-                system.send(self.on_result, ());
+                ctx.send(self.on_result, ());
                 return Ok(After::Stop);
             }
         };
@@ -95,10 +91,10 @@ impl Actor for SetTask {
                 operation: Operation::Write {
                     location: WriteLocation::Offset(entry_offset),
                     data: bytes_of(&self.entry).to_owned(),
-                    on_result: start_map(system, self.aid.into(), self.addr, Message::EntryResult)?,
+                    on_result: start_map(ctx, ctx.addr()?, Message::EntryResult)?,
                 },
             };
-            system.send(self.file, message);
+            ctx.send(self.file, message);
         }
 
         Ok(After::Continue)

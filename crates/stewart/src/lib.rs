@@ -9,31 +9,36 @@ mod node;
 mod slot;
 mod system;
 
+use anyhow::Error;
+use thiserror::Error;
+
 pub use self::{
     actor::{Actor, After},
-    actor_tree::{CreateActorError, Id, StartActorError},
+    actor_tree::Id,
     node::Options,
-    system::{Addr, System},
+    system::{Addr, Context, System},
 };
 
-/// Helper newtype for passing the parent when creating an actor.
-///
-/// If an actor has a parent, it will be stopped when its parent is stopped.
-///
-/// Implements `From` with `Id`, for easy conversion.
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub struct Parent(pub Option<Id>);
-
-impl Parent {
-    pub fn root() -> Self {
-        Self(None)
-    }
+#[derive(Error, Debug)]
+pub enum AddrError {
+    #[error("can't get addr of root")]
+    Root,
 }
 
-impl From<Id> for Parent {
-    fn from(value: Id) -> Self {
-        Parent(Some(value))
-    }
+#[derive(Error, Debug)]
+#[non_exhaustive]
+pub enum CreateError {
+    #[error("actor isn't pending to be started")]
+    ParentDoesNotExist,
 }
 
-// TODO: Add 'context' for running operations 'in the context of' something?
+#[derive(Error, Debug)]
+#[non_exhaustive]
+pub enum StartError {
+    #[error("can't start root")]
+    Root,
+    #[error("actor already started")]
+    ActorAlreadyStarted,
+    #[error("internal error")]
+    Internal(#[from] Error),
+}

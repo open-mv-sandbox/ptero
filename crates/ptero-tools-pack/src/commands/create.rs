@@ -1,10 +1,10 @@
 use std::{fs::OpenOptions, io::Write};
 
-use anyhow::{Context, Error};
+use anyhow::{Context as _, Error};
 use bytemuck::{bytes_of, Zeroable};
 use clap::Args;
 use daicon::{Entry, Header};
-use stewart::{Actor, After, Options, Parent, System};
+use stewart::{Actor, After, Context, Options};
 use tracing::{event, instrument, Level};
 
 /// TODO: Restructure to use actors and add to ptero_daicon
@@ -40,11 +40,11 @@ pub struct CreateCommand {
 }
 
 #[instrument("create-command", skip_all)]
-pub fn start(system: &mut System, command: CreateCommand) -> Result<(), Error> {
+pub fn start(ctx: &mut Context, command: CreateCommand) -> Result<(), Error> {
     event!(Level::INFO, "creating package");
 
-    let (id, _) = system.create::<()>(Parent::root())?;
-    system.start(id, Options::default(), CreateCommandActor)?;
+    let mut ctx = ctx.create()?;
+    ctx.start(Options::default(), CreateCommandActor)?;
 
     create_package(&command.target)?;
 
@@ -56,7 +56,7 @@ struct CreateCommandActor;
 impl Actor for CreateCommandActor {
     type Message = ();
 
-    fn handle(&mut self, _system: &mut System, _message: ()) -> Result<After, Error> {
+    fn handle(&mut self, _ctx: &mut Context, _message: ()) -> Result<After, Error> {
         unimplemented!()
     }
 }

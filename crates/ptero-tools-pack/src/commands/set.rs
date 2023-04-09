@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_daicon::SourceMessage;
-use stewart::{Actor, After, Options, Parent, System};
+use stewart::{Actor, After, Context, Options};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -22,26 +22,26 @@ pub struct SetCommand {
 }
 
 #[instrument("add-command", skip_all)]
-pub fn start(system: &mut System, command: SetCommand) -> Result<(), Error> {
+pub fn start(ctx: &mut Context, command: SetCommand) -> Result<(), Error> {
     event!(Level::INFO, "setting file in package");
 
-    let (id, addr) = system.create::<()>(Parent::root())?;
+    let mut ctx = ctx.create()?;
 
     let data = std::fs::read(&command.input)?;
 
     // Open up the package for writing in ptero-daicon
-    let file = ptero_file::start_system_file(system, id.into(), &command.target, false)?;
-    let source = ptero_daicon::start_file_source_service(system, id.into(), file)?;
+    let file = ptero_file::start_system_file(&mut ctx, &command.target, false)?;
+    let source = ptero_daicon::start_file_source_service(&mut ctx, file)?;
 
     // Add the data to the source
     let message = SourceMessage::Set {
         id: command.id,
         data,
-        on_result: addr,
+        on_result: ctx.addr()?,
     };
-    system.send(source, message);
+    ctx.send(source, message);
 
-    system.start(id, Options::default(), AddCommandActor)?;
+    ctx.start(Options::default(), AddCommandActor)?;
 
     Ok(())
 }
@@ -51,7 +51,7 @@ struct AddCommandActor;
 impl Actor for AddCommandActor {
     type Message = ();
 
-    fn handle(&mut self, _system: &mut System, _message: ()) -> Result<After, Error> {
+    fn handle(&mut self, _ctx: &mut Context, _message: ()) -> Result<After, Error> {
         Ok(After::Stop)
     }
 }
