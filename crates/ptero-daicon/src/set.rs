@@ -3,7 +3,7 @@ use bytemuck::{bytes_of, Zeroable};
 use daicon::Entry;
 use ptero_file::{FileMessage, Operation, WriteLocation, WriteResult};
 use stewart::{Actor, Addr, After, Context, Options};
-use stewart_utils::start_map;
+use stewart_utils::MapExt;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -25,7 +25,7 @@ pub fn start_set_task(
         operation: Operation::Write {
             location: WriteLocation::Append,
             data,
-            on_result: start_map(&mut ctx, addr, Message::AppendResult)?,
+            on_result: ctx.map(addr, Message::AppendResult)?,
         },
     };
     ctx.send(file, message);
@@ -44,8 +44,7 @@ pub fn start_set_task(
     };
     ctx.start(Options::default(), task)?;
 
-    let slot_addr = start_map(&mut ctx, addr, Message::Slot)?;
-    Ok(slot_addr)
+    Ok(ctx.map_once(addr, Message::Slot)?)
 }
 
 struct SetTask {
@@ -91,7 +90,7 @@ impl Actor for SetTask {
                 operation: Operation::Write {
                     location: WriteLocation::Offset(entry_offset),
                     data: bytes_of(&self.entry).to_owned(),
-                    on_result: start_map(ctx, ctx.addr()?, Message::EntryResult)?,
+                    on_result: ctx.map_once(ctx.addr()?, Message::EntryResult)?,
                 },
             };
             ctx.send(self.file, message);

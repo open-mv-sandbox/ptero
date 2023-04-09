@@ -8,7 +8,7 @@ use bytemuck::{bytes_of, bytes_of_mut, cast_slice_mut};
 use daicon::{Entry, Header};
 use ptero_file::{FileMessage, Operation, ReadResult, WriteLocation, WriteResult};
 use stewart::{Actor, Addr, After, Context, Options};
-use stewart_utils::start_map;
+use stewart_utils::MapExt;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -41,15 +41,11 @@ pub fn start_file_source_service(
     let mut ctx = ctx.create()?;
     let addr = ctx.addr()?;
 
-    // TODO: easy once-map self-stopping util
-    let source = start_map(&mut ctx, addr, Message::SourceMessage)?;
-    let read_table_result = start_map(&mut ctx, addr, Message::ReadTableResult)?;
-    let write_result = start_map(&mut ctx, addr, Message::WriteResult)?;
+    let source = ctx.map(addr, Message::SourceMessage)?;
 
     // Start the root manager actor
     let actor = FileSourceService {
-        write_result,
-
+        write_header_result: ctx.map(addr, Message::WriteHeaderResult)?,
         file,
         table: None,
 
@@ -64,7 +60,7 @@ pub fn start_file_source_service(
         operation: Operation::Read {
             offset: 0,
             size: 64 * 1024,
-            on_result: read_table_result,
+            on_result: ctx.map_once(addr, Message::ReadTableResult)?,
         },
     };
     ctx.send(file, message);
@@ -73,8 +69,7 @@ pub fn start_file_source_service(
 }
 
 struct FileSourceService {
-    write_result: Addr<WriteResult>,
-
+    write_header_result: Addr<WriteResult>,
     file: Addr<FileMessage>,
     table: Option<CachedTable>,
 
@@ -183,7 +178,7 @@ impl FileSourceService {
                 operation: Operation::Write {
                     location: WriteLocation::Offset(table.offset),
                     data: bytes_of(&header).to_owned(),
-                    on_result: self.write_result,
+                    on_result: self.write_header_result,
                 },
             };
             ctx.send(self.file, message);
@@ -207,7 +202,7 @@ impl Actor for FileSourceService {
             Message::ReadTableResult(result) => {
                 self.on_read_table(result)?;
             }
-            Message::WriteResult(result) => {
+            Message::WriteHeaderResult(result) => {
                 self.on_write(result)?;
             }
         };
@@ -222,7 +217,7 @@ impl Actor for FileSourceService {
 enum Message {
     SourceMessage(SourceMessage),
     ReadTableResult(ReadResult),
-    WriteResult(WriteResult),
+    WriteHeaderResult(WriteResult),
 }
 
 fn try_read_data(
