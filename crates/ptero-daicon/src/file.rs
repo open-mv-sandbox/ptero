@@ -1,53 +1,83 @@
-use std::{
-    io::{Cursor, Read},
-    mem::size_of,
-};
+use std::io::Write;
 
 use anyhow::Error;
-use bytemuck::{bytes_of, bytes_of_mut, cast_slice_mut};
-use daicon::{Entry, Header};
+use bytemuck::{bytes_of, Zeroable};
+use daicon::Entry;
 use ptero_file::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 use stewart::{Actor, Addr, After, Context, Options};
-use stewart_utils::MapExt;
+use stewart_utils::{MapExt, WhenExt};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
-use crate::{set::start_set_task, SourceAction, SourceMessage};
+use crate::{cache::CachedTable, set::start_set_task, SourceAction, SourceMessage};
 
-/// Start a daicon file source actor.
+/// Open a file as a daicon source.
 ///
 /// A "source" returns a file from UUIDs. A "file source" uses a file as a source.
 #[instrument("file-source-service", skip_all)]
-pub fn start_file_source_service(
+pub fn open_file(
     ctx: &mut Context,
     file: Addr<FileMessage>,
+    create: bool,
 ) -> Result<Addr<SourceMessage>, Error> {
     let mut ctx = ctx.create()?;
     let addr = ctx.addr()?;
 
     let source = ctx.map(addr, Message::SourceMessage)?;
+    let mut table = None;
+
+    // TODO: create bool's a bit messy but it's a start
+    if create {
+        let create_table = CachedTable::new(0, 256);
+        let mut data = Vec::new();
+
+        // Write the header
+        let (header, _) = create_table.create_header();
+        data.write_all(bytes_of(&header))?;
+
+        // Write empty entries
+        for _ in 0..256 {
+            let entry = Entry::zeroed();
+            data.write_all(bytes_of(&entry))?;
+        }
+
+        // Send to file for writing
+        let action = FileAction::Write {
+            location: WriteLocation::Offset(0),
+            data,
+            on_result: ctx.when(|_, _| Ok(After::Stop))?,
+        };
+        let message = FileMessage {
+            id: Uuid::new_v4(),
+            action,
+        };
+        ctx.send(file, message);
+
+        // Store the table
+        table = Some(create_table);
+    } else {
+        // Immediately start table read
+        let message = FileMessage {
+            id: Uuid::new_v4(),
+            action: FileAction::Read {
+                offset: 0,
+                size: 64 * 1024,
+                on_result: ctx.map_once(addr, Message::ReadTableResult)?,
+            },
+        };
+        ctx.send(file, message);
+    }
 
     // Start the root manager actor
     let actor = FileSourceService {
         write_header_result: ctx.map(addr, Message::WriteHeaderResult)?,
         file,
-        table: None,
+        table,
 
         get_tasks: Vec::new(),
         pending_slots: Vec::new(),
     };
     ctx.start(Options::default(), actor)?;
-
-    // Immediately start table read, assuming at start for now
-    let message = FileMessage {
-        id: Uuid::new_v4(),
-        action: FileAction::Read {
-            offset: 0,
-            size: 64 * 1024,
-            on_result: ctx.map_once(addr, Message::ReadTableResult)?,
-        },
-    };
-    ctx.send(file, message);
 
     Ok(source)
 }
@@ -90,32 +120,7 @@ impl FileSourceService {
     }
 
     fn on_read_table(&mut self, result: ReadResult) -> Result<(), Error> {
-        let mut data = Cursor::new(result.data);
-
-        // Read the header
-        let mut header = Header::default();
-        data.read_exact(bytes_of_mut(&mut header))?;
-
-        // TODO: Retry if the table's valid data is larger than what we've read, this can happen
-        // sometimes
-
-        // Read entries
-        let mut entries = vec![Entry::default(); header.capacity() as usize];
-        data.read_exact(cast_slice_mut(&mut entries))?;
-
-        // Mark all valid entries as both valid and allocated
-        let mut entries_meta = vec![EntryMeta::default(); entries.len()];
-        for i in 0..header.valid() as usize {
-            entries_meta[i].valid = true;
-            entries_meta[i].allocated = true;
-        }
-
-        // Store the cached data
-        let table = CachedTable {
-            offset: 0,
-            entries,
-            entries_meta,
-        };
+        let table = CachedTable::read(result.offset, result.data)?;
         self.table = Some(table);
 
         // TODO: Follow additional headers
@@ -226,18 +231,18 @@ fn try_allocate_slot(
     };
 
     // Reply that we've found a slot
-    let offset = entry_offset(table.offset, index);
+    let offset = table.entry_offset(index);
     ctx.send(on_result, offset);
 
     // Write the new header with the updated valid count
     // TODO: Wait until the task tells us to validate
     // TODO: Get the entry back from the task, currently the cache is wrong
     table.mark_valid(index, Entry::default());
-    let header = table.create_header();
+    let (header, offset) = table.create_header();
     let message = FileMessage {
         id: Uuid::new_v4(),
         action: FileAction::Write {
-            location: WriteLocation::Offset(table.offset),
+            location: WriteLocation::Offset(offset),
             data: bytes_of(&header).to_owned(),
             on_result: write_header_result,
         },
@@ -245,66 +250,4 @@ fn try_allocate_slot(
     ctx.send(file, message);
 
     true
-}
-
-/// In-memory cached representation of a table.
-struct CachedTable {
-    offset: u64,
-    entries: Vec<Entry>,
-    entries_meta: Vec<EntryMeta>,
-}
-
-#[derive(Default, Clone)]
-struct EntryMeta {
-    valid: bool,
-    allocated: bool,
-}
-
-impl CachedTable {
-    fn find(&self, id: Uuid) -> Option<Entry> {
-        self.entries.iter().find(|e| e.id() == id).cloned()
-    }
-
-    fn try_allocate(&mut self) -> Option<usize> {
-        // Get a slot that hasn't been allocated yet
-        let (index, meta) = self
-            .entries_meta
-            .iter_mut()
-            .enumerate()
-            .find(|(_, v)| !v.allocated)?;
-
-        // Mark it as allocated
-        meta.allocated = true;
-
-        Some(index)
-    }
-
-    /// Mark that an entry is now available, with the given data.
-    ///
-    /// Eventually, this will result in the header's count being updated.
-    fn mark_valid(&mut self, index: usize, entry: Entry) {
-        self.entries[index] = entry;
-        self.entries_meta[index].valid = true;
-    }
-
-    fn create_header(&self) -> Header {
-        // Count the amount of entries until we hit one that isn't valid
-        let mut valid = 0;
-        for meta in &self.entries_meta {
-            if !meta.valid {
-                break;
-            }
-
-            valid += 1;
-        }
-
-        let mut header = Header::default();
-        header.set_capacity(self.entries.len() as u16);
-        header.set_valid(valid);
-        header
-    }
-}
-
-fn entry_offset(offset: u64, index: usize) -> u64 {
-    offset + size_of::<Header>() as u64 + (size_of::<Entry>() as u64 * index as u64)
 }

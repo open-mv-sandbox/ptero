@@ -1,6 +1,5 @@
 use anyhow::Error;
 use clap::Args;
-use ptero_daicon::create_package;
 use stewart::{Actor, After, Context, Options};
 use tracing::{event, instrument, Level};
 
@@ -19,7 +18,10 @@ pub fn start(ctx: &mut Context, command: CreateCommand) -> Result<(), Error> {
     let mut ctx = ctx.create()?;
     ctx.start(Options::default(), CreateCommandActor)?;
 
-    create_package(&command.target)?;
+    let file = ptero_file::start_system_file(&mut ctx, &command.target, false)?;
+    ptero_daicon::open_file(&mut ctx, file, true)?;
+
+    // TODO: Receive back open success/failure
 
     Ok(())
 }

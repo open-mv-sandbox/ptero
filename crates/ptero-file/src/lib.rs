@@ -39,6 +39,8 @@ pub enum WriteLocation {
 pub struct ReadResult {
     /// Identifier of originating message.
     pub id: Uuid,
+    /// Resolved stream offset read from.
+    pub offset: u64,
     /// Read data.
     pub data: Vec<u8>,
 }

@@ -57,6 +57,7 @@ impl Actor for FileActor {
                 // Reply result
                 let result = ReadResult {
                     id: message.id,
+                    offset,
                     data,
                 };
                 ctx.send(on_result, result);

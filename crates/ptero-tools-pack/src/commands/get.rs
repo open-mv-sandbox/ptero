@@ -30,7 +30,7 @@ pub fn start(ctx: &mut Context, command: GetCommand) -> Result<(), Error> {
 
     // Open up the package for writing in ptero-daicon
     let file = ptero_file::start_system_file(&mut ctx, &command.target, false)?;
-    let source = ptero_daicon::start_file_source_service(&mut ctx, file)?;
+    let source = ptero_daicon::open_file(&mut ctx, file, false)?;
 
     // Add the data to the source
     let message = SourceMessage {
