@@ -45,7 +45,7 @@ where
             }
         }
 
-        After::Nothing
+        After::Continue
     }
 }
 
@@ -60,7 +60,7 @@ fn handle_process_result(result: Result<After, Error>) -> After {
                 "actor failed while processing message"
             );
 
-            After::Nothing
+            After::Continue
         }
     }
 }

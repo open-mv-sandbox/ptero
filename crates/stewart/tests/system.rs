@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Error;
 use rstest::{fixture, rstest};
-use stewart::{Actor, Addr, After, Id, Options, System};
+use stewart::{Actor, Addr, After, Id, Options, Parent, System};
 use tracing_test::traced_test;
 
 #[rstest]
@@ -46,8 +46,8 @@ fn system_stops_actors(mut world: TestWorld) -> Result<(), Error> {
 fn world() -> TestWorld {
     let mut system = System::new();
 
-    let root = root_actor(&mut system);
-    let child = child_actor(&mut system, &root);
+    let root = create_root_actor(&mut system);
+    let child = create_child_actor(&mut system, &root);
 
     TestWorld {
         system,
@@ -56,8 +56,8 @@ fn world() -> TestWorld {
     }
 }
 
-fn root_actor(system: &mut System) -> ActorInfo {
-    let (id, addr) = system.create_root().unwrap();
+fn create_root_actor(system: &mut System) -> ActorInfo {
+    let (id, addr) = system.create(Parent::root()).unwrap();
     let actor = TestActor::default();
     let count = actor.count.clone();
     system.start(id, Options::default(), actor).unwrap();
@@ -65,8 +65,8 @@ fn root_actor(system: &mut System) -> ActorInfo {
     ActorInfo { id, addr, count }
 }
 
-fn child_actor(system: &mut System, parent: &ActorInfo) -> ActorInfo {
-    let (id, addr) = system.create(parent.id).unwrap();
+fn create_child_actor(system: &mut System, parent: &ActorInfo) -> ActorInfo {
+    let (id, addr) = system.create(parent.id.into()).unwrap();
     let actor = TestActor::default();
     let count = actor.count.clone();
     system.start(id, Options::default(), actor).unwrap();

@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as ContextExt, Error};
-use stewart::{Actor, Addr, After, Id, Options, System};
+use stewart::{Actor, Addr, After, Options, Parent, System};
 use tracing::{event, instrument, Level};
 
 use crate::{FileMessage, Operation, ReadResult, WriteLocation, WriteResult};
@@ -13,7 +13,7 @@ use crate::{FileMessage, Operation, ReadResult, WriteLocation, WriteResult};
 #[instrument("file", skip_all)]
 pub fn start_system_file(
     system: &mut System,
-    parent: Id,
+    parent: Parent,
     path: &str,
     truncate: bool,
 ) -> Result<Addr<FileMessage>, Error> {
@@ -86,7 +86,7 @@ impl Actor for FileActor {
                 system.send(on_result, result);
             }
         }
-        Ok(After::Nothing)
+        Ok(After::Continue)
     }
 }
 

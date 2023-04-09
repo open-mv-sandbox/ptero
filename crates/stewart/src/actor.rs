@@ -15,8 +15,8 @@ pub trait Actor: 'static {
 /// The operation to perform with the actor after a message was handled.
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum After {
-    /// Do nothing, no changes are made.
-    Nothing,
+    /// Continue running the actor.
+    Continue,
     /// Stop the actor and remove it from the system.
     Stop,
 }

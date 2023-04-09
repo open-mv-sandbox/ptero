@@ -4,7 +4,7 @@ use anyhow::{Context, Error};
 use bytemuck::{bytes_of, Zeroable};
 use clap::Args;
 use daicon::{Entry, Header};
-use stewart::{Actor, After, Options, System};
+use stewart::{Actor, After, Options, Parent, System};
 use tracing::{event, instrument, Level};
 
 /// TODO: Restructure to use actors and add to ptero_daicon
@@ -43,7 +43,7 @@ pub struct CreateCommand {
 pub fn start(system: &mut System, command: CreateCommand) -> Result<(), Error> {
     event!(Level::INFO, "creating package");
 
-    let (id, _) = system.create_root::<()>()?;
+    let (id, _) = system.create::<()>(Parent::root())?;
     system.start(id, Options::default(), CreateCommandActor)?;
 
     create_package(&command.target)?;

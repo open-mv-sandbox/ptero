@@ -2,14 +2,14 @@ use std::marker::PhantomData;
 use std::sync::atomic::AtomicPtr;
 
 use anyhow::Error;
-use stewart::{Actor, Addr, After, Id, Options, System};
+use stewart::{Actor, Addr, After, Options, Parent, System};
 use tracing::instrument;
 
 /// Start actor that maps a value into another one.
 #[instrument("map", skip_all)]
 pub fn start_map<F, I, O>(
     system: &mut System,
-    parent: Id,
+    parent: Parent,
     target: Addr<O>,
     function: F,
 ) -> Result<Addr<I>, Error>
@@ -47,6 +47,6 @@ where
         // Immediately re-route the message
         let message = (self.function)(message);
         system.send(self.target, message);
-        Ok(After::Nothing)
+        Ok(After::Continue)
     }
 }

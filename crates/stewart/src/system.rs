@@ -3,7 +3,9 @@ use std::{collections::VecDeque, marker::PhantomData, sync::atomic::AtomicPtr};
 use anyhow::{Context, Error};
 use tracing::{event, Level};
 
-use crate::{actor_tree::ActorTree, Actor, After, CreateActorError, Id, Options, StartActorError};
+use crate::{
+    actor_tree::ActorTree, Actor, After, CreateActorError, Id, Options, Parent, StartActorError,
+};
 
 /// Thread-local actor execution system.
 #[derive(Default)]
@@ -21,23 +23,10 @@ impl System {
     /// Create an actor on the system.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create<M>(&mut self, parent: Id) -> Result<(Id, Addr<M>), CreateActorError> {
+    pub fn create<M>(&mut self, parent: Parent) -> Result<(Id, Addr<M>), CreateActorError> {
         event!(Level::INFO, "creating actor");
 
-        let id = self.actors.create(Some(parent))?;
-
-        let addr = Addr {
-            id,
-            _m: PhantomData,
-        };
-        Ok((id, addr))
-    }
-
-    /// Create a root actor on the system.
-    ///
-    /// Root actors do not have a parent, and will not be stopped by any other actor stopping.
-    pub fn create_root<M>(&mut self) -> Result<(Id, Addr<M>), CreateActorError> {
-        let id = self.actors.create(None)?;
+        let id = self.actors.create(parent.0)?;
 
         let addr = Addr {
             id,

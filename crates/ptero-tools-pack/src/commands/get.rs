@@ -2,7 +2,7 @@ use anyhow::Error;
 use clap::Args;
 use ptero_daicon::SourceMessage;
 use ptero_file::ReadResult;
-use stewart::{Actor, After, Options, System};
+use stewart::{Actor, After, Options, Parent, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -26,11 +26,11 @@ pub struct GetCommand {
 pub fn start(system: &mut System, command: GetCommand) -> Result<(), Error> {
     event!(Level::INFO, "getting file from package");
 
-    let (id, addr) = system.create_root()?;
+    let (id, addr) = system.create(Parent::root())?;
 
     // Open up the package for writing in ptero-daicon
-    let file = ptero_file::start_system_file(system, id, &command.target, false)?;
-    let source = ptero_daicon::start_file_source(system, id, file)?;
+    let file = ptero_file::start_system_file(system, id.into(), &command.target, false)?;
+    let source = ptero_daicon::start_file_source_service(system, id.into(), file)?;
 
     // Add the data to the source
     let message = SourceMessage::Get {
