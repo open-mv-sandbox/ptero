@@ -20,6 +20,7 @@ pub fn start_system_file(
         .read(true)
         .write(true)
         .truncate(truncate)
+        .create(true)
         .open(path)
         .context("failed to open system file for writing")?;
 

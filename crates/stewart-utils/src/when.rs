@@ -2,9 +2,8 @@ use std::{marker::PhantomData, sync::atomic::AtomicPtr};
 
 use anyhow::Error;
 use stewart::{Actor, Addr, After, Context, Options};
-use tracing::instrument;
 
-/// Function actor utility `Context` extension.
+/// Function-actor utility `Context` extension.
 pub trait WhenExt<F, I> {
     /// Create an actor that runs a function when receiving a message.
     fn when(&mut self, function: F) -> Result<Addr<I>, Error>;
@@ -15,7 +14,6 @@ where
     F: FnMut(&mut Context, I) -> Result<After, Error> + 'static,
     I: 'static,
 {
-    #[instrument("when", skip_all)]
     fn when(&mut self, function: F) -> Result<Addr<I>, Error> {
         let mut ctx = self.create()?;
         let actor = When::<F, I> {

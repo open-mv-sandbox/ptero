@@ -1,9 +1,7 @@
-use std::marker::PhantomData;
-use std::sync::atomic::AtomicPtr;
-
 use anyhow::Error;
-use stewart::{Actor, Addr, After, Context, Options};
-use tracing::instrument;
+use stewart::{Addr, After, Context};
+
+use crate::WhenExt;
 
 /// Mapping utility `Context` extension.
 pub trait MapExt<F, I, O> {
@@ -20,73 +18,23 @@ where
     I: 'static,
     O: 'static,
 {
-    #[instrument("map", skip_all)]
-    fn map(&mut self, target: Addr<O>, function: F) -> Result<Addr<I>, Error> {
-        let mut ctx = self.create()?;
-        let actor = Map::<F, I, O> {
-            function,
-            target,
-            _a: PhantomData,
-        };
-        ctx.start(Options::default().with_high_priority(), actor)?;
+    fn map(&mut self, target: Addr<O>, mut function: F) -> Result<Addr<I>, Error> {
+        let addr = self.when(move |ctx, message| {
+            let message = (function)(message);
+            ctx.send(target, message);
+            Ok(After::Continue)
+        })?;
 
-        Ok(ctx.addr()?)
+        Ok(addr)
     }
 
-    #[instrument("map-once", skip_all)]
-    fn map_once(&mut self, target: Addr<O>, function: F) -> Result<Addr<I>, Error> {
-        let mut ctx = self.create()?;
-        let actor = MapOnce::<F, I, O> {
-            function,
-            target,
-            _a: PhantomData,
-        };
-        ctx.start(Options::default().with_high_priority(), actor)?;
+    fn map_once(&mut self, target: Addr<O>, mut function: F) -> Result<Addr<I>, Error> {
+        let addr = self.when(move |ctx, message| {
+            let message = (function)(message);
+            ctx.send(target, message);
+            Ok(After::Stop)
+        })?;
 
-        Ok(ctx.addr()?)
-    }
-}
-
-struct Map<F, I, O> {
-    function: F,
-    target: Addr<O>,
-    _a: PhantomData<AtomicPtr<I>>,
-}
-
-impl<F, I, O> Actor for Map<F, I, O>
-where
-    F: FnMut(I) -> O + 'static,
-    I: 'static,
-    O: 'static,
-{
-    type Message = I;
-
-    fn handle(&mut self, ctx: &mut Context, message: I) -> Result<After, Error> {
-        // Immediately re-route the message
-        let message = (self.function)(message);
-        ctx.send(self.target, message);
-        Ok(After::Continue)
-    }
-}
-
-struct MapOnce<F, I, O> {
-    function: F,
-    target: Addr<O>,
-    _a: PhantomData<AtomicPtr<I>>,
-}
-
-impl<F, I, O> Actor for MapOnce<F, I, O>
-where
-    F: FnMut(I) -> O + 'static,
-    I: 'static,
-    O: 'static,
-{
-    type Message = I;
-
-    fn handle(&mut self, ctx: &mut Context, message: I) -> Result<After, Error> {
-        // Immediately re-route the message
-        let message = (self.function)(message);
-        ctx.send(self.target, message);
-        Ok(After::Stop)
+        Ok(addr)
     }
 }
