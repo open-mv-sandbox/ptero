@@ -7,10 +7,10 @@ use tracing::instrument;
 
 /// Mapping utility `Context` extension.
 pub trait MapExt<F, I, O> {
-    /// Receive message O, apply function F, and send to address.
+    /// Create an actor that maps one message into another one and relays it.
     fn map(&mut self, target: Addr<O>, function: F) -> Result<Addr<I>, Error>;
 
-    /// Same as `map`, but stops self after receiving one message.
+    /// Same as `map`, but stops after handling one message.
     fn map_once(&mut self, target: Addr<O>, function: F) -> Result<Addr<I>, Error>;
 }
 

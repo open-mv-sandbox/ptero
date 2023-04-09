@@ -1,7 +1,7 @@
 use anyhow::Error;
 use bytemuck::{bytes_of, Zeroable};
 use daicon::Entry;
-use ptero_file::{FileMessage, Operation, WriteLocation, WriteResult};
+use ptero_file::{FileAction, FileMessage, WriteLocation, WriteResult};
 use stewart::{Actor, Addr, After, Context, Options};
 use stewart_utils::MapExt;
 use tracing::{event, instrument, Level};
@@ -22,7 +22,7 @@ pub fn start_set_task(
     let size = data.len() as u64;
     let message = FileMessage {
         id: Uuid::new_v4(),
-        operation: Operation::Write {
+        action: FileAction::Write {
             location: WriteLocation::Append,
             data,
             on_result: ctx.map(addr, Message::AppendResult)?,
@@ -87,7 +87,7 @@ impl Actor for SetTask {
             // Write the entry to the slot we got
             let message = FileMessage {
                 id: Uuid::new_v4(),
-                operation: Operation::Write {
+                action: FileAction::Write {
                     location: WriteLocation::Offset(entry_offset),
                     data: bytes_of(&self.entry).to_owned(),
                     on_result: ctx.map_once(ctx.addr()?, Message::EntryResult)?,

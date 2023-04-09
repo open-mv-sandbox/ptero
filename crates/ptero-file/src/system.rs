@@ -7,7 +7,7 @@ use anyhow::{Context as ContextExt, Error};
 use stewart::{Actor, Addr, After, Context, Options};
 use tracing::{event, instrument, Level};
 
-use crate::{FileMessage, Operation, ReadResult, WriteLocation, WriteResult};
+use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 
 /// Start a file reader/writer from a system file.
 #[instrument("file", skip_all)]
@@ -40,8 +40,8 @@ impl Actor for FileActor {
     fn handle(&mut self, ctx: &mut Context, message: FileMessage) -> Result<After, Error> {
         event!(Level::INFO, "handling message");
 
-        match message.operation {
-            Operation::Read {
+        match message.action {
+            FileAction::Read {
                 offset,
                 size,
                 on_result,
@@ -61,7 +61,7 @@ impl Actor for FileActor {
                 };
                 ctx.send(on_result, result);
             }
-            Operation::Write {
+            FileAction::Write {
                 location,
                 data,
                 on_result,

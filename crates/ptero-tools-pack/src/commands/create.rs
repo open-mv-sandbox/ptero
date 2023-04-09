@@ -1,35 +1,8 @@
-use std::{fs::OpenOptions, io::Write};
-
-use anyhow::{Context as _, Error};
-use bytemuck::{bytes_of, Zeroable};
+use anyhow::Error;
 use clap::Args;
-use daicon::{Entry, Header};
+use ptero_daicon::create_package;
 use stewart::{Actor, After, Context, Options};
 use tracing::{event, instrument, Level};
-
-/// TODO: Restructure to use actors and add to ptero_daicon
-fn create_package(path: &str) -> Result<(), Error> {
-    // Open the target file, overwriting anything already there
-    let mut package = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(path)
-        .context("failed to open target package for writing")?;
-
-    // Write the component table
-    let mut header = Header::default();
-    header.set_capacity(256);
-    package.write_all(bytes_of(&header))?;
-
-    // Write an empty entries table
-    for _ in 0..256 {
-        let entry = Entry::zeroed();
-        package.write_all(bytes_of(&entry))?;
-    }
-
-    Ok(())
-}
 
 /// Create a new daicon file.
 #[derive(Args, Debug)]

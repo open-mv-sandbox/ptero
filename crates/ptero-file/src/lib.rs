@@ -11,13 +11,12 @@ pub use self::system::start_system_file;
 
 /// Message to a file actor.
 pub struct FileMessage {
-    /// Unique tracking identifier.
     pub id: Uuid,
-    pub operation: Operation,
+    pub action: FileAction,
 }
 
 /// Operation to perform on a file.
-pub enum Operation {
+pub enum FileAction {
     Read {
         offset: u64,
         size: u64,

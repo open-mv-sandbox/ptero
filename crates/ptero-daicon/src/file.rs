@@ -6,29 +6,13 @@ use std::{
 use anyhow::Error;
 use bytemuck::{bytes_of, bytes_of_mut, cast_slice_mut};
 use daicon::{Entry, Header};
-use ptero_file::{FileMessage, Operation, ReadResult, WriteLocation, WriteResult};
+use ptero_file::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 use stewart::{Actor, Addr, After, Context, Options};
 use stewart_utils::MapExt;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
-use crate::set::start_set_task;
-
-/// TODO: This needs a task ID separate from entry UUID.
-pub enum SourceMessage {
-    /// Get the data associated with a UUID.
-    /// TODO: Reply with an inner file actor addr instead.
-    Get {
-        id: Uuid,
-        on_result: Addr<ReadResult>,
-    },
-    /// Set the data associated with a UUID.
-    Set {
-        id: Uuid,
-        data: Vec<u8>,
-        on_result: Addr<()>,
-    },
-}
+use crate::{set::start_set_task, SourceAction, SourceMessage};
 
 /// Start a daicon file source actor.
 ///
@@ -57,7 +41,7 @@ pub fn start_file_source_service(
     // Immediately start table read, assuming at start for now
     let message = FileMessage {
         id: Uuid::new_v4(),
-        operation: Operation::Read {
+        action: FileAction::Read {
             offset: 0,
             size: 64 * 1024,
             on_result: ctx.map_once(addr, Message::ReadTableResult)?,
@@ -85,12 +69,12 @@ impl FileSourceService {
         ctx: &mut Context,
         message: SourceMessage,
     ) -> Result<(), Error> {
-        match message {
-            SourceMessage::Get { id, on_result } => {
+        match message.action {
+            SourceAction::Get { id, on_result } => {
                 event!(Level::INFO, ?id, "received get");
                 self.get_tasks.push((id, on_result));
             }
-            SourceMessage::Set {
+            SourceAction::Set {
                 id,
                 data,
                 on_result,
@@ -158,32 +142,7 @@ impl FileSourceService {
 
         // Resolve pending sets
         self.pending_slots.retain(|on_result| {
-            let index = if let Some(index) = table.try_allocate() {
-                index
-            } else {
-                return true;
-            };
-
-            // Reply that we've found a slot
-            let offset = entry_offset(table.offset, index);
-            ctx.send(*on_result, offset);
-
-            // Write the new header with the updated valid count
-            // TODO: Wait until the task tells us to
-            // TODO: Get the entry back from the task
-            table.mark_valid(index, Entry::default());
-            let header = table.create_header();
-            let message = FileMessage {
-                id: Uuid::new_v4(),
-                operation: Operation::Write {
-                    location: WriteLocation::Offset(table.offset),
-                    data: bytes_of(&header).to_owned(),
-                    on_result: self.write_header_result,
-                },
-            };
-            ctx.send(self.file, message);
-
-            false
+            !try_allocate_slot(ctx, self.write_header_result, self.file, table, *on_result)
         });
 
         // TODO: Reply failure if we ran out of tables to read, and couldn't find it
@@ -242,10 +201,45 @@ fn try_read_data(
     // We found a matching entry, start the read to fetch the inner data
     let message = FileMessage {
         id: Uuid::new_v4(),
-        operation: Operation::Read {
+        action: FileAction::Read {
             offset: entry.offset(),
             size: entry.size(),
             on_result,
+        },
+    };
+    ctx.send(file, message);
+
+    true
+}
+
+fn try_allocate_slot(
+    ctx: &mut Context,
+    write_header_result: Addr<WriteResult>,
+    file: Addr<FileMessage>,
+    table: &mut CachedTable,
+    on_result: Addr<u64>,
+) -> bool {
+    let index = if let Some(index) = table.try_allocate() {
+        index
+    } else {
+        return false;
+    };
+
+    // Reply that we've found a slot
+    let offset = entry_offset(table.offset, index);
+    ctx.send(on_result, offset);
+
+    // Write the new header with the updated valid count
+    // TODO: Wait until the task tells us to validate
+    // TODO: Get the entry back from the task, currently the cache is wrong
+    table.mark_valid(index, Entry::default());
+    let header = table.create_header();
+    let message = FileMessage {
+        id: Uuid::new_v4(),
+        action: FileAction::Write {
+            location: WriteLocation::Offset(table.offset),
+            data: bytes_of(&header).to_owned(),
+            on_result: write_header_result,
         },
     };
     ctx.send(file, message);

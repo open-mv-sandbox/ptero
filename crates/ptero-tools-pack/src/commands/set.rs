@@ -1,6 +1,6 @@
 use anyhow::Error;
 use clap::Args;
-use ptero_daicon::SourceMessage;
+use ptero_daicon::{SourceAction, SourceMessage};
 use stewart::{Actor, After, Context, Options};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -34,10 +34,13 @@ pub fn start(ctx: &mut Context, command: SetCommand) -> Result<(), Error> {
     let source = ptero_daicon::start_file_source_service(&mut ctx, file)?;
 
     // Add the data to the source
-    let message = SourceMessage::Set {
-        id: command.id,
-        data,
-        on_result: ctx.addr()?,
+    let message = SourceMessage {
+        id: Uuid::new_v4(),
+        action: SourceAction::Set {
+            id: command.id,
+            data,
+            on_result: ctx.addr()?,
+        },
     };
     ctx.send(source, message);
 

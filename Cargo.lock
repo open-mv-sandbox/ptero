@@ -917,9 +917,7 @@ name = "ptero-tools-pack"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bytemuck",
  "clap",
- "daicon",
  "ptero-daicon",
  "ptero-file",
  "stewart",
