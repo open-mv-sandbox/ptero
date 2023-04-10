@@ -77,6 +77,8 @@ impl Actor for FetchFileService {
 
         // Check if we can respond to requests
         if let Some(data) = &self.data {
+            event!(Level::INFO, count = self.pending.len(), "resolving entries");
+
             for pending in self.pending.drain(..) {
                 let offset = pending.offset as usize;
                 let mut reply_data = vec![0u8; pending.size as usize];

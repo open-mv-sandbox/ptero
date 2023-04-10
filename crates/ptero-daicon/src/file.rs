@@ -1,8 +1,8 @@
-use std::io::Write;
+use std::{io::Write, mem::size_of};
 
 use anyhow::Error;
 use bytemuck::{bytes_of, Zeroable};
-use daicon::Entry;
+use daicon::{Entry, Header};
 use ptero_file::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
 use stewart_utils::{MapExt, WhenExt};
@@ -26,15 +26,16 @@ pub fn open_file(
     let source = ctx.map(addr, Message::SourceMessage)?;
     let mut table = None;
 
-    // TODO: this is the validation step, respond if we correctly validated
+    // TODO: this is also the validation step, respond if we correctly validated
     match mode {
         OpenMode::ReadWrite => {
             // Immediately start table read
+            let size = (size_of::<Header>() + (size_of::<Entry>() * 256)) as u64;
             let message = FileMessage {
                 id: Uuid::new_v4(),
                 action: FileAction::Read {
                     offset: 0,
-                    size: 64 * 1024,
+                    size,
                     on_result: ctx.map_once(addr, Message::ReadTableResult)?,
                 },
             };

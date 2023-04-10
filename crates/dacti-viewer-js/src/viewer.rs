@@ -5,7 +5,7 @@ use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
 use ptero_js::SystemH;
 use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
-use stewart_utils::MapExt;
+use stewart_utils::{MapExt, WhenExt};
 use tracing::{event, instrument, Level};
 use uuid::{uuid, Uuid};
 use wasm_bindgen::prelude::*;
@@ -139,6 +139,17 @@ async fn start_service(
     let action = SourceAction::Get {
         id: uuid!("bacc2ba1-8dc7-4d54-a7a4-cdad4d893a1b"),
         on_result: ctx.map_once(addr, Message::ShaderFetched)?,
+    };
+    let message = SourceMessage {
+        id: Uuid::new_v4(),
+        action,
+    };
+    ctx.send(source, message);
+
+    // Just for testing, fetch an additional resource
+    let action = SourceAction::Get {
+        id: uuid!("1f063ad4-5a91-47fe-b95c-668fc41a719d"),
+        on_result: ctx.when(|_, _, _| Ok(After::Continue))?,
     };
     let message = SourceMessage {
         id: Uuid::new_v4(),
