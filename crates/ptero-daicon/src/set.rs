@@ -2,7 +2,7 @@ use anyhow::Error;
 use bytemuck::{bytes_of, Zeroable};
 use daicon::Entry;
 use ptero_file::{FileAction, FileMessage, WriteLocation, WriteResult};
-use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
 use stewart_utils::MapExt;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -63,9 +63,9 @@ impl Actor for SetTask {
         &mut self,
         system: &mut System,
         id: Id,
-        data: &mut ActorData<Message>,
+        messages: &mut Messages<Message>,
     ) -> Result<After, Error> {
-        while let Some(message) = data.next() {
+        while let Some(message) = messages.next() {
             match message {
                 Message::Slot(offset) => {
                     self.entry_offset = Some(offset);

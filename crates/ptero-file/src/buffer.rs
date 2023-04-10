@@ -1,5 +1,5 @@
 use anyhow::Error;
-use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
 use tracing::{event, instrument, Level};
 
 use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
@@ -86,11 +86,11 @@ impl Actor for BufferFileService {
         &mut self,
         system: &mut System,
         _id: Id,
-        data: &mut ActorData<FileMessage>,
+        messages: &mut Messages<FileMessage>,
     ) -> Result<After, Error> {
         event!(Level::INFO, "handling message");
 
-        while let Some(message) = data.next() {
+        while let Some(message) = messages.next() {
             self.handle(system, message);
         }
 

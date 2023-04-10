@@ -29,7 +29,7 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
+    use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
     use tracing::{event, instrument, Level};
 
     /// The start function uses the concrete actor internally, the actor itself is never public.
@@ -54,11 +54,11 @@ mod hello_service {
             &mut self,
             _system: &mut System,
             _id: Id,
-            data: &mut ActorData<String>,
+            messages: &mut Messages<String>,
         ) -> Result<After, Error> {
             event!(Level::INFO, "processing messages");
 
-            while let Some(message) = data.next() {
+            while let Some(message) = messages.next() {
                 event!(Level::INFO, "Hello, {}!", message);
             }
 

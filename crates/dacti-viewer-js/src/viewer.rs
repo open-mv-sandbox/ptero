@@ -4,7 +4,7 @@ use anyhow::Error;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
 use ptero_js::SystemH;
-use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
 use stewart_utils::{MapExt, WhenExt};
 use tracing::{event, instrument, Level};
 use uuid::{uuid, Uuid};
@@ -209,9 +209,9 @@ impl Actor for ViewerService {
         &mut self,
         _system: &mut System,
         _id: Id,
-        data: &mut ActorData<Message>,
+        messages: &mut Messages<Message>,
     ) -> Result<After, Error> {
-        while let Some(message) = data.next() {
+        while let Some(message) = messages.next() {
             match message {
                 Message::ShaderFetched(message) => {
                     let data = std::str::from_utf8(&message.data)?;

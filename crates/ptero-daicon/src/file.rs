@@ -4,7 +4,7 @@ use anyhow::Error;
 use bytemuck::{bytes_of, Zeroable};
 use daicon::{Entry, Header};
 use ptero_file::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
-use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
 use stewart_utils::{MapExt, WhenExt};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -181,9 +181,9 @@ impl Actor for FileSourceService {
         &mut self,
         system: &mut System,
         id: Id,
-        data: &mut ActorData<Message>,
+        messages: &mut Messages<Message>,
     ) -> Result<After, Error> {
-        while let Some(message) = data.next() {
+        while let Some(message) = messages.next() {
             match message {
                 Message::SourceMessage(message) => {
                     self.on_source_message(system, id, message)?;

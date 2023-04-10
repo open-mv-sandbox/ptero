@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use anyhow::Error;
 use js_sys::{ArrayBuffer, Uint8Array};
 use ptero_file::{FileAction, FileMessage, ReadResult};
-use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
 use stewart_utils::MapExt;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -44,9 +44,9 @@ impl Actor for FetchFileService {
         &mut self,
         system: &mut System,
         _id: Id,
-        data: &mut ActorData<Message>,
+        messages: &mut Messages<Message>,
     ) -> Result<After, Error> {
-        while let Some(message) = data.next() {
+        while let Some(message) = messages.next() {
             match message {
                 Message::File(message) => {
                     match message.action {

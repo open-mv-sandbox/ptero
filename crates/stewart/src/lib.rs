@@ -6,14 +6,16 @@
 mod actor;
 mod actor_tree;
 mod context;
+mod messages;
 mod node;
 mod slot;
 mod system;
 
 pub use self::{
-    actor::{Actor, ActorData, After},
+    actor::{Actor, After},
     actor_tree::{CreateError, Id, StartError},
     context::Context,
+    messages::Messages,
     node::Options,
     system::{Addr, System},
 };

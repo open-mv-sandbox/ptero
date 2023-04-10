@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Error};
-use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
 use tracing::{event, instrument, Level};
 
 use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
@@ -42,11 +42,11 @@ impl Actor for SystemFileService {
         &mut self,
         system: &mut System,
         _id: Id,
-        data: &mut ActorData<FileMessage>,
+        messages: &mut Messages<FileMessage>,
     ) -> Result<After, Error> {
         event!(Level::INFO, "handling messages");
 
-        while let Some(message) = data.next() {
+        while let Some(message) = messages.next() {
             match message.action {
                 FileAction::Read {
                     offset,

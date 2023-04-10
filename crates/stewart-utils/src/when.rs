@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, sync::atomic::AtomicPtr};
 
 use anyhow::Error;
-use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
 
 /// Function-actor utility `Context` extension.
 pub trait WhenExt<F, M> {
@@ -42,11 +42,11 @@ where
         &mut self,
         system: &mut System,
         id: Id,
-        data: &mut ActorData<M>,
+        messages: &mut Messages<M>,
     ) -> Result<After, Error> {
         let mut return_after = After::Continue;
 
-        while let Some(message) = data.next() {
+        while let Some(message) = messages.next() {
             let after = (self.function)(system, id, message)?;
 
             if after == After::Stop {

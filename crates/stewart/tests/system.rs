@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Error;
 use rstest::{fixture, rstest};
-use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
 use tracing_test::traced_test;
 
 #[rstest]
@@ -94,7 +94,7 @@ impl Actor for TestActor {
         &mut self,
         _system: &mut System,
         _id: Id,
-        _data: &mut ActorData<()>,
+        _messages: &mut Messages<()>,
     ) -> Result<After, Error> {
         self.count.fetch_add(1, Ordering::SeqCst);
         Ok(After::Stop)

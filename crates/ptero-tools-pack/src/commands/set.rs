@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
-use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -58,9 +58,9 @@ impl Actor for AddCommandActor {
         &mut self,
         _system: &mut System,
         _id: Id,
-        data: &mut ActorData<()>,
+        messages: &mut Messages<()>,
     ) -> Result<After, Error> {
-        while let Some(_) = data.next() {}
+        while let Some(_) = messages.next() {}
 
         Ok(After::Stop)
     }

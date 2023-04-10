@@ -2,7 +2,7 @@ use anyhow::Error;
 use clap::Args;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
-use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -61,9 +61,9 @@ impl Actor for GetCommandActor {
         &mut self,
         _system: &mut System,
         _id: Id,
-        data: &mut ActorData<ReadResult>,
+        messages: &mut Messages<ReadResult>,
     ) -> Result<After, Error> {
-        while let Some(message) = data.next() {
+        while let Some(message) = messages.next() {
             std::fs::write(&self.output, message.data)?;
         }
 

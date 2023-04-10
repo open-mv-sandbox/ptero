@@ -3,7 +3,7 @@ use std::any::Any;
 use anyhow::{Context, Error};
 use tracing::{event, Level};
 
-use crate::{Actor, ActorData, After, Id, System};
+use crate::{Actor, After, Id, Messages, System};
 
 pub trait AnyActorSlot {
     fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), Error>;
@@ -15,7 +15,7 @@ pub struct ActorSlot<A>
 where
     A: Actor,
 {
-    data: ActorData<A::Message>,
+    data: Messages<A::Message>,
     actor: A,
 }
 
@@ -25,7 +25,7 @@ where
 {
     pub fn new(actor: A) -> Self {
         Self {
-            data: ActorData::new(),
+            data: Messages::new(),
             actor,
         }
     }
@@ -65,7 +65,6 @@ fn handle_process_result(result: Result<After, Error>) -> After {
         Ok(value) => value,
         Err(error) => {
             // TODO: What to do with this?
-            // TODO: If we do do something with it, it should happen per-actor, not per-system
             event!(Level::ERROR, ?error, "actor failed while processing");
 
             After::Continue
