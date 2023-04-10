@@ -20,7 +20,7 @@ impl<M> Messages<M> {
         !self.queue.is_empty()
     }
 
-    /// Handle all pending messages using a callback function, while catching and logging errors.
+    /// Get the next pending message, or None if no messages are left.
     pub fn next(&mut self) -> Option<M> {
         self.queue.pop_front()
     }
