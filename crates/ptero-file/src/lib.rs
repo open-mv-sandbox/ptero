@@ -2,12 +2,13 @@
 //!
 //! A "file" is an addressable blob of binary data.
 
+mod buffer;
 mod system;
 
 use stewart::Addr;
 use uuid::Uuid;
 
-pub use self::system::start_system_file;
+pub use self::{buffer::open_buffer, system::open_system_file};
 
 /// Message to a file actor.
 pub struct FileMessage {

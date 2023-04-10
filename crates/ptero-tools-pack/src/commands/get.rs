@@ -29,7 +29,7 @@ pub fn start(mut ctx: Context, command: GetCommand) -> Result<(), Error> {
     let (id, mut ctx) = ctx.create()?;
 
     // Open up the package for writing in ptero-daicon
-    let file = ptero_file::start_system_file(&mut ctx, &command.target, false)?;
+    let file = ptero_file::open_system_file(&mut ctx, &command.target, false)?;
     let source = ptero_daicon::open_file(&mut ctx, file, OpenMode::ReadWrite)?;
 
     // Add the data to the source

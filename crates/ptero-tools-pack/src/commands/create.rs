@@ -19,7 +19,7 @@ pub fn start(mut ctx: Context, command: CreateCommand) -> Result<(), Error> {
     let (id, mut ctx) = ctx.create()?;
     ctx.start(id, Options::default(), CreateCommandActor)?;
 
-    let file = ptero_file::start_system_file(&mut ctx, &command.target, false)?;
+    let file = ptero_file::open_system_file(&mut ctx, &command.target, false)?;
     ptero_daicon::open_file(&mut ctx, file, OpenMode::Create)?;
 
     // TODO: Receive back open success/failure

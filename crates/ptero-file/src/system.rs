@@ -1,17 +1,17 @@
 use std::{
     fs::{File, OpenOptions},
-    io::{ErrorKind, Read as IoRead, Seek, SeekFrom, Write as IoWrite},
+    io::{ErrorKind, Read, Seek, SeekFrom, Write},
 };
 
-use anyhow::{Context as ContextExt, Error};
+use anyhow::{Context as _, Error};
 use stewart::{Actor, Addr, After, Context, Id, Options, System};
 use tracing::{event, instrument, Level};
 
 use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 
-/// Start a file reader/writer from a system file.
-#[instrument("file", skip_all)]
-pub fn start_system_file(
+/// Start a file service from a system file.
+#[instrument("system-file", skip_all)]
+pub fn open_system_file(
     ctx: &mut Context,
     path: &str,
     truncate: bool,
@@ -25,17 +25,17 @@ pub fn start_system_file(
         .context("failed to open system file for writing")?;
 
     let (id, mut ctx) = ctx.create()?;
-    let actor = FileActor { file };
+    let actor = SystemFileService { file };
     ctx.start(id, Options::default(), actor)?;
 
     Ok(Addr::new(id))
 }
 
-struct FileActor {
+struct SystemFileService {
     file: File,
 }
 
-impl Actor for FileActor {
+impl Actor for SystemFileService {
     type Message = FileMessage;
 
     fn handle(

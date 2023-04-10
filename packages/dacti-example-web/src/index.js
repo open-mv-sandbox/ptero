@@ -1,3 +1,5 @@
+var viewer = null;
+
 async function init() {
   // Load the viewer WebAssembly module
   console.log('initializing module...');
@@ -5,10 +7,15 @@ async function init() {
 
   // Create the viewer
   const canvas = document.getElementById("viewer");
-  const viewer = await Viewer.from_canvas(canvas);
+  viewer = await Viewer.from_canvas(canvas);
 
-  // Add an object
-  viewer.spawn_object(42);
+  window.requestAnimationFrame(tick);
+}
+
+function tick() {
+  viewer.tick();
+
+  window.requestAnimationFrame(tick);
 }
 
 init();
