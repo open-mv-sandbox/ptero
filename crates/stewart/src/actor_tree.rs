@@ -1,8 +1,9 @@
 use anyhow::{Context, Error};
+use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, Level, Span};
 
-use crate::{node::Node, slot::ActorSlot, Actor, CreateError, Options, StartError};
+use crate::{node::Node, slot::ActorSlot, Actor, Options};
 
 #[derive(Default)]
 pub struct ActorTree {
@@ -130,4 +131,20 @@ fn debug_name<T>() -> &'static str {
     let before_generics = name.split('<').next().unwrap_or("Unknown");
     let after_modules = before_generics.split("::").last().unwrap_or("Unknown");
     after_modules
+}
+
+#[derive(Error, Debug)]
+#[non_exhaustive]
+pub enum CreateError {
+    #[error("actor isn't pending to be started")]
+    ParentDoesNotExist,
+}
+
+#[derive(Error, Debug)]
+#[non_exhaustive]
+pub enum StartError {
+    #[error("actor already started")]
+    ActorAlreadyStarted,
+    #[error("internal error")]
+    Internal(#[from] Error),
 }

@@ -1,14 +1,9 @@
-use std::{
-    collections::VecDeque,
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-    sync::atomic::AtomicPtr,
-};
+use std::{collections::VecDeque, marker::PhantomData, sync::atomic::AtomicPtr};
 
 use anyhow::{Context as AContext, Error};
 use tracing::{event, Level};
 
-use crate::{actor_tree::ActorTree, Actor, AddrError, After, CreateError, Id, Options, StartError};
+use crate::{actor_tree::ActorTree, Actor, After, CreateError, Id, Options, StartError};
 
 /// Thread-local actor execution system.
 #[derive(Default)]
@@ -23,12 +18,25 @@ impl System {
         Self::default()
     }
 
-    /// Get the root context.
-    pub fn root(&mut self) -> Context {
-        Context {
-            system: self,
-            current: None,
-        }
+    /// Create a new actor.
+    ///
+    /// The actor's address will not be available for handling messages until `start` is called.
+    pub fn create(&mut self, parent: Option<Id>) -> Result<Id, CreateError> {
+        event!(Level::INFO, "creating actor");
+
+        let id = self.actors.create(parent)?;
+        Ok(id)
+    }
+
+    /// Start an actor, making it available for handling messages.
+    pub fn start<A>(&mut self, id: Id, options: Options, actor: A) -> Result<(), StartError>
+    where
+        A: Actor,
+    {
+        event!(Level::INFO, "starting actor");
+
+        self.actors.start(id, options, actor)?;
+        Ok(())
     }
 
     /// Send a message to an actor.
@@ -102,11 +110,7 @@ impl System {
         let mut slot = node.take()?;
 
         // Run the actor's handler
-        let mut ctx = Context {
-            system: self,
-            current: Some(id),
-        };
-        let after = slot.process(&mut ctx);
+        let after = slot.process(self, id);
 
         // If we got told to stop the actor, do that instead of returning
         if after == After::Stop {
@@ -152,6 +156,19 @@ pub struct Addr<M> {
     _m: PhantomData<AtomicPtr<M>>,
 }
 
+impl<M> Addr<M> {
+    /// Create a new typed address from an id.
+    ///
+    /// Creating an address with the wrong type is not unsafe, and will be checked on send.
+    pub fn new(id: Id) -> Addr<M> {
+        // TODO: Early message type validation?
+        Self {
+            id,
+            _m: PhantomData,
+        }
+    }
+}
+
 impl<M> Clone for Addr<M> {
     fn clone(&self) -> Self {
         *self
@@ -159,65 +176,3 @@ impl<M> Clone for Addr<M> {
 }
 
 impl<M> Copy for Addr<M> {}
-
-pub struct Context<'a> {
-    system: &'a mut System,
-    current: Option<Id>,
-}
-
-impl<'a> Context<'a> {
-    /// Get the address of the current actor.
-    pub fn addr<M>(&self) -> Result<Addr<M>, AddrError> {
-        // TODO: Early message type validation?
-
-        let id = self.current.ok_or(AddrError::Root)?;
-
-        let addr = Addr {
-            id,
-            _m: PhantomData,
-        };
-        Ok(addr)
-    }
-
-    /// Create a new actor.
-    ///
-    /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create(&mut self) -> Result<Context, CreateError> {
-        event!(Level::INFO, "creating actor");
-
-        let id = self.system.actors.create(self.current)?;
-
-        let ctx = Context {
-            system: self.system,
-            current: Some(id),
-        };
-        Ok(ctx)
-    }
-
-    /// Start an actor, making it available for handling messages.
-    pub fn start<A>(&mut self, options: Options, actor: A) -> Result<(), StartError>
-    where
-        A: Actor,
-    {
-        event!(Level::INFO, "starting actor");
-
-        let id = self.current.ok_or(StartError::Root)?;
-        self.system.actors.start(id, options, actor)?;
-
-        Ok(())
-    }
-}
-
-impl<'a> Deref for Context<'a> {
-    type Target = System;
-
-    fn deref(&self) -> &System {
-        &self.system
-    }
-}
-
-impl<'a> DerefMut for Context<'a> {
-    fn deref_mut(&mut self) -> &mut System {
-        &mut self.system
-    }
-}

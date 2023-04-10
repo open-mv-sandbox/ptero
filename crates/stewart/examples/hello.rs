@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::System;
+use stewart::{Context, System};
 use tracing::{event, Level};
 
 use crate::hello_service::start_hello_service;
@@ -12,7 +12,8 @@ fn main() -> Result<(), Error> {
     let mut system = System::new();
 
     // Start the hello service
-    let hello = start_hello_service(&mut system.root())?;
+    let ctx = Context::root(&mut system);
+    let hello = start_hello_service(ctx)?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -28,19 +29,19 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{Actor, Addr, After, Context, Options};
+    use stewart::{Actor, Addr, After, Context, Id, Options, System};
     use tracing::{event, instrument, Level};
 
     /// The start function uses the concrete actor internally, the actor itself is never public.
     /// By instrumenting the start function, your actor's callbacks will use it automatically.
     #[instrument("hello", skip_all)]
-    pub fn start_hello_service(ctx: &mut Context) -> Result<Addr<String>, Error> {
+    pub fn start_hello_service(mut ctx: Context) -> Result<Addr<String>, Error> {
         event!(Level::DEBUG, "creating service");
 
-        let mut ctx = ctx.create()?;
-        ctx.start(Options::default(), HelloService)?;
+        let (id, mut ctx) = ctx.create()?;
+        ctx.start(id, Options::default(), HelloService)?;
 
-        Ok(ctx.addr()?)
+        Ok(Addr::new(id))
     }
 
     /// The actor implementation below remains entirely private to the module.
@@ -49,7 +50,12 @@ mod hello_service {
     impl Actor for HelloService {
         type Message = String;
 
-        fn handle(&mut self, _ctx: &mut Context, message: String) -> Result<After, Error> {
+        fn handle(
+            &mut self,
+            _system: &mut System,
+            _id: Id,
+            message: String,
+        ) -> Result<After, Error> {
             event!(Level::INFO, "Hello, {}!", message);
 
             Ok(After::Continue)

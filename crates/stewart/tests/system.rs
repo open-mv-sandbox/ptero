@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Error;
 use rstest::{fixture, rstest};
-use stewart::{Actor, Addr, After, Context, Options, System};
+use stewart::{Actor, Addr, After, Context, Id, Options, System};
 use tracing_test::traced_test;
 
 #[rstest]
@@ -19,7 +19,7 @@ fn system_sends_message_to_actor(mut world: TestWorld) -> Result<(), Error> {
     world.system.send(world.root.addr, ());
     world.system.run_until_idle()?;
 
-    // Make sure it wasn't handled anyways
+    // Make sure the first message was handled, but not the second one
     assert_eq!(world.root.count.load(Ordering::SeqCst), 1);
 
     Ok(())
@@ -45,7 +45,7 @@ fn system_stops_actors(mut world: TestWorld) -> Result<(), Error> {
 #[fixture]
 fn world() -> TestWorld {
     let mut system = System::new();
-    let mut ctx = system.root();
+    let mut ctx = Context::root(&mut system);
 
     let (root, mut ctx) = create_actor(&mut ctx);
     let (child, _) = create_actor(&mut ctx);
@@ -58,13 +58,13 @@ fn world() -> TestWorld {
 }
 
 fn create_actor<'a>(ctx: &'a mut Context) -> (ActorInfo, Context<'a>) {
-    let mut ctx = ctx.create().unwrap();
+    let (id, mut ctx) = ctx.create().unwrap();
     let actor = TestActor::default();
     let count = actor.count.clone();
-    ctx.start(Options::default(), actor).unwrap();
+    ctx.start(id, Options::default(), actor).unwrap();
 
     let info = ActorInfo {
-        addr: ctx.addr().unwrap(),
+        addr: Addr::new(id),
         count,
     };
 
@@ -90,7 +90,7 @@ struct TestActor {
 impl Actor for TestActor {
     type Message = ();
 
-    fn handle(&mut self, _ctx: &mut Context, _message: ()) -> Result<After, Error> {
+    fn handle(&mut self, _system: &mut System, _id: Id, _message: ()) -> Result<After, Error> {
         self.count.fetch_add(1, Ordering::SeqCst);
         Ok(After::Stop)
     }

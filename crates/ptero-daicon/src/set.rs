@@ -2,21 +2,21 @@ use anyhow::Error;
 use bytemuck::{bytes_of, Zeroable};
 use daicon::Entry;
 use ptero_file::{FileAction, FileMessage, WriteLocation, WriteResult};
-use stewart::{Actor, Addr, After, Context, Options};
+use stewart::{Actor, Addr, After, Context, Id, Options, System};
 use stewart_utils::MapExt;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
 #[instrument("set-task", skip_all)]
 pub fn start_set_task(
-    ctx: &mut Context,
+    mut ctx: Context,
     file: Addr<FileMessage>,
     id: Uuid,
     data: Vec<u8>,
     on_result: Addr<()>,
 ) -> Result<Addr<u64>, Error> {
-    let mut ctx = ctx.create()?;
-    let addr = ctx.addr()?;
+    let (aid, mut ctx) = ctx.create()?;
+    let addr = Addr::new(aid);
 
     // Start the append immediately
     let size = data.len() as u64;
@@ -42,7 +42,7 @@ pub fn start_set_task(
         data_offset: None,
         entry,
     };
-    ctx.start(Options::default(), task)?;
+    ctx.start(aid, Options::default(), task)?;
 
     Ok(ctx.map_once(addr, Message::Slot)?)
 }
@@ -59,7 +59,7 @@ struct SetTask {
 impl Actor for SetTask {
     type Message = Message;
 
-    fn handle(&mut self, ctx: &mut Context, message: Message) -> Result<After, Error> {
+    fn handle(&mut self, system: &mut System, id: Id, message: Message) -> Result<After, Error> {
         match message {
             Message::Slot(offset) => {
                 self.entry_offset = Some(offset);
@@ -72,7 +72,7 @@ impl Actor for SetTask {
 
                 event!(Level::DEBUG, "success, sending result");
 
-                ctx.send(self.on_result, ());
+                system.send(self.on_result, ());
                 return Ok(After::Stop);
             }
         };
@@ -90,10 +90,11 @@ impl Actor for SetTask {
                 action: FileAction::Write {
                     location: WriteLocation::Offset(entry_offset),
                     data: bytes_of(&self.entry).to_owned(),
-                    on_result: ctx.map_once(ctx.addr()?, Message::EntryResult)?,
+                    on_result: Context::of(system, id)
+                        .map_once(Addr::new(id), Message::EntryResult)?,
                 },
             };
-            ctx.send(self.file, message);
+            system.send(self.file, message);
         }
 
         Ok(After::Continue)

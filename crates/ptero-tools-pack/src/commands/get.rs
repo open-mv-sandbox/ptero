@@ -1,8 +1,8 @@
 use anyhow::Error;
 use clap::Args;
-use ptero_daicon::{SourceAction, SourceMessage};
+use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
-use stewart::{Actor, After, Context, Options};
+use stewart::{Actor, Addr, After, Context, Id, Options, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -23,21 +23,21 @@ pub struct GetCommand {
 }
 
 #[instrument("add-command", skip_all)]
-pub fn start(ctx: &mut Context, command: GetCommand) -> Result<(), Error> {
+pub fn start(mut ctx: Context, command: GetCommand) -> Result<(), Error> {
     event!(Level::INFO, "getting file from package");
 
-    let mut ctx = ctx.create()?;
+    let (id, mut ctx) = ctx.create()?;
 
     // Open up the package for writing in ptero-daicon
     let file = ptero_file::start_system_file(&mut ctx, &command.target, false)?;
-    let source = ptero_daicon::open_file(&mut ctx, file, false)?;
+    let source = ptero_daicon::open_file(&mut ctx, file, OpenMode::ReadWrite)?;
 
     // Add the data to the source
     let message = SourceMessage {
         id: Uuid::new_v4(),
         action: SourceAction::Get {
             id: command.id,
-            on_result: ctx.addr()?,
+            on_result: Addr::new(id),
         },
     };
     ctx.send(source, message);
@@ -45,7 +45,7 @@ pub fn start(ctx: &mut Context, command: GetCommand) -> Result<(), Error> {
     let actor = GetCommandActor {
         output: command.output,
     };
-    ctx.start(Options::default(), actor)?;
+    ctx.start(id, Options::default(), actor)?;
 
     Ok(())
 }
@@ -57,7 +57,12 @@ struct GetCommandActor {
 impl Actor for GetCommandActor {
     type Message = ReadResult;
 
-    fn handle(&mut self, _ctx: &mut Context, message: ReadResult) -> Result<After, Error> {
+    fn handle(
+        &mut self,
+        _system: &mut System,
+        _id: Id,
+        message: ReadResult,
+    ) -> Result<After, Error> {
         std::fs::write(&self.output, message.data)?;
         Ok(After::Stop)
     }

@@ -4,7 +4,7 @@ use anyhow::Error;
 use bytemuck::{bytes_of, Zeroable};
 use daicon::Entry;
 use ptero_file::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
-use stewart::{Actor, Addr, After, Context, Options};
+use stewart::{Actor, Addr, After, Context, Id, Options, System};
 use stewart_utils::{MapExt, WhenExt};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -18,54 +18,59 @@ use crate::{cache::CachedTable, set::start_set_task, SourceAction, SourceMessage
 pub fn open_file(
     ctx: &mut Context,
     file: Addr<FileMessage>,
-    create: bool,
+    mode: OpenMode,
 ) -> Result<Addr<SourceMessage>, Error> {
-    let mut ctx = ctx.create()?;
-    let addr = ctx.addr()?;
+    let (id, mut ctx) = ctx.create()?;
+    let addr = Addr::new(id);
 
     let source = ctx.map(addr, Message::SourceMessage)?;
     let mut table = None;
 
-    // TODO: create bool's a bit messy but it's a start
-    if create {
-        let create_table = CachedTable::new(0, 256);
-        let mut data = Vec::new();
-
-        // Write the header
-        let (header, _) = create_table.create_header();
-        data.write_all(bytes_of(&header))?;
-
-        // Write empty entries
-        for _ in 0..256 {
-            let entry = Entry::zeroed();
-            data.write_all(bytes_of(&entry))?;
+    // TODO: this is the validation step too, so we need to actually only send back the source message
+    // addr when we've validated the source is valid.
+    match mode {
+        OpenMode::ReadWrite => {
+            // Immediately start table read
+            let message = FileMessage {
+                id: Uuid::new_v4(),
+                action: FileAction::Read {
+                    offset: 0,
+                    size: 64 * 1024,
+                    on_result: ctx.map_once(addr, Message::ReadTableResult)?,
+                },
+            };
+            ctx.send(file, message);
         }
+        OpenMode::Create => {
+            // Start writing immediately at the given offset
+            let create_table = CachedTable::new(0, 256);
+            let mut data = Vec::new();
 
-        // Send to file for writing
-        let action = FileAction::Write {
-            location: WriteLocation::Offset(0),
-            data,
-            on_result: ctx.when(|_, _| Ok(After::Stop))?,
-        };
-        let message = FileMessage {
-            id: Uuid::new_v4(),
-            action,
-        };
-        ctx.send(file, message);
+            // Write the header
+            let (header, _) = create_table.create_header();
+            data.write_all(bytes_of(&header))?;
 
-        // Store the table
-        table = Some(create_table);
-    } else {
-        // Immediately start table read
-        let message = FileMessage {
-            id: Uuid::new_v4(),
-            action: FileAction::Read {
-                offset: 0,
-                size: 64 * 1024,
-                on_result: ctx.map_once(addr, Message::ReadTableResult)?,
-            },
-        };
-        ctx.send(file, message);
+            // Write empty entries
+            for _ in 0..256 {
+                let entry = Entry::zeroed();
+                data.write_all(bytes_of(&entry))?;
+            }
+
+            // Send to file for writing
+            let action = FileAction::Write {
+                location: WriteLocation::Offset(0),
+                data,
+                on_result: ctx.when(|_, _| Ok(After::Stop))?,
+            };
+            let message = FileMessage {
+                id: Uuid::new_v4(),
+                action,
+            };
+            ctx.send(file, message);
+
+            // Store the table
+            table = Some(create_table);
+        }
     }
 
     // Start the root manager actor
@@ -77,9 +82,14 @@ pub fn open_file(
         get_tasks: Vec::new(),
         pending_slots: Vec::new(),
     };
-    ctx.start(Options::default(), actor)?;
+    ctx.start(id, Options::default(), actor)?;
 
     Ok(source)
+}
+
+pub enum OpenMode {
+    ReadWrite,
+    Create,
 }
 
 struct FileSourceService {
@@ -96,9 +106,12 @@ struct FileSourceService {
 impl FileSourceService {
     fn on_source_message(
         &mut self,
-        ctx: &mut Context,
+        system: &mut System,
+        id: Id,
         message: SourceMessage,
     ) -> Result<(), Error> {
+        let ctx = Context::of(system, id);
+
         match message.action {
             SourceAction::Get { id, on_result } => {
                 event!(Level::INFO, ?id, "received get");
@@ -134,7 +147,7 @@ impl FileSourceService {
         Ok(())
     }
 
-    fn check_pending(&mut self, ctx: &mut Context) {
+    fn check_pending(&mut self, system: &mut System) {
         let table = if let Some(table) = self.table.as_mut() {
             table
         } else {
@@ -143,11 +156,17 @@ impl FileSourceService {
 
         // Resolve pending gets
         self.get_tasks
-            .retain(|(id, on_result)| !try_read_data(ctx, self.file, table, *id, *on_result));
+            .retain(|(id, on_result)| !try_read_data(system, self.file, table, *id, *on_result));
 
         // Resolve pending sets
         self.pending_slots.retain(|on_result| {
-            !try_allocate_slot(ctx, self.write_header_result, self.file, table, *on_result)
+            !try_allocate_slot(
+                system,
+                self.write_header_result,
+                self.file,
+                table,
+                *on_result,
+            )
         });
 
         // TODO: Reply failure if we ran out of tables to read, and couldn't find it
@@ -158,10 +177,10 @@ impl FileSourceService {
 impl Actor for FileSourceService {
     type Message = Message;
 
-    fn handle(&mut self, ctx: &mut Context, message: Message) -> Result<After, Error> {
+    fn handle(&mut self, system: &mut System, id: Id, message: Message) -> Result<After, Error> {
         match message {
             Message::SourceMessage(message) => {
-                self.on_source_message(ctx, message)?;
+                self.on_source_message(system, id, message)?;
             }
             Message::ReadTableResult(result) => {
                 self.on_read_table(result)?;
@@ -172,7 +191,7 @@ impl Actor for FileSourceService {
         };
 
         // Check if we can resolve any get requests
-        self.check_pending(ctx);
+        self.check_pending(system);
 
         Ok(After::Continue)
     }
@@ -185,7 +204,7 @@ enum Message {
 }
 
 fn try_read_data(
-    ctx: &mut Context,
+    system: &mut System,
     file: Addr<FileMessage>,
     table: &mut CachedTable,
     id: Uuid,
@@ -212,13 +231,13 @@ fn try_read_data(
             on_result,
         },
     };
-    ctx.send(file, message);
+    system.send(file, message);
 
     true
 }
 
 fn try_allocate_slot(
-    ctx: &mut Context,
+    system: &mut System,
     write_header_result: Addr<WriteResult>,
     file: Addr<FileMessage>,
     table: &mut CachedTable,
@@ -232,7 +251,7 @@ fn try_allocate_slot(
 
     // Reply that we've found a slot
     let offset = table.entry_offset(index);
-    ctx.send(on_result, offset);
+    system.send(on_result, offset);
 
     // Write the new header with the updated valid count
     // TODO: Wait until the task tells us to validate
@@ -247,7 +266,7 @@ fn try_allocate_slot(
             on_result: write_header_result,
         },
     };
-    ctx.send(file, message);
+    system.send(file, message);
 
     true
 }

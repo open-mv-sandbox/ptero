@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as ContextExt, Error};
-use stewart::{Actor, Addr, After, Context, Options};
+use stewart::{Actor, Addr, After, Context, Id, Options, System};
 use tracing::{event, instrument, Level};
 
 use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
@@ -24,11 +24,11 @@ pub fn start_system_file(
         .open(path)
         .context("failed to open system file for writing")?;
 
-    let mut ctx = ctx.create()?;
+    let (id, mut ctx) = ctx.create()?;
     let actor = FileActor { file };
-    ctx.start(Options::default(), actor)?;
+    ctx.start(id, Options::default(), actor)?;
 
-    Ok(ctx.addr()?)
+    Ok(Addr::new(id))
 }
 
 struct FileActor {
@@ -38,7 +38,12 @@ struct FileActor {
 impl Actor for FileActor {
     type Message = FileMessage;
 
-    fn handle(&mut self, ctx: &mut Context, message: FileMessage) -> Result<After, Error> {
+    fn handle(
+        &mut self,
+        system: &mut System,
+        _id: Id,
+        message: FileMessage,
+    ) -> Result<After, Error> {
         event!(Level::INFO, "handling message");
 
         match message.action {
@@ -61,7 +66,7 @@ impl Actor for FileActor {
                     offset,
                     data,
                 };
-                ctx.send(on_result, result);
+                system.send(on_result, result);
             }
             FileAction::Write {
                 location,
@@ -84,7 +89,7 @@ impl Actor for FileActor {
                     id: message.id,
                     offset,
                 };
-                ctx.send(on_result, result);
+                system.send(on_result, result);
             }
         }
         Ok(After::Continue)

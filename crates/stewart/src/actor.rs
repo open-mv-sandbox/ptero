@@ -1,15 +1,20 @@
 use anyhow::Error;
 
-use crate::Context;
+use crate::{Id, System};
 
 /// Message handling interface.
+///
+/// TODO: Use an 'actor types' interface instead, and bulk handle all messages for all actors of a type.
 pub trait Actor: 'static {
     type Message: 'static;
 
     /// Handle a message.
-    ///
-    /// TODO: Bulk operation?
-    fn handle(&mut self, ctx: &mut Context, message: Self::Message) -> Result<After, Error>;
+    fn handle(
+        &mut self,
+        system: &mut System,
+        id: Id,
+        message: Self::Message,
+    ) -> Result<After, Error>;
 }
 
 /// The operation to perform with the actor after a message was handled.

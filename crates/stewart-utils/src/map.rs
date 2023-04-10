@@ -19,7 +19,7 @@ where
     O: 'static,
 {
     fn map(&mut self, target: Addr<O>, mut function: F) -> Result<Addr<I>, Error> {
-        let addr = self.when(move |ctx, message| {
+        let addr = self.when(move |mut ctx, message| {
             let message = (function)(message);
             ctx.send(target, message);
             Ok(After::Continue)
@@ -29,7 +29,7 @@ where
     }
 
     fn map_once(&mut self, target: Addr<O>, mut function: F) -> Result<Addr<I>, Error> {
-        let addr = self.when(move |ctx, message| {
+        let addr = self.when(move |mut ctx, message| {
             let message = (function)(message);
             ctx.send(target, message);
             Ok(After::Stop)
