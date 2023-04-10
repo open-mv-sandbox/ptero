@@ -1,5 +1,5 @@
 [package]
-name = "ptero-wasm"
+name = "ptero-js"
 version = "0.1.0"
 edition = "2021"
 

@@ -3,7 +3,7 @@ use std::{borrow::Cow, cell::RefCell, rc::Rc};
 use anyhow::Error;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
-use ptero_wasm::SystemH;
+use ptero_js::SystemH;
 use stewart::{Actor, Addr, After, Context, Id, Options, System};
 use stewart_utils::MapExt;
 use tracing::{event, instrument, Level};
@@ -134,7 +134,7 @@ async fn start_service(
 
     // Start a fetch request for shader data
     let file =
-        ptero_wasm::open_fetch_file(&mut ctx, "/viewer-builtins.dacti-pack".to_string(), hnd)?;
+        ptero_js::open_fetch_file(&mut ctx, "/viewer-builtins.dacti-pack".to_string(), hnd)?;
     let source = ptero_daicon::open_file(&mut ctx, file, OpenMode::ReadWrite)?;
 
     let action = SourceAction::Get {
