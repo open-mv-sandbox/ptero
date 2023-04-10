@@ -4,7 +4,7 @@ use anyhow::Error;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
 use ptero_js::SystemH;
-use stewart::{Actor, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
 use stewart_utils::MapExt;
 use tracing::{event, instrument, Level};
 use uuid::{uuid, Uuid};
@@ -133,8 +133,7 @@ async fn start_service(
     let addr = Addr::new(id);
 
     // Start a fetch request for shader data
-    let file =
-        ptero_js::open_fetch_file(&mut ctx, "/viewer-builtins.dacti-pack".to_string(), hnd)?;
+    let file = ptero_js::open_fetch_file(&mut ctx, "/viewer-builtins.dacti-pack".to_string(), hnd)?;
     let source = ptero_daicon::open_file(&mut ctx, file, OpenMode::ReadWrite)?;
 
     let action = SourceAction::Get {
@@ -195,19 +194,26 @@ impl ViewerService {
 impl Actor for ViewerService {
     type Message = Message;
 
-    fn handle(&mut self, _system: &mut System, _id: Id, message: Message) -> Result<After, Error> {
-        match message {
-            Message::ShaderFetched(message) => {
-                let data = std::str::from_utf8(&message.data)?;
-                let pipeline = create_render_pipeline(
-                    &self.device,
-                    &self.pipeline_layout,
-                    self.swapchain_format,
-                    &data,
-                );
-                self.render_pipeline = Some(pipeline);
+    fn process(
+        &mut self,
+        _system: &mut System,
+        _id: Id,
+        data: &mut ActorData<Message>,
+    ) -> Result<After, Error> {
+        while let Some(message) = data.next() {
+            match message {
+                Message::ShaderFetched(message) => {
+                    let data = std::str::from_utf8(&message.data)?;
+                    let pipeline = create_render_pipeline(
+                        &self.device,
+                        &self.pipeline_layout,
+                        self.swapchain_format,
+                        &data,
+                    );
+                    self.render_pipeline = Some(pipeline);
+                }
+                Message::Tick => self.tick(),
             }
-            Message::Tick => self.tick(),
         }
 
         Ok(After::Continue)

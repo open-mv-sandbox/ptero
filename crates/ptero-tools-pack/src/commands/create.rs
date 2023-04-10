@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_daicon::OpenMode;
-use stewart::{Actor, After, Context, Id, Options, System};
+use stewart::{Actor, ActorData, After, Context, Id, Options, System};
 use tracing::{event, instrument, Level};
 
 /// Create a new daicon file.
@@ -32,7 +32,12 @@ struct CreateCommandActor;
 impl Actor for CreateCommandActor {
     type Message = ();
 
-    fn handle(&mut self, _system: &mut System, _id: Id, _message: ()) -> Result<After, Error> {
+    fn process(
+        &mut self,
+        _system: &mut System,
+        _id: Id,
+        _data: &mut ActorData<()>,
+    ) -> Result<After, Error> {
         unimplemented!()
     }
 }

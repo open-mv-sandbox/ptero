@@ -2,7 +2,7 @@ use anyhow::Error;
 use bytemuck::{bytes_of, Zeroable};
 use daicon::Entry;
 use ptero_file::{FileAction, FileMessage, WriteLocation, WriteResult};
-use stewart::{Actor, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
 use stewart_utils::MapExt;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -59,23 +59,30 @@ struct SetTask {
 impl Actor for SetTask {
     type Message = Message;
 
-    fn handle(&mut self, system: &mut System, id: Id, message: Message) -> Result<After, Error> {
-        match message {
-            Message::Slot(offset) => {
-                self.entry_offset = Some(offset);
-            }
-            Message::AppendResult(message) => {
-                self.data_offset = Some(message.offset);
-            }
-            Message::EntryResult(_message) => {
-                // TODO: Report valid back to service, and only after that's flushed report result
+    fn process(
+        &mut self,
+        system: &mut System,
+        id: Id,
+        data: &mut ActorData<Message>,
+    ) -> Result<After, Error> {
+        while let Some(message) = data.next() {
+            match message {
+                Message::Slot(offset) => {
+                    self.entry_offset = Some(offset);
+                }
+                Message::AppendResult(message) => {
+                    self.data_offset = Some(message.offset);
+                }
+                Message::EntryResult(_message) => {
+                    // TODO: Report valid back to service, and only after that's flushed report result
 
-                event!(Level::DEBUG, "success, sending result");
+                    event!(Level::DEBUG, "success, sending result");
 
-                system.send(self.on_result, ());
-                return Ok(After::Stop);
+                    system.send(self.on_result, ());
+                    return Ok(After::Stop);
+                }
             }
-        };
+        }
 
         // If we got both parts we need to write entry, do so
         if let (Some(entry_offset), Some(data_offset)) = (self.entry_offset, self.data_offset) {

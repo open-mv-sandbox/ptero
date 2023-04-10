@@ -3,14 +3,15 @@ use std::{cell::RefCell, rc::Rc};
 use anyhow::Error;
 use js_sys::{ArrayBuffer, Uint8Array};
 use ptero_file::{FileAction, FileMessage, ReadResult};
-use stewart::{Actor, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
 use stewart_utils::MapExt;
-use tracing::{event, Level};
+use tracing::{event, instrument, Level};
 use uuid::Uuid;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
+#[instrument("fetch-file", skip_all)]
 pub fn open_fetch_file(
     ctx: &mut Context,
     url: String,
@@ -39,31 +40,38 @@ struct FetchFileService {
 impl Actor for FetchFileService {
     type Message = Message;
 
-    fn handle(&mut self, system: &mut System, _id: Id, message: Message) -> Result<After, Error> {
-        match message {
-            Message::File(message) => {
-                match message.action {
-                    FileAction::Read {
-                        offset,
-                        size,
-                        on_result,
-                    } => {
-                        let pending = Pending {
-                            id: message.id,
+    fn process(
+        &mut self,
+        system: &mut System,
+        _id: Id,
+        data: &mut ActorData<Message>,
+    ) -> Result<After, Error> {
+        while let Some(message) = data.next() {
+            match message {
+                Message::File(message) => {
+                    match message.action {
+                        FileAction::Read {
                             offset,
                             size,
                             on_result,
-                        };
-                        self.pending.push(pending);
-                    }
-                    FileAction::Write { .. } => {
-                        // TODO: Report back invalid operation
+                        } => {
+                            let pending = Pending {
+                                id: message.id,
+                                offset,
+                                size,
+                                on_result,
+                            };
+                            self.pending.push(pending);
+                        }
+                        FileAction::Write { .. } => {
+                            // TODO: Report back invalid operation
+                        }
                     }
                 }
-            }
-            Message::FetchResult(data) => {
-                event!(Level::INFO, "fetch response received");
-                self.data = Some(data);
+                Message::FetchResult(data) => {
+                    event!(Level::INFO, "fetch response received");
+                    self.data = Some(data);
+                }
             }
         }
 

@@ -47,10 +47,7 @@ impl ActorTree {
         self.pending_start.remove(pending_index);
 
         // Box the actor, so we can access it dynamically
-        let slot = ActorSlot {
-            bin: Vec::new(),
-            actor,
-        };
+        let slot = ActorSlot::new(actor);
 
         // Apply the start
         let node = self.get_mut(id).context("failed to get node")?;

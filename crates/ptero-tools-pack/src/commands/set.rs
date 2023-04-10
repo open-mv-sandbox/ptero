@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
-use stewart::{Actor, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -21,7 +21,7 @@ pub struct SetCommand {
     input: String,
 }
 
-#[instrument("add-command", skip_all)]
+#[instrument("set-command", skip_all)]
 pub fn start(mut ctx: Context, command: SetCommand) -> Result<(), Error> {
     event!(Level::INFO, "setting file in package");
 
@@ -54,7 +54,14 @@ struct AddCommandActor;
 impl Actor for AddCommandActor {
     type Message = ();
 
-    fn handle(&mut self, _system: &mut System, _id: Id, _message: ()) -> Result<After, Error> {
+    fn process(
+        &mut self,
+        _system: &mut System,
+        _id: Id,
+        data: &mut ActorData<()>,
+    ) -> Result<After, Error> {
+        while let Some(_) = data.next() {}
+
         Ok(After::Stop)
     }
 }

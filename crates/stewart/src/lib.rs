@@ -11,7 +11,7 @@ mod slot;
 mod system;
 
 pub use self::{
-    actor::{Actor, After},
+    actor::{Actor, ActorData, After},
     actor_tree::{CreateError, Id, StartError},
     context::Context,
     node::Options,

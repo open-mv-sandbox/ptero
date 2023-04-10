@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Error;
 use rstest::{fixture, rstest};
-use stewart::{Actor, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
 use tracing_test::traced_test;
 
 #[rstest]
@@ -90,7 +90,12 @@ struct TestActor {
 impl Actor for TestActor {
     type Message = ();
 
-    fn handle(&mut self, _system: &mut System, _id: Id, _message: ()) -> Result<After, Error> {
+    fn process(
+        &mut self,
+        _system: &mut System,
+        _id: Id,
+        _data: &mut ActorData<()>,
+    ) -> Result<After, Error> {
         self.count.fetch_add(1, Ordering::SeqCst);
         Ok(After::Stop)
     }

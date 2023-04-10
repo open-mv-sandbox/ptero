@@ -67,7 +67,7 @@ impl System {
         let slot = node.slot_mut().context("actor not available")?;
 
         let mut message = Some(message);
-        slot.handle(&mut message)?;
+        slot.enqueue(&mut message)?;
 
         // Queue for later processing
         if !self.queue.contains(&id) {

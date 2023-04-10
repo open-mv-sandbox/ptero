@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Error};
-use stewart::{Actor, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
 use tracing::{event, instrument, Level};
 
 use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
@@ -38,60 +38,63 @@ struct SystemFileService {
 impl Actor for SystemFileService {
     type Message = FileMessage;
 
-    fn handle(
+    fn process(
         &mut self,
         system: &mut System,
         _id: Id,
-        message: FileMessage,
+        data: &mut ActorData<FileMessage>,
     ) -> Result<After, Error> {
-        event!(Level::INFO, "handling message");
+        event!(Level::INFO, "handling messages");
 
-        match message.action {
-            FileAction::Read {
-                offset,
-                size,
-                on_result,
-            } => {
-                // TODO: Currently remaining bytes after EOF are kept zero, but maybe we want to
-                // feedback a lack of remaining bytes.
-
-                let mut data = vec![0u8; size as usize];
-
-                self.file.seek(SeekFrom::Start(offset))?;
-                read_exact_eof(&mut self.file, &mut data)?;
-
-                // Reply result
-                let result = ReadResult {
-                    id: message.id,
+        while let Some(message) = data.next() {
+            match message.action {
+                FileAction::Read {
                     offset,
+                    size,
+                    on_result,
+                } => {
+                    // TODO: Currently remaining bytes after EOF are kept zero, but maybe we want to
+                    // feedback a lack of remaining bytes.
+
+                    let mut data = vec![0u8; size as usize];
+
+                    self.file.seek(SeekFrom::Start(offset))?;
+                    read_exact_eof(&mut self.file, &mut data)?;
+
+                    // Reply result
+                    let result = ReadResult {
+                        id: message.id,
+                        offset,
+                        data,
+                    };
+                    system.send(on_result, result);
+                }
+                FileAction::Write {
+                    location,
                     data,
-                };
-                system.send(on_result, result);
-            }
-            FileAction::Write {
-                location,
-                data,
-                on_result,
-            } => {
-                // Seek to given location
-                let from = match location {
-                    WriteLocation::Offset(offset) => SeekFrom::Start(offset),
-                    WriteLocation::Append => SeekFrom::End(0),
-                };
-                self.file.seek(from)?;
-                let offset = self.file.stream_position()?;
+                    on_result,
+                } => {
+                    // Seek to given location
+                    let from = match location {
+                        WriteLocation::Offset(offset) => SeekFrom::Start(offset),
+                        WriteLocation::Append => SeekFrom::End(0),
+                    };
+                    self.file.seek(from)?;
+                    let offset = self.file.stream_position()?;
 
-                // Perform the write
-                self.file.write_all(&data)?;
+                    // Perform the write
+                    self.file.write_all(&data)?;
 
-                // Reply result
-                let result = WriteResult {
-                    id: message.id,
-                    offset,
-                };
-                system.send(on_result, result);
+                    // Reply result
+                    let result = WriteResult {
+                        id: message.id,
+                        offset,
+                    };
+                    system.send(on_result, result);
+                }
             }
         }
+
         Ok(After::Continue)
     }
 }

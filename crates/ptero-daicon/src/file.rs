@@ -4,7 +4,7 @@ use anyhow::Error;
 use bytemuck::{bytes_of, Zeroable};
 use daicon::Entry;
 use ptero_file::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
-use stewart::{Actor, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
 use stewart_utils::{MapExt, WhenExt};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -14,7 +14,7 @@ use crate::{cache::CachedTable, set::start_set_task, SourceAction, SourceMessage
 /// Open a file as a daicon source.
 ///
 /// A "source" returns a file from UUIDs. A "file source" uses a file as a source.
-#[instrument("file-source-service", skip_all)]
+#[instrument("file-source", skip_all)]
 pub fn open_file(
     ctx: &mut Context,
     file: Addr<FileMessage>,
@@ -26,8 +26,7 @@ pub fn open_file(
     let source = ctx.map(addr, Message::SourceMessage)?;
     let mut table = None;
 
-    // TODO: this is the validation step too, so we need to actually only send back the source message
-    // addr when we've validated the source is valid.
+    // TODO: this is the validation step, respond if we correctly validated
     match mode {
         OpenMode::ReadWrite => {
             // Immediately start table read
@@ -60,7 +59,7 @@ pub fn open_file(
             let action = FileAction::Write {
                 location: WriteLocation::Offset(0),
                 data,
-                on_result: ctx.when(|_, _| Ok(After::Stop))?,
+                on_result: ctx.when(|_, _, _| Ok(After::Stop))?,
             };
             let message = FileMessage {
                 id: Uuid::new_v4(),
@@ -177,18 +176,25 @@ impl FileSourceService {
 impl Actor for FileSourceService {
     type Message = Message;
 
-    fn handle(&mut self, system: &mut System, id: Id, message: Message) -> Result<After, Error> {
-        match message {
-            Message::SourceMessage(message) => {
-                self.on_source_message(system, id, message)?;
+    fn process(
+        &mut self,
+        system: &mut System,
+        id: Id,
+        data: &mut ActorData<Message>,
+    ) -> Result<After, Error> {
+        while let Some(message) = data.next() {
+            match message {
+                Message::SourceMessage(message) => {
+                    self.on_source_message(system, id, message)?;
+                }
+                Message::ReadTableResult(result) => {
+                    self.on_read_table(result)?;
+                }
+                Message::WriteHeaderResult(result) => {
+                    self.on_write(result)?;
+                }
             }
-            Message::ReadTableResult(result) => {
-                self.on_read_table(result)?;
-            }
-            Message::WriteHeaderResult(result) => {
-                self.on_write(result)?;
-            }
-        };
+        }
 
         // Check if we can resolve any get requests
         self.check_pending(system);

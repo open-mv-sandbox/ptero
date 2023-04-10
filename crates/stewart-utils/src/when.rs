@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, sync::atomic::AtomicPtr};
 
 use anyhow::Error;
-use stewart::{Actor, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
 
 /// Function-actor utility `Context` extension.
 pub trait WhenExt<F, M> {
@@ -11,7 +11,7 @@ pub trait WhenExt<F, M> {
 
 impl<'a, F, M> WhenExt<F, M> for Context<'a>
 where
-    F: FnMut(Context, M) -> Result<After, Error> + 'static,
+    F: FnMut(&mut System, Id, M) -> Result<After, Error> + 'static,
     M: 'static,
 {
     fn when(&mut self, function: F) -> Result<Addr<M>, Error> {
@@ -33,14 +33,27 @@ struct When<F, I> {
 
 impl<F, M> Actor for When<F, M>
 where
-    F: FnMut(Context, M) -> Result<After, Error> + 'static,
+    F: FnMut(&mut System, Id, M) -> Result<After, Error> + 'static,
     M: 'static,
 {
     type Message = M;
 
-    fn handle(&mut self, system: &mut System, id: Id, message: M) -> Result<After, Error> {
-        let ctx = Context::of(system, id);
-        let after = (self.function)(ctx, message)?;
-        Ok(after)
+    fn process(
+        &mut self,
+        system: &mut System,
+        id: Id,
+        data: &mut ActorData<M>,
+    ) -> Result<After, Error> {
+        let mut return_after = After::Continue;
+
+        while let Some(message) = data.next() {
+            let after = (self.function)(system, id, message)?;
+
+            if after == After::Stop {
+                return_after = After::Stop;
+            }
+        }
+
+        Ok(return_after)
     }
 }

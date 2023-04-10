@@ -1,5 +1,5 @@
 use anyhow::Error;
-use stewart::{Actor, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
 use tracing::{event, instrument, Level};
 
 use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
@@ -18,17 +18,8 @@ struct BufferFileService {
     buffer: Vec<u8>,
 }
 
-impl Actor for BufferFileService {
-    type Message = FileMessage;
-
-    fn handle(
-        &mut self,
-        system: &mut System,
-        _id: Id,
-        message: FileMessage,
-    ) -> Result<After, Error> {
-        event!(Level::INFO, "handling message");
-
+impl BufferFileService {
+    fn handle(&mut self, system: &mut System, message: FileMessage) {
         match message.action {
             FileAction::Read {
                 offset,
@@ -85,6 +76,24 @@ impl Actor for BufferFileService {
                 system.send(on_result, result);
             }
         }
+    }
+}
+
+impl Actor for BufferFileService {
+    type Message = FileMessage;
+
+    fn process(
+        &mut self,
+        system: &mut System,
+        _id: Id,
+        data: &mut ActorData<FileMessage>,
+    ) -> Result<After, Error> {
+        event!(Level::INFO, "handling message");
+
+        while let Some(message) = data.next() {
+            self.handle(system, message);
+        }
+
         Ok(After::Continue)
     }
 }

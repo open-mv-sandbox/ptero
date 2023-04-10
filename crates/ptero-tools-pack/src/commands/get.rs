@@ -2,7 +2,7 @@ use anyhow::Error;
 use clap::Args;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
-use stewart::{Actor, Addr, After, Context, Id, Options, System};
+use stewart::{Actor, ActorData, Addr, After, Context, Id, Options, System};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -22,7 +22,7 @@ pub struct GetCommand {
     output: String,
 }
 
-#[instrument("add-command", skip_all)]
+#[instrument("get-command", skip_all)]
 pub fn start(mut ctx: Context, command: GetCommand) -> Result<(), Error> {
     event!(Level::INFO, "getting file from package");
 
@@ -57,13 +57,16 @@ struct GetCommandActor {
 impl Actor for GetCommandActor {
     type Message = ReadResult;
 
-    fn handle(
+    fn process(
         &mut self,
         _system: &mut System,
         _id: Id,
-        message: ReadResult,
+        data: &mut ActorData<ReadResult>,
     ) -> Result<After, Error> {
-        std::fs::write(&self.output, message.data)?;
+        while let Some(message) = data.next() {
+            std::fs::write(&self.output, message.data)?;
+        }
+
         Ok(After::Stop)
     }
 }
