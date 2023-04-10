@@ -12,6 +12,7 @@ console_error_panic_hook.workspace = true
 js-sys.workspace = true
 ptero-daicon.workspace = true
 ptero-file.workspace = true
+ptero-wasm.workspace = true
 raw-window-handle.workspace = true
 stewart.workspace = true
 stewart-utils.workspace = true

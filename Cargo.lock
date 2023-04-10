@@ -327,6 +327,7 @@ dependencies = [
  "js-sys",
  "ptero-daicon",
  "ptero-file",
+ "ptero-wasm",
  "raw-window-handle",
  "stewart",
  "stewart-utils",
@@ -933,6 +934,22 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "ptero-wasm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "js-sys",
+ "ptero-file",
+ "stewart",
+ "stewart-utils",
+ "tracing",
+ "uuid",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

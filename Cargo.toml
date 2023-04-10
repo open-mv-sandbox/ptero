@@ -25,5 +25,6 @@ dacti-index = { git = "https://github.com/open-mv-sandbox/dacti.git", rev = "018
 dacti-viewer = { path = "./crates/dacti-viewer" }
 ptero-daicon = { path = "./crates/ptero-daicon" }
 ptero-file = { path = "./crates/ptero-file" }
+ptero-wasm = { path = "./crates/ptero-wasm" }
 stewart = { path = "./crates/stewart" }
 stewart-utils = { path = "./crates/stewart-utils" }

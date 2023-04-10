@@ -1,8 +1,9 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, cell::RefCell, rc::Rc};
 
 use anyhow::Error;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
+use ptero_wasm::SystemH;
 use stewart::{Actor, Addr, After, Context, Id, Options, System};
 use stewart_utils::MapExt;
 use tracing::{event, instrument, Level};
@@ -23,7 +24,7 @@ use crate::surface;
 /// JS browser viewer instance handle.
 #[wasm_bindgen]
 pub struct Viewer {
-    system: System,
+    hnd: SystemH,
     addr: Addr<Message>,
 }
 
@@ -32,20 +33,25 @@ impl Viewer {
     pub async fn from_canvas(target: HtmlCanvasElement) -> Result<Viewer, String> {
         crate::init_hooks();
 
-        let mut system = System::new();
+        let system = System::new();
+        let hnd = Rc::new(RefCell::new(system));
+        let mut system = hnd.borrow_mut();
+
         let mut ctx = Context::root(&mut system);
-        let addr = start_service(&mut ctx, target)
+        let addr = start_service(&mut ctx, target, hnd.clone())
             .await
             .map_err(|v| v.to_string())?;
 
         system.run_until_idle().map_err(|v| v.to_string())?;
+        drop(system);
 
-        Ok(Viewer { system, addr })
+        Ok(Viewer { hnd, addr })
     }
 
     pub fn tick(&mut self) -> Result<(), String> {
-        self.system.send(self.addr, Message::Tick);
-        self.system.run_until_idle().map_err(|v| v.to_string())?;
+        let mut system = self.hnd.borrow_mut();
+        system.send(self.addr, Message::Tick);
+        system.run_until_idle().map_err(|v| v.to_string())?;
         Ok(())
     }
 }
@@ -54,6 +60,7 @@ impl Viewer {
 async fn start_service(
     ctx: &mut Context<'_>,
     target: HtmlCanvasElement,
+    hnd: SystemH,
 ) -> Result<Addr<Message>, Error> {
     event!(Level::INFO, "creating viewer service");
 
@@ -126,11 +133,8 @@ async fn start_service(
     let addr = Addr::new(id);
 
     // Start a fetch request for shader data
-    // TODO: Actually fetch, this is a placeholder
-    let buffer =
-        include_bytes!("../../../packages/dacti-example-web/public/viewer-builtins.dacti-pack")
-            .to_vec();
-    let file = ptero_file::open_buffer(&mut ctx, buffer)?;
+    let file =
+        ptero_wasm::open_fetch_file(&mut ctx, "/viewer-builtins.dacti-pack".to_string(), hnd)?;
     let source = ptero_daicon::open_file(&mut ctx, file, OpenMode::ReadWrite)?;
 
     let action = SourceAction::Get {
