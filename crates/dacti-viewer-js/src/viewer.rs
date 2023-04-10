@@ -4,17 +4,18 @@ use anyhow::Error;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
 use stewart::{Actor, Addr, After, Context, Id, Options, System};
-use stewart_utils::WhenExt;
+use stewart_utils::MapExt;
 use tracing::{event, instrument, Level};
 use uuid::{uuid, Uuid};
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 use wgpu::{
     Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, FragmentState, Instance,
-    Limits, LoadOp, MultisampleState, Operations, PipelineLayoutDescriptor, PowerPreference,
-    PresentMode, PrimitiveState, Queue, RenderPassColorAttachment, RenderPassDescriptor,
-    RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, ShaderModuleDescriptor,
-    ShaderSource, Surface, SurfaceConfiguration, TextureUsages, TextureViewDescriptor, VertexState,
+    Limits, LoadOp, MultisampleState, Operations, PipelineLayout, PipelineLayoutDescriptor,
+    PowerPreference, PresentMode, PrimitiveState, Queue, RenderPassColorAttachment,
+    RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions,
+    ShaderModuleDescriptor, ShaderSource, Surface, SurfaceConfiguration, TextureFormat,
+    TextureUsages, TextureViewDescriptor, VertexState,
 };
 
 use crate::surface;
@@ -89,13 +90,6 @@ async fn start_service(
         .await
         .unwrap();
 
-    // Load the shaders from disk
-    let shader_str = include_str!("../../../data/shader.wgsl");
-    let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: None,
-        source: ShaderSource::Wgsl(Cow::Borrowed(shader_str)),
-    });
-
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: None,
         bind_group_layouts: &[],
@@ -105,6 +99,134 @@ async fn start_service(
     let swapchain_capabilities = surface.get_capabilities(&adapter);
     let swapchain_format = swapchain_capabilities.formats[0];
 
+    let config = SurfaceConfiguration {
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        format: swapchain_format,
+        width: 800,
+        height: 600,
+        present_mode: PresentMode::Fifo,
+        alpha_mode: swapchain_capabilities.alpha_modes[0],
+        view_formats: vec![],
+    };
+
+    surface.configure(&device, &config);
+
+    // Start the service
+    let service = ViewerService {
+        surface,
+        device,
+        queue,
+
+        pipeline_layout,
+        swapchain_format,
+        render_pipeline: None,
+    };
+    let (id, mut ctx) = ctx.create()?;
+    ctx.start(id, Options::default(), service)?;
+    let addr = Addr::new(id);
+
+    // Start a fetch request for shader data
+    // TODO: Actually fetch, this is a placeholder
+    let buffer =
+        include_bytes!("../../../packages/dacti-example-web/public/viewer-builtins.dacti-pack")
+            .to_vec();
+    let file = ptero_file::open_buffer(&mut ctx, buffer)?;
+    let source = ptero_daicon::open_file(&mut ctx, file, OpenMode::ReadWrite)?;
+
+    let action = SourceAction::Get {
+        id: uuid!("bacc2ba1-8dc7-4d54-a7a4-cdad4d893a1b"),
+        on_result: ctx.map_once(addr, Message::ShaderFetched)?,
+    };
+    let message = SourceMessage {
+        id: Uuid::new_v4(),
+        action,
+    };
+    ctx.send(source, message);
+
+    Ok(addr)
+}
+
+struct ViewerService {
+    surface: Surface,
+    device: Device,
+    queue: Queue,
+
+    pipeline_layout: PipelineLayout,
+    swapchain_format: TextureFormat,
+    render_pipeline: Option<RenderPipeline>,
+}
+
+impl ViewerService {
+    fn tick(&mut self) {
+        let frame = self.surface.get_current_texture().unwrap();
+        let view = frame.texture.create_view(&TextureViewDescriptor::default());
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor { label: None });
+
+        if let Some(render_pipeline) = &self.render_pipeline {
+            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::GREEN),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+
+            render_pass.set_pipeline(render_pipeline);
+            render_pass.draw(0..3, 0..1);
+        }
+
+        self.queue.submit(Some(encoder.finish()));
+        frame.present();
+    }
+}
+
+impl Actor for ViewerService {
+    type Message = Message;
+
+    fn handle(&mut self, _system: &mut System, _id: Id, message: Message) -> Result<After, Error> {
+        match message {
+            Message::ShaderFetched(message) => {
+                let data = std::str::from_utf8(&message.data)?;
+                let pipeline = create_render_pipeline(
+                    &self.device,
+                    &self.pipeline_layout,
+                    self.swapchain_format,
+                    &data,
+                );
+                self.render_pipeline = Some(pipeline);
+            }
+            Message::Tick => self.tick(),
+        }
+
+        Ok(After::Continue)
+    }
+}
+
+enum Message {
+    ShaderFetched(ReadResult),
+    Tick,
+}
+
+fn create_render_pipeline(
+    device: &Device,
+    pipeline_layout: &PipelineLayout,
+    swapchain_format: TextureFormat,
+    shader_str: &str,
+) -> RenderPipeline {
+    event!(Level::INFO, "creating render pipeline");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: None,
+        source: ShaderSource::Wgsl(Cow::Borrowed(shader_str)),
+    });
     let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: None,
         layout: Some(&pipeline_layout),
@@ -124,107 +246,5 @@ async fn start_service(
         multiview: None,
     });
 
-    let config = SurfaceConfiguration {
-        usage: TextureUsages::RENDER_ATTACHMENT,
-        format: swapchain_format,
-        width: 800,
-        height: 600,
-        present_mode: PresentMode::Fifo,
-        alpha_mode: swapchain_capabilities.alpha_modes[0],
-        view_formats: vec![],
-    };
-
-    surface.configure(&device, &config);
-
-    // Start the service
-    let service = ViewerService {
-        surface,
-        device,
-        queue,
-        render_pipeline,
-    };
-    let (id, mut ctx) = ctx.create()?;
-    ctx.start(id, Options::default(), service)?;
-
-    // Start a fetch request for shader data
-    // TODO: Actually fetch, this is a placeholder
-    let buffer =
-        include_bytes!("../../../packages/dacti-example-web/public/viewer-builtins.dacti-pack")
-            .to_vec();
-    let file = ptero_file::open_buffer(&mut ctx, buffer)?;
-    let source = ptero_daicon::open_file(&mut ctx, file, OpenMode::ReadWrite)?;
-
-    let on_result = ctx.when(|_system, message: ReadResult| {
-        let shader = std::str::from_utf8(&message.data)?;
-        event!(Level::INFO, "received\n{}", shader);
-        Ok(After::Stop)
-    })?;
-    let action = SourceAction::Get {
-        id: uuid!("bacc2ba1-8dc7-4d54-a7a4-cdad4d893a1b"),
-        on_result,
-    };
-    let message = SourceMessage {
-        id: Uuid::new_v4(),
-        action,
-    };
-    ctx.send(source, message);
-
-    Ok(Addr::new(id))
-}
-
-struct ViewerService {
-    surface: Surface,
-    device: Device,
-    queue: Queue,
-    render_pipeline: RenderPipeline,
-}
-
-impl ViewerService {
-    fn tick(&mut self) {
-        let frame = self.surface.get_current_texture().unwrap();
-        let view = frame.texture.create_view(&TextureViewDescriptor::default());
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor { label: None });
-        {
-            let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(Color::GREEN),
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw(0..3, 0..1);
-        }
-
-        self.queue.submit(Some(encoder.finish()));
-        frame.present();
-    }
-}
-
-impl Actor for ViewerService {
-    type Message = Message;
-
-    fn handle(&mut self, _system: &mut System, _id: Id, message: Message) -> Result<After, Error> {
-        match message {
-            Message::ShaderFetched(_data) => {
-                // TODO
-            }
-            Message::Tick => self.tick(),
-        }
-
-        Ok(After::Continue)
-    }
-}
-
-enum Message {
-    ShaderFetched(String),
-    Tick,
+    render_pipeline
 }
