@@ -1,5 +1,6 @@
 use anyhow::Error;
-use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
+use stewart::{Addr, State, System, World};
+use stewart_utils::Context;
 use tracing::{event, instrument, Level};
 
 use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
@@ -7,19 +8,39 @@ use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 /// Start a file service from a buffer.
 #[instrument("buffer-file", skip_all)]
 pub fn open_buffer(ctx: &mut Context, buffer: Vec<u8>) -> Result<Addr<FileMessage>, Error> {
-    let (id, mut ctx) = ctx.create()?;
-    let actor = BufferFileService { buffer };
-    ctx.start(id, Options::default(), actor)?;
+    let id = ctx.register(BufferFileSystem);
+
+    let (id, mut ctx) = ctx.create(id)?;
+    let instance = BufferFile { buffer };
+    ctx.start(id, instance)?;
 
     Ok(Addr::new(id))
 }
 
-struct BufferFileService {
+struct BufferFileSystem;
+
+impl System for BufferFileSystem {
+    type Instance = BufferFile;
+    type Message = FileMessage;
+
+    #[instrument("buffer-file", skip_all)]
+    fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+        event!(Level::INFO, "handling message");
+
+        while let Some((_id, instance, message)) = state.next() {
+            instance.handle(world, message);
+        }
+
+        Ok(())
+    }
+}
+
+struct BufferFile {
     buffer: Vec<u8>,
 }
 
-impl BufferFileService {
-    fn handle(&mut self, system: &mut System, message: FileMessage) {
+impl BufferFile {
+    fn handle(&mut self, world: &mut World, message: FileMessage) {
         match message.action {
             FileAction::Read {
                 offset,
@@ -46,7 +67,7 @@ impl BufferFileService {
                     offset: offset as u64,
                     data,
                 };
-                system.send(on_result, result);
+                world.send(on_result, result);
             }
             FileAction::Write {
                 location,
@@ -73,27 +94,8 @@ impl BufferFileService {
                     id: message.id,
                     offset: offset as u64,
                 };
-                system.send(on_result, result);
+                world.send(on_result, result);
             }
         }
-    }
-}
-
-impl Actor for BufferFileService {
-    type Message = FileMessage;
-
-    fn process(
-        &mut self,
-        system: &mut System,
-        _id: Id,
-        messages: &mut Messages<FileMessage>,
-    ) -> Result<After, Error> {
-        event!(Level::INFO, "handling message");
-
-        while let Some(message) = messages.next() {
-            self.handle(system, message);
-        }
-
-        Ok(After::Continue)
     }
 }

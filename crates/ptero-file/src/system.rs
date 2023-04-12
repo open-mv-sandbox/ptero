@@ -4,7 +4,8 @@ use std::{
 };
 
 use anyhow::{Context as _, Error};
-use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
+use stewart::{Addr, State, System, World};
+use stewart_utils::Context;
 use tracing::{event, instrument, Level};
 
 use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
@@ -24,29 +25,26 @@ pub fn open_system_file(
         .open(path)
         .context("failed to open system file for writing")?;
 
-    let (id, mut ctx) = ctx.create()?;
-    let actor = SystemFileService { file };
-    ctx.start(id, Options::default(), actor)?;
+    let id = ctx.register(SystemFileSystem);
+
+    let (id, mut ctx) = ctx.create(id)?;
+    let instance = SystemFile { file };
+    ctx.start(id, instance)?;
 
     Ok(Addr::new(id))
 }
 
-struct SystemFileService {
-    file: File,
-}
+struct SystemFileSystem;
 
-impl Actor for SystemFileService {
+impl System for SystemFileSystem {
+    type Instance = SystemFile;
     type Message = FileMessage;
 
-    fn process(
-        &mut self,
-        system: &mut System,
-        _id: Id,
-        messages: &mut Messages<FileMessage>,
-    ) -> Result<After, Error> {
+    #[instrument("system-file", skip_all)]
+    fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
         event!(Level::INFO, "handling messages");
 
-        while let Some(message) = messages.next() {
+        while let Some((_id, instance, message)) = state.next() {
             match message.action {
                 FileAction::Read {
                     offset,
@@ -58,8 +56,8 @@ impl Actor for SystemFileService {
 
                     let mut data = vec![0u8; size as usize];
 
-                    self.file.seek(SeekFrom::Start(offset))?;
-                    read_exact_eof(&mut self.file, &mut data)?;
+                    instance.file.seek(SeekFrom::Start(offset))?;
+                    read_exact_eof(&mut instance.file, &mut data)?;
 
                     // Reply result
                     let result = ReadResult {
@@ -67,7 +65,7 @@ impl Actor for SystemFileService {
                         offset,
                         data,
                     };
-                    system.send(on_result, result);
+                    world.send(on_result, result);
                 }
                 FileAction::Write {
                     location,
@@ -79,24 +77,28 @@ impl Actor for SystemFileService {
                         WriteLocation::Offset(offset) => SeekFrom::Start(offset),
                         WriteLocation::Append => SeekFrom::End(0),
                     };
-                    self.file.seek(from)?;
-                    let offset = self.file.stream_position()?;
+                    instance.file.seek(from)?;
+                    let offset = instance.file.stream_position()?;
 
                     // Perform the write
-                    self.file.write_all(&data)?;
+                    instance.file.write_all(&data)?;
 
                     // Reply result
                     let result = WriteResult {
                         id: message.id,
                         offset,
                     };
-                    system.send(on_result, result);
+                    world.send(on_result, result);
                 }
             }
         }
 
-        Ok(After::Continue)
+        Ok(())
     }
+}
+
+struct SystemFile {
+    file: File,
 }
 
 /// Copy of read_exact except allowing for EOF.

@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::{CreateError, Id, System};
+use stewart::{ActorId, CreateError, SystemId, World};
 
 /// Context bundle utility for system operations.
 ///
@@ -11,30 +11,30 @@ use crate::{CreateError, Id, System};
 ///
 /// This utility bundles all this contextual information for you.
 pub struct Context<'a> {
-    system: &'a mut System,
-    current: Option<Id>,
+    world: &'a mut World,
+    current: Option<ActorId>,
 }
 
 impl<'a> Context<'a> {
-    pub fn of(system: &'a mut System, id: Id) -> Self {
+    pub fn of(world: &'a mut World, id: ActorId) -> Self {
         Self {
-            system,
+            world,
             current: Some(id),
         }
     }
 
-    pub fn root(system: &'a mut System) -> Self {
+    pub fn root(world: &'a mut World) -> Self {
         Self {
-            system,
+            world,
             current: None,
         }
     }
 
-    pub fn create(&mut self) -> Result<(Id, Context), CreateError> {
-        let id = self.system.create(self.current)?;
+    pub fn create(&mut self, system: SystemId) -> Result<(ActorId, Context), CreateError> {
+        let id = self.world.create(system, self.current)?;
 
         let ctx = Context {
-            system: self.system,
+            world: self.world,
             current: Some(id),
         };
         Ok((id, ctx))
@@ -42,15 +42,15 @@ impl<'a> Context<'a> {
 }
 
 impl<'a> Deref for Context<'a> {
-    type Target = System;
+    type Target = World;
 
-    fn deref(&self) -> &System {
-        &self.system
+    fn deref(&self) -> &World {
+        &self.world
     }
 }
 
 impl<'a> DerefMut for Context<'a> {
-    fn deref_mut(&mut self) -> &mut System {
-        &mut self.system
+    fn deref_mut(&mut self) -> &mut World {
+        &mut self.world
     }
 }

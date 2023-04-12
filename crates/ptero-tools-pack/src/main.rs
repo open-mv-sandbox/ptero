@@ -3,7 +3,8 @@ mod commands;
 use anyhow::Error;
 use clap::{Parser, Subcommand};
 use commands::get::GetCommand;
-use stewart::{Context, System};
+use stewart::World;
+use stewart_utils::Context;
 use tracing::{event, Level};
 use tracing_subscriber::{prelude::*, EnvFilter, FmtSubscriber};
 
@@ -35,7 +36,7 @@ fn main() {
 
 fn try_main(args: CliArgs) -> Result<(), Error> {
     // Set up the runtime
-    let mut system = System::new();
+    let mut system = World::new();
     let ctx = Context::root(&mut system);
 
     // Start the command actor

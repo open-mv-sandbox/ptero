@@ -2,7 +2,8 @@ use anyhow::Error;
 use clap::Args;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
-use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
+use stewart::{Addr, State, System, World};
+use stewart_utils::Context;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -26,7 +27,8 @@ pub struct GetCommand {
 pub fn start(mut ctx: Context, command: GetCommand) -> Result<(), Error> {
     event!(Level::INFO, "getting file from package");
 
-    let (id, mut ctx) = ctx.create()?;
+    let id = ctx.register(GetCommandSystem);
+    let (id, mut ctx) = ctx.create(id)?;
 
     // Open up the package for writing in ptero-daicon
     let file = ptero_file::open_system_file(&mut ctx, &command.target, false)?;
@@ -42,31 +44,23 @@ pub fn start(mut ctx: Context, command: GetCommand) -> Result<(), Error> {
     };
     ctx.send(source, message);
 
-    let actor = GetCommandActor {
-        output: command.output,
-    };
-    ctx.start(id, Options::default(), actor)?;
+    ctx.start(id, command)?;
 
     Ok(())
 }
 
-struct GetCommandActor {
-    output: String,
-}
+struct GetCommandSystem;
 
-impl Actor for GetCommandActor {
+impl System for GetCommandSystem {
+    type Instance = GetCommand;
     type Message = ReadResult;
 
-    fn process(
-        &mut self,
-        _system: &mut System,
-        _id: Id,
-        messages: &mut Messages<ReadResult>,
-    ) -> Result<After, Error> {
-        while let Some(message) = messages.next() {
-            std::fs::write(&self.output, message.data)?;
+    fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+        while let Some((id, instance, message)) = state.next() {
+            std::fs::write(&instance.output, message.data)?;
+            world.stop(id)?;
         }
 
-        Ok(After::Stop)
+        Ok(())
     }
 }

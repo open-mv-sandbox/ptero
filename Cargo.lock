@@ -169,7 +169,7 @@ checksum = "fdde5c9cd29ebd706ce1b35600920a33550e402fc998a2e53ad3b42c3c47a192"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.13",
+ "syn 2.0.14",
 ]
 
 [[package]]
@@ -223,7 +223,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.13",
+ "syn 2.0.14",
 ]
 
 [[package]]
@@ -342,9 +342,9 @@ dependencies = [
 
 [[package]]
 name = "daicon"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8737a0a6fa6ff419d1db6f61a120898b8d145d84a04811e595ceac0162c0594a"
+checksum = "a420ec31dc08b1ad6d01620ece1dd75fb52e402b9d74bf327217093bd0e59372"
 dependencies = [
  "bytemuck",
  "thiserror",
@@ -443,7 +443,7 @@ checksum = "89ca545a94061b6365f2c7355b4b32bd20df3ff95f02da9329b34ccc3bd6ee72"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.13",
+ "syn 2.0.14",
 ]
 
 [[package]]
@@ -918,6 +918,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "stewart",
+ "stewart-utils",
  "tracing",
  "uuid",
 ]
@@ -947,6 +948,7 @@ dependencies = [
  "ptero-daicon",
  "ptero-file",
  "stewart",
+ "stewart-utils",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -1176,9 +1178,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.13"
+version = "2.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c9da457c5285ac1f936ebd076af6dac17a61cfe7826f2076b4d015cf47bc8ec"
+checksum = "fcf316d5356ed6847742d036f8a39c3b8435cac10bd528a4bd461928a6ab34d5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1211,7 +1213,7 @@ checksum = "f9456a42c5b0d803c8cd86e73dd7cc9edd429499f37a3550d286d5e86720569f"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.13",
+ "syn 2.0.14",
 ]
 
 [[package]]

@@ -1,178 +1,138 @@
-use std::{collections::VecDeque, marker::PhantomData, sync::atomic::AtomicPtr};
+use std::{
+    any::Any,
+    collections::{BTreeMap, VecDeque},
+};
 
-use anyhow::{Context as AContext, Error};
+use anyhow::Error;
 use tracing::{event, Level};
 
-use crate::{actor_tree::ActorTree, Actor, After, CreateError, Id, Options, StartError};
+use crate::{ActorId, World};
 
-/// Thread-local actor execution system.
-#[derive(Default)]
-pub struct System {
-    actors: ActorTree,
-    queue: VecDeque<Id>,
+/// Actor processing system trait.
+pub trait System: Sized + 'static {
+    type Instance;
+    type Message;
+
+    /// Perform a processing step.
+    fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error>;
 }
 
-impl System {
-    /// Create a new empty `System`.
-    pub fn new() -> Self {
-        Self::default()
-    }
+pub trait AnySystemEntry {
+    fn insert(&mut self, actor: ActorId, slot: &mut dyn Any);
 
-    /// Create a new actor.
-    ///
-    /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create(&mut self, parent: Option<Id>) -> Result<Id, CreateError> {
-        event!(Level::INFO, "creating actor");
+    fn remove(&mut self, actor: ActorId);
 
-        let id = self.actors.create(parent)?;
-        Ok(id)
-    }
+    fn enqueue(&mut self, actor: ActorId, slot: &mut dyn Any);
 
-    /// Start an actor, making it available for handling messages.
-    pub fn start<A>(&mut self, id: Id, options: Options, actor: A) -> Result<(), StartError>
-    where
-        A: Actor,
-    {
-        event!(Level::INFO, "starting actor");
+    fn process(&mut self, world: &mut World);
+}
 
-        self.actors.start(id, options, actor)?;
-        Ok(())
-    }
+pub struct SystemEntry<S>
+where
+    S: System,
+{
+    system: S,
+    recv: State<S>,
+}
 
-    /// Send a message to an actor.
-    ///
-    /// This will never be handled in-place. The system will queue up the message to be processed
-    /// at a later time.
-    pub fn send<M>(&mut self, addr: Addr<M>, message: impl Into<M>)
-    where
-        M: 'static,
-    {
-        let result = self.try_send(addr.id, message.into());
-
-        // TODO: Figure out what to do with this, it may be useful to have a unified "send error"
-        // system, but in some cases a definitive error may never happen until the implementor
-        // decides that it's too long?
-        // Some cases, it's an error with the receiver, some cases it's an error with the sender.
-        // This needs more thought before making an API decision.
-        if let Err(error) = result {
-            event!(Level::ERROR, ?error, "failed to send message");
+impl<S> SystemEntry<S>
+where
+    S: System,
+{
+    pub fn new(system: S) -> Self {
+        Self {
+            system,
+            recv: State {
+                instances: BTreeMap::new(),
+                queue: VecDeque::new(),
+            },
         }
     }
+}
 
-    fn try_send<M>(&mut self, id: Id, message: M) -> Result<(), Error>
-    where
-        M: 'static,
-    {
-        let node = self.actors.get_mut(id).context("actor not found")?;
-        let slot = node.slot_mut().context("actor not available")?;
+impl<S> AnySystemEntry for SystemEntry<S>
+where
+    S: System,
+{
+    fn insert(&mut self, actor: ActorId, slot: &mut dyn Any) {
+        // TODO: Graceful error handling
 
-        let mut message = Some(message);
-        slot.enqueue(&mut message)?;
+        // Take the instance out
+        let slot: &mut Option<S::Instance> = slot.downcast_mut().unwrap();
+        let instance = slot.take().unwrap();
 
-        // Queue for later processing
-        if !self.queue.contains(&id) {
-            if !node.options().high_priority {
-                self.queue.push_back(id);
-            } else {
-                self.queue.push_front(id);
+        self.recv.instances.insert(actor, instance);
+    }
+
+    fn remove(&mut self, actor: ActorId) {
+        self.recv.instances.remove(&actor);
+
+        // Drop pending messages of this instance
+        self.recv.queue.retain(|(i, _)| *i != actor);
+    }
+
+    fn enqueue(&mut self, actor: ActorId, slot: &mut dyn Any) {
+        // TODO: Graceful error handling
+
+        // Take the message out
+        let slot: &mut Option<S::Message> = slot.downcast_mut().unwrap();
+        let message = slot.take().unwrap();
+
+        self.recv.queue.push_front((actor, message));
+    }
+
+    fn process(&mut self, world: &mut World) {
+        let result = self.system.process(world, &mut self.recv);
+
+        if !self.recv.queue.is_empty() {
+            event!(Level::WARN, "system did not process all pending messages");
+        }
+
+        match result {
+            Ok(value) => value,
+            Err(error) => {
+                // TODO: What to do with this?
+                event!(Level::ERROR, ?error, "system failed while processing");
             }
         }
-
-        Ok(())
-    }
-
-    /// Process all pending messages, until none are left.
-    ///
-    /// Processing messages may create more messages, so this is not guaranteed to ever return.
-    /// However, well-behaved actors avoid should behave appropriately for the kind of system
-    /// they're running on. For example, IO actors shouldn't keep the system busy, preventing it
-    /// from handling IO reactor messages.
-    pub fn run_until_idle(&mut self) -> Result<(), Error> {
-        self.actors.cleanup_pending()?;
-
-        while let Some(index) = self.queue.pop_front() {
-            self.process(index).context("failed to process")?;
-
-            self.actors.cleanup_pending()?;
-        }
-
-        Ok(())
-    }
-
-    fn process(&mut self, id: Id) -> Result<(), Error> {
-        // Borrow the actor
-        let node = self
-            .actors
-            .get_mut(id)
-            .context("failed to get actor before process")?;
-        let span = node.span();
-        let _enter = span.enter();
-        let mut slot = node.take()?;
-
-        // Run the actor's handler
-        let after = slot.process(self, id);
-
-        // If we got told to stop the actor, do that instead of returning
-        if after == After::Stop {
-            event!(Level::INFO, "stopping actor");
-            drop(slot);
-            self.actors.remove(id)?;
-            return Ok(());
-        }
-
-        // Return the actor
-        self.actors
-            .get_mut(id)
-            .context("failed to get actor after process")?
-            .store(slot)?;
-
-        Ok(())
     }
 }
 
-impl Drop for System {
-    fn drop(&mut self) {
-        let debug_names = self.actors.debug_names();
+pub struct State<S>
+where
+    S: System,
+{
+    instances: BTreeMap<ActorId, S::Instance>,
+    queue: VecDeque<(ActorId, S::Message)>,
+}
 
-        if !debug_names.is_empty() {
-            event!(
-                Level::WARN,
-                ?debug_names,
-                "actors not stopped before system drop"
-            );
+impl<S> State<S>
+where
+    S: System,
+{
+    pub fn next(&mut self) -> Option<(ActorId, &mut S::Instance, S::Message)> {
+        loop {
+            let (actor, message) = if let Some(value) = self.queue.pop_front() {
+                value
+            } else {
+                return None;
+            };
+
+            if !self.instances.contains_key(&actor) {
+                event!(Level::ERROR, "failed to find instance for message");
+                continue;
+            }
+
+            let instance = self.instances.get_mut(&actor).unwrap();
+            return Some((actor, instance, message));
         }
     }
-}
 
-/// Typed system address of an actor, used for sending messages to the actor.
-///
-/// This address can only be used with one specific system. Using it with another system is
-/// not unsafe, but may result in unexpected behavior.
-///
-/// When distributing work between systems, you can use an 'envoy' actor that relays messages from
-/// one system to another. For example, using an MPSC channel, or even across network.
-pub struct Addr<M> {
-    id: Id,
-    _m: PhantomData<AtomicPtr<M>>,
-}
+    pub fn get(&self, actor: ActorId) -> Option<&S::Instance> {
+        self.instances.get(&actor)
+    }
 
-impl<M> Addr<M> {
-    /// Create a new typed address from an id.
-    ///
-    /// Creating an address with the wrong type is not unsafe, and will be checked on send.
-    pub fn new(id: Id) -> Addr<M> {
-        // TODO: Early message type validation?
-        Self {
-            id,
-            _m: PhantomData,
-        }
+    pub fn get_mut(&mut self, actor: ActorId) -> Option<&mut S::Instance> {
+        self.instances.get_mut(&actor)
     }
 }
-
-impl<M> Clone for Addr<M> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<M> Copy for Addr<M> {}

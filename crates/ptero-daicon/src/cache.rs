@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 /// In-memory cached representation of a table.
 pub struct CachedTable {
-    offset: u64,
+    offset: u32,
     entries: Vec<Entry>,
     entries_meta: Vec<EntryMeta>,
 }
@@ -22,7 +22,7 @@ pub struct EntryMeta {
 }
 
 impl CachedTable {
-    pub fn new(offset: u64, capacity: usize) -> Self {
+    pub fn new(offset: u32, capacity: usize) -> Self {
         Self {
             offset,
             entries: vec![Entry::zeroed(); capacity],
@@ -30,7 +30,7 @@ impl CachedTable {
         }
     }
 
-    pub fn read(offset: u64, data: Vec<u8>) -> Result<Self, Error> {
+    pub fn read(offset: u32, data: Vec<u8>) -> Result<Self, Error> {
         let mut data = Cursor::new(data);
 
         // Read the header
@@ -77,8 +77,8 @@ impl CachedTable {
         Some(index)
     }
 
-    pub fn entry_offset(&self, index: usize) -> u64 {
-        self.offset + size_of::<Header>() as u64 + (size_of::<Entry>() as u64 * index as u64)
+    pub fn entry_offset(&self, index: usize) -> u32 {
+        self.offset + size_of::<Header>() as u32 + (size_of::<Entry>() as u32 * index as u32)
     }
 
     /// Mark that an entry is now available, with the given data.
@@ -89,7 +89,7 @@ impl CachedTable {
         self.entries_meta[index].valid = true;
     }
 
-    pub fn create_header(&self) -> (Header, u64) {
+    pub fn create_header(&self) -> (Header, u32) {
         // Count the amount of entries until we hit one that isn't valid
         let mut valid = 0;
         for meta in &self.entries_meta {

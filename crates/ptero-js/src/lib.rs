@@ -1,10 +1,10 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::BTreeSet, rc::Rc};
 
-use anyhow::Error;
+use anyhow::{Context as _, Error};
 use js_sys::{ArrayBuffer, Uint8Array};
 use ptero_file::{FileAction, FileMessage, ReadResult};
-use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
-use stewart_utils::MapExt;
+use stewart::{Addr, State, System, World};
+use stewart_utils::{Context, Functional};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 use wasm_bindgen::JsCast;
@@ -17,14 +17,16 @@ pub fn open_fetch_file(
     url: String,
     hnd: SystemH,
 ) -> Result<Addr<FileMessage>, Error> {
-    let (id, mut ctx) = ctx.create()?;
+    let id = ctx.register(FetchFileSystem);
+
+    let (id, mut ctx) = ctx.create(id)?;
     let addr = Addr::new(id);
 
-    let service = FetchFileService {
+    let service = FetchFile {
         data: None,
         pending: Vec::new(),
     };
-    ctx.start(id, Options::default(), service)?;
+    ctx.start(id, service)?;
 
     spawn_local(do_fetch(hnd, addr, url));
 
@@ -32,21 +34,16 @@ pub fn open_fetch_file(
     Ok(addr)
 }
 
-struct FetchFileService {
-    data: Option<Vec<u8>>,
-    pending: Vec<Pending>,
-}
+struct FetchFileSystem;
 
-impl Actor for FetchFileService {
+impl System for FetchFileSystem {
+    type Instance = FetchFile;
     type Message = Message;
 
-    fn process(
-        &mut self,
-        system: &mut System,
-        _id: Id,
-        messages: &mut Messages<Message>,
-    ) -> Result<After, Error> {
-        while let Some(message) = messages.next() {
+    fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+        let mut has_update = BTreeSet::new();
+
+        while let Some((actor, instance, message)) = state.next() {
             match message {
                 Message::File(message) => {
                     match message.action {
@@ -61,7 +58,8 @@ impl Actor for FetchFileService {
                                 size,
                                 on_result,
                             };
-                            self.pending.push(pending);
+                            instance.pending.push(pending);
+                            has_update.insert(actor);
                         }
                         FileAction::Write { .. } => {
                             // TODO: Report back invalid operation
@@ -70,38 +68,52 @@ impl Actor for FetchFileService {
                 }
                 Message::FetchResult(data) => {
                     event!(Level::INFO, "fetch response received");
-                    self.data = Some(data);
+                    instance.data = Some(data);
+                    has_update.insert(actor);
                 }
             }
         }
 
-        // Check if we can respond to requests
-        if let Some(data) = &self.data {
-            event!(Level::INFO, count = self.pending.len(), "resolving entries");
+        // Check if we can respond to accumulated requests
+        for actor in has_update {
+            let instance = state.get_mut(actor).context("instance missing")?;
 
-            for pending in self.pending.drain(..) {
-                let offset = pending.offset as usize;
-                let mut reply_data = vec![0u8; pending.size as usize];
+            if let Some(data) = &instance.data {
+                event!(
+                    Level::INFO,
+                    count = instance.pending.len(),
+                    "resolving entries"
+                );
 
-                let available = data.len() - offset;
-                let slice_len = usize::min(reply_data.len(), available);
+                for pending in instance.pending.drain(..) {
+                    let offset = pending.offset as usize;
+                    let mut reply_data = vec![0u8; pending.size as usize];
 
-                let src = &data[offset..offset + slice_len];
-                let dst = &mut reply_data[0..slice_len];
+                    let available = data.len() - offset;
+                    let slice_len = usize::min(reply_data.len(), available);
 
-                dst.copy_from_slice(src);
+                    let src = &data[offset..offset + slice_len];
+                    let dst = &mut reply_data[0..slice_len];
 
-                let message = ReadResult {
-                    id: pending.id,
-                    offset: pending.offset,
-                    data: reply_data,
-                };
-                system.send(pending.on_result, message);
+                    dst.copy_from_slice(src);
+
+                    let message = ReadResult {
+                        id: pending.id,
+                        offset: pending.offset,
+                        data: reply_data,
+                    };
+                    world.send(pending.on_result, message);
+                }
             }
         }
 
-        Ok(After::Continue)
+        Ok(())
     }
+}
+
+struct FetchFile {
+    data: Option<Vec<u8>>,
+    pending: Vec<Pending>,
 }
 
 enum Message {
@@ -142,4 +154,4 @@ async fn do_fetch(hnd: SystemH, addr: Addr<Message>, url: String) {
 }
 
 /// TODO: Replace this with a more thought out executor abstraction.
-pub type SystemH = Rc<RefCell<System>>;
+pub type SystemH = Rc<RefCell<World>>;

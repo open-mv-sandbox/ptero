@@ -1,7 +1,8 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
-use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
+use stewart::{Addr, State, System, World};
+use stewart_utils::Context;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -25,7 +26,8 @@ pub struct SetCommand {
 pub fn start(mut ctx: Context, command: SetCommand) -> Result<(), Error> {
     event!(Level::INFO, "setting file in package");
 
-    let (id, mut ctx) = ctx.create()?;
+    let id = ctx.register(AddCommandSystem);
+    let (id, mut ctx) = ctx.create(id)?;
 
     let data = std::fs::read(&command.input)?;
 
@@ -44,24 +46,22 @@ pub fn start(mut ctx: Context, command: SetCommand) -> Result<(), Error> {
     };
     ctx.send(source, message);
 
-    ctx.start(id, Options::default(), AddCommandActor)?;
+    ctx.start(id, ())?;
 
     Ok(())
 }
 
-struct AddCommandActor;
+struct AddCommandSystem;
 
-impl Actor for AddCommandActor {
+impl System for AddCommandSystem {
+    type Instance = ();
     type Message = ();
 
-    fn process(
-        &mut self,
-        _system: &mut System,
-        _id: Id,
-        messages: &mut Messages<()>,
-    ) -> Result<After, Error> {
-        while let Some(_) = messages.next() {}
+    fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+        while let Some((id, _, _)) = state.next() {
+            world.stop(id)?;
+        }
 
-        Ok(After::Stop)
+        Ok(())
     }
 }

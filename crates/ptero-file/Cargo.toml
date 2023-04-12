@@ -6,5 +6,6 @@ edition = "2021"
 [dependencies]
 anyhow.workspace = true
 stewart.workspace = true
+stewart-utils.workspace = true
 tracing.workspace = true
 uuid.workspace = true

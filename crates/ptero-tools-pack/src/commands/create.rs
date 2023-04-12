@@ -1,7 +1,8 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_daicon::OpenMode;
-use stewart::{Actor, After, Context, Id, Messages, Options, System};
+use stewart::{State, System, World};
+use stewart_utils::Context;
 use tracing::{event, instrument, Level};
 
 /// Create a new daicon file.
@@ -16,8 +17,10 @@ pub struct CreateCommand {
 pub fn start(mut ctx: Context, command: CreateCommand) -> Result<(), Error> {
     event!(Level::INFO, "creating package");
 
-    let (id, mut ctx) = ctx.create()?;
-    ctx.start(id, Options::default(), CreateCommandActor)?;
+    let id = ctx.register(CreateCommandSystem);
+
+    let (id, mut ctx) = ctx.create(id)?;
+    ctx.start(id, ())?;
 
     let file = ptero_file::open_system_file(&mut ctx, &command.target, false)?;
     ptero_daicon::open_file(&mut ctx, file, OpenMode::Create)?;
@@ -27,17 +30,13 @@ pub fn start(mut ctx: Context, command: CreateCommand) -> Result<(), Error> {
     Ok(())
 }
 
-struct CreateCommandActor;
+struct CreateCommandSystem;
 
-impl Actor for CreateCommandActor {
+impl System for CreateCommandSystem {
+    type Instance = ();
     type Message = ();
 
-    fn process(
-        &mut self,
-        _system: &mut System,
-        _id: Id,
-        _messages: &mut Messages<()>,
-    ) -> Result<After, Error> {
+    fn process(&mut self, _world: &mut World, _state: &mut State<Self>) -> Result<(), Error> {
         unimplemented!()
     }
 }

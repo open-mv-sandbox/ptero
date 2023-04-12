@@ -1,6 +1,6 @@
 //! Small essential utilities for stewart.
 
-mod map;
+mod context;
 mod when;
 
-pub use self::{map::MapExt, when::WhenExt};
+pub use self::{context::Context, when::Functional};

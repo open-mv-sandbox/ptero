@@ -4,8 +4,8 @@ use anyhow::Error;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
 use ptero_js::SystemH;
-use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
-use stewart_utils::{MapExt, WhenExt};
+use stewart::{Addr, State, System, World};
+use stewart_utils::{Context, Functional};
 use tracing::{event, instrument, Level};
 use uuid::{uuid, Uuid};
 use wasm_bindgen::prelude::*;
@@ -33,7 +33,7 @@ impl Viewer {
     pub async fn from_canvas(target: HtmlCanvasElement) -> Result<Viewer, String> {
         crate::init_hooks();
 
-        let system = System::new();
+        let system = World::new();
         let hnd = Rc::new(RefCell::new(system));
         let mut system = hnd.borrow_mut();
 
@@ -128,8 +128,11 @@ async fn start_service(
         swapchain_format,
         render_pipeline: None,
     };
-    let (id, mut ctx) = ctx.create()?;
-    ctx.start(id, Options::default(), service)?;
+
+    let id = ctx.register(ViewerServiceSystem);
+
+    let (id, mut ctx) = ctx.create(id)?;
+    ctx.start(id, service)?;
     let addr = Addr::new(id);
 
     // Start a fetch request for shader data
@@ -149,7 +152,7 @@ async fn start_service(
     // Just for testing, fetch an additional resource
     let action = SourceAction::Get {
         id: uuid!("1f063ad4-5a91-47fe-b95c-668fc41a719d"),
-        on_result: ctx.when(|_, _, _| Ok(After::Continue))?,
+        on_result: ctx.when(|_, _, _| Ok(false))?,
     };
     let message = SourceMessage {
         id: Uuid::new_v4(),
@@ -158,6 +161,33 @@ async fn start_service(
     ctx.send(source, message);
 
     Ok(addr)
+}
+
+struct ViewerServiceSystem;
+
+impl System for ViewerServiceSystem {
+    type Instance = ViewerService;
+    type Message = Message;
+
+    fn process(&mut self, _world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+        while let Some((_id, instance, message)) = state.next() {
+            match message {
+                Message::ShaderFetched(message) => {
+                    let data = std::str::from_utf8(&message.data)?;
+                    let pipeline = create_render_pipeline(
+                        &instance.device,
+                        &instance.pipeline_layout,
+                        instance.swapchain_format,
+                        &data,
+                    );
+                    instance.render_pipeline = Some(pipeline);
+                }
+                Message::Tick => instance.tick(),
+            }
+        }
+
+        Ok(())
+    }
 }
 
 struct ViewerService {
@@ -199,35 +229,6 @@ impl ViewerService {
 
         self.queue.submit(Some(encoder.finish()));
         frame.present();
-    }
-}
-
-impl Actor for ViewerService {
-    type Message = Message;
-
-    fn process(
-        &mut self,
-        _system: &mut System,
-        _id: Id,
-        messages: &mut Messages<Message>,
-    ) -> Result<After, Error> {
-        while let Some(message) = messages.next() {
-            match message {
-                Message::ShaderFetched(message) => {
-                    let data = std::str::from_utf8(&message.data)?;
-                    let pipeline = create_render_pipeline(
-                        &self.device,
-                        &self.pipeline_layout,
-                        self.swapchain_format,
-                        &data,
-                    );
-                    self.render_pipeline = Some(pipeline);
-                }
-                Message::Tick => self.tick(),
-            }
-        }
-
-        Ok(After::Continue)
     }
 }
 

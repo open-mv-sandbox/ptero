@@ -1,59 +1,116 @@
 use std::{marker::PhantomData, sync::atomic::AtomicPtr};
 
-use anyhow::Error;
-use stewart::{Actor, Addr, After, Context, Id, Messages, Options, System};
+use anyhow::{Context as _, Error};
+use stewart::{ActorId, Addr, State, System, World};
 
-/// Function-actor utility `Context` extension.
-pub trait WhenExt<F, M> {
+use crate::Context;
+
+/// Quick functional extension utilities for `Context`.
+pub trait Functional {
     /// Create an actor that runs a function when receiving a message.
-    fn when(&mut self, function: F) -> Result<Addr<M>, Error>;
+    ///
+    /// If this callback returns false, the actor will be stopped.
+    fn when<F, M>(&mut self, function: F) -> Result<Addr<M>, Error>
+    where
+        F: FnMut(&mut World, ActorId, M) -> Result<bool, Error> + 'static,
+        M: 'static;
+
+    /// Create an actor that maps one message into another one and relays it.
+    fn map<F, I, O>(&mut self, target: Addr<O>, function: F) -> Result<Addr<I>, Error>
+    where
+        F: FnMut(I) -> O + 'static,
+        I: 'static,
+        O: 'static;
+
+    /// Same as `map`, but stops after handling one message.
+    fn map_once<F, I, O>(&mut self, target: Addr<O>, function: F) -> Result<Addr<I>, Error>
+    where
+        F: FnOnce(I) -> O + 'static,
+        I: 'static,
+        O: 'static;
 }
 
-impl<'a, F, M> WhenExt<F, M> for Context<'a>
-where
-    F: FnMut(&mut System, Id, M) -> Result<After, Error> + 'static,
-    M: 'static,
-{
-    fn when(&mut self, function: F) -> Result<Addr<M>, Error> {
-        let (id, mut ctx) = self.create()?;
+impl<'a> Functional for Context<'a> {
+    fn when<F, M>(&mut self, function: F) -> Result<Addr<M>, Error>
+    where
+        F: FnMut(&mut World, ActorId, M) -> Result<bool, Error> + 'static,
+        M: 'static,
+    {
+        // In-line create a new system
+        let system: WhenSystem<F, M> = WhenSystem { _w: PhantomData };
+        let id = self.register(system);
+
+        let (id, mut ctx) = self.create(id)?;
         let actor = When::<F, M> {
             function,
             _a: PhantomData,
         };
-        ctx.start(id, Options::default().with_high_priority(), actor)?;
+        ctx.start(id, actor)?;
 
         Ok(Addr::new(id))
     }
+
+    fn map<F, I, O>(&mut self, target: Addr<O>, mut function: F) -> Result<Addr<I>, Error>
+    where
+        F: FnMut(I) -> O + 'static,
+        I: 'static,
+        O: 'static,
+    {
+        let addr = self.when(move |world, _id, message| {
+            let message = (function)(message);
+            world.send(target, message);
+            Ok(true)
+        })?;
+
+        Ok(addr)
+    }
+
+    fn map_once<F, I, O>(&mut self, target: Addr<O>, function: F) -> Result<Addr<I>, Error>
+    where
+        F: FnOnce(I) -> O + 'static,
+        I: 'static,
+        O: 'static,
+    {
+        let mut function = Some(function);
+        let addr = self.when(move |world, _id, message| {
+            let function = function
+                .take()
+                .context("map_once actor called more than once")?;
+            let message = (function)(message);
+            world.send(target, message);
+            Ok(false)
+        })?;
+
+        Ok(addr)
+    }
 }
 
-struct When<F, I> {
-    function: F,
-    _a: PhantomData<AtomicPtr<I>>,
+struct WhenSystem<F, M> {
+    _w: PhantomData<When<F, M>>,
 }
 
-impl<F, M> Actor for When<F, M>
+impl<F, M> System for WhenSystem<F, M>
 where
-    F: FnMut(&mut System, Id, M) -> Result<After, Error> + 'static,
+    F: FnMut(&mut World, ActorId, M) -> Result<bool, Error> + 'static,
     M: 'static,
 {
+    type Instance = When<F, M>;
     type Message = M;
 
-    fn process(
-        &mut self,
-        system: &mut System,
-        id: Id,
-        messages: &mut Messages<M>,
-    ) -> Result<After, Error> {
-        let mut return_after = After::Continue;
+    fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+        while let Some((id, instance, message)) = state.next() {
+            let result = (instance.function)(world, id, message)?;
 
-        while let Some(message) = messages.next() {
-            let after = (self.function)(system, id, message)?;
-
-            if after == After::Stop {
-                return_after = After::Stop;
+            if !result {
+                world.stop(id)?;
             }
         }
 
-        Ok(return_after)
+        Ok(())
     }
+}
+
+struct When<F, M> {
+    function: F,
+    _a: PhantomData<AtomicPtr<M>>,
 }

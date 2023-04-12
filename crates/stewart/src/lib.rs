@@ -3,19 +3,14 @@
 //! This is an API reference for the stewart rust library. For a detailed user guide, read the
 //! stewart book.
 
-mod actor;
-mod actor_tree;
-mod context;
-mod messages;
-mod node;
-mod slot;
 mod system;
+mod tree;
+mod world;
 
 pub use self::{
-    actor::{Actor, After},
-    actor_tree::{CreateError, Id, StartError},
-    context::Context,
-    messages::Messages,
-    node::Options,
-    system::{Addr, System},
+    system::{State, System},
+    tree::CreateError,
+    world::{ActorId, Addr, SystemId, World},
 };
+
+// TODO: Remove anyhow from all public interfaces and add an InternalError type.
