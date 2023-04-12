@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_daicon::OpenMode;
-use stewart::{State, System, World};
+use stewart::{State, System, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
 
@@ -17,7 +17,7 @@ pub struct CreateCommand {
 pub fn start(mut ctx: Context, command: CreateCommand) -> Result<(), Error> {
     event!(Level::INFO, "creating package");
 
-    let id = ctx.register(CreateCommandSystem);
+    let id = ctx.register(SystemOptions::default(), CreateCommandSystem);
 
     let (id, mut ctx) = ctx.create(id)?;
     ctx.start(id, ())?;

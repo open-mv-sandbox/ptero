@@ -8,7 +8,7 @@ mod tree;
 mod world;
 
 pub use self::{
-    system::{State, System},
+    system::{State, System, SystemOptions},
     tree::CreateError,
     world::{ActorId, Addr, SystemId, World},
 };

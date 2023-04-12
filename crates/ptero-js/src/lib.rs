@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::BTreeSet, rc::Rc};
 use anyhow::{Context as _, Error};
 use js_sys::{ArrayBuffer, Uint8Array};
 use ptero_file::{FileAction, FileMessage, ReadResult};
-use stewart::{Addr, State, System, World};
+use stewart::{Addr, State, System, SystemOptions, World};
 use stewart_utils::{Context, Functional};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -17,7 +17,7 @@ pub fn open_fetch_file(
     url: String,
     hnd: SystemH,
 ) -> Result<Addr<FileMessage>, Error> {
-    let id = ctx.register(FetchFileSystem);
+    let id = ctx.register(SystemOptions::default(), FetchFileSystem);
 
     let (id, mut ctx) = ctx.create(id)?;
     let addr = Addr::new(id);

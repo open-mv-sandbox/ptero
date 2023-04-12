@@ -29,7 +29,7 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{Addr, State, System, SystemId, World};
+    use stewart::{Addr, State, System, SystemId, SystemOptions, World};
     use tracing::{event, instrument, span, Level};
 
     /// The entrypoint of the Hello Service's API.
@@ -41,7 +41,7 @@ mod hello_service {
     impl Hello {
         pub fn new(world: &mut World) -> Self {
             Self {
-                actor: world.register(HelloServiceSystem),
+                actor: world.register(SystemOptions::default(), HelloServiceSystem),
             }
         }
 

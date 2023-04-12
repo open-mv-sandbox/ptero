@@ -2,7 +2,7 @@ use anyhow::Error;
 use bytemuck::{bytes_of, Zeroable};
 use daicon::Entry;
 use ptero_file::{FileAction, FileMessage, WriteLocation, WriteResult};
-use stewart::{Addr, State, System, World};
+use stewart::{Addr, State, System, SystemOptions, World};
 use stewart_utils::{Context, Functional};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -15,7 +15,7 @@ pub fn start_set_task(
     data: Vec<u8>,
     on_result: Addr<()>,
 ) -> Result<Addr<u32>, Error> {
-    let sid = ctx.register(SetTaskSystem);
+    let sid = ctx.register(SystemOptions::default(), SetTaskSystem);
 
     let (aid, mut ctx) = ctx.create(sid)?;
     let addr = Addr::new(aid);

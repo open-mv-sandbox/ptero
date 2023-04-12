@@ -4,7 +4,7 @@ use anyhow::Error;
 use bytemuck::{bytes_of, Zeroable};
 use daicon::{Entry, Header};
 use ptero_file::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
-use stewart::{ActorId, Addr, State, System, World};
+use stewart::{ActorId, Addr, State, System, SystemOptions, World};
 use stewart_utils::{Context, Functional};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -20,7 +20,7 @@ pub fn open_file(
     file: Addr<FileMessage>,
     mode: OpenMode,
 ) -> Result<Addr<SourceMessage>, Error> {
-    let id = ctx.register(FileSourceSystem);
+    let id = ctx.register(SystemOptions::default(), FileSourceSystem);
 
     let (id, mut ctx) = ctx.create(id)?;
     let addr = Addr::new(id);
@@ -62,7 +62,7 @@ pub fn open_file(
             let action = FileAction::Write {
                 location: WriteLocation::Offset(0),
                 data,
-                on_result: ctx.when(|_, _, _| Ok(false))?,
+                on_result: ctx.when(SystemOptions::default(), |_, _, _| Ok(false))?,
             };
             let message = FileMessage {
                 id: Uuid::new_v4(),

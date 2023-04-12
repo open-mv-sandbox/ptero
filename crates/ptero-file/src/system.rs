@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Error};
-use stewart::{Addr, State, System, World};
+use stewart::{Addr, State, System, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
 
@@ -25,7 +25,7 @@ pub fn open_system_file(
         .open(path)
         .context("failed to open system file for writing")?;
 
-    let id = ctx.register(SystemFileSystem);
+    let id = ctx.register(SystemOptions::default(), SystemFileSystem);
 
     let (id, mut ctx) = ctx.create(id)?;
     let instance = SystemFile { file };

@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Error;
 use rstest::{fixture, rstest};
-use stewart::{ActorId, Addr, State, System, SystemId, World};
+use stewart::{ActorId, Addr, State, System, SystemId, SystemOptions, World};
 use tracing_test::traced_test;
 
 #[rstest]
@@ -45,7 +45,7 @@ fn system_stops_actors(mut world: TestWorld) -> Result<(), Error> {
 #[fixture]
 fn world() -> TestWorld {
     let mut world = World::new();
-    let system = world.register(TestActorSystem);
+    let system = world.register(SystemOptions::default(), TestActorSystem);
 
     let root = create_actor(&mut world, system, None);
     let child = create_actor(&mut world, system, Some(root.id));

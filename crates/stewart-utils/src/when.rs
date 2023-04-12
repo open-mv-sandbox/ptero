@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, sync::atomic::AtomicPtr};
 
 use anyhow::{Context as _, Error};
-use stewart::{ActorId, Addr, State, System, World};
+use stewart::{ActorId, Addr, State, System, SystemOptions, World};
 
 use crate::Context;
 
@@ -10,7 +10,7 @@ pub trait Functional {
     /// Create an actor that runs a function when receiving a message.
     ///
     /// If this callback returns false, the actor will be stopped.
-    fn when<F, M>(&mut self, function: F) -> Result<Addr<M>, Error>
+    fn when<F, M>(&mut self, options: SystemOptions, function: F) -> Result<Addr<M>, Error>
     where
         F: FnMut(&mut World, ActorId, M) -> Result<bool, Error> + 'static,
         M: 'static;
@@ -31,14 +31,14 @@ pub trait Functional {
 }
 
 impl<'a> Functional for Context<'a> {
-    fn when<F, M>(&mut self, function: F) -> Result<Addr<M>, Error>
+    fn when<F, M>(&mut self, options: SystemOptions, function: F) -> Result<Addr<M>, Error>
     where
         F: FnMut(&mut World, ActorId, M) -> Result<bool, Error> + 'static,
         M: 'static,
     {
         // In-line create a new system
         let system: WhenSystem<F, M> = WhenSystem { _w: PhantomData };
-        let id = self.register(system);
+        let id = self.register(options, system);
 
         let (id, mut ctx) = self.create(id)?;
         let actor = When::<F, M> {
@@ -56,11 +56,14 @@ impl<'a> Functional for Context<'a> {
         I: 'static,
         O: 'static,
     {
-        let addr = self.when(move |world, _id, message| {
-            let message = (function)(message);
-            world.send(target, message);
-            Ok(true)
-        })?;
+        let addr = self.when(
+            SystemOptions::high_priority(),
+            move |world, _id, message| {
+                let message = (function)(message);
+                world.send(target, message);
+                Ok(true)
+            },
+        )?;
 
         Ok(addr)
     }
@@ -72,14 +75,17 @@ impl<'a> Functional for Context<'a> {
         O: 'static,
     {
         let mut function = Some(function);
-        let addr = self.when(move |world, _id, message| {
-            let function = function
-                .take()
-                .context("map_once actor called more than once")?;
-            let message = (function)(message);
-            world.send(target, message);
-            Ok(false)
-        })?;
+        let addr = self.when(
+            SystemOptions::high_priority(),
+            move |world, _id, message| {
+                let function = function
+                    .take()
+                    .context("map_once actor called more than once")?;
+                let message = (function)(message);
+                world.send(target, message);
+                Ok(false)
+            },
+        )?;
 
         Ok(addr)
     }

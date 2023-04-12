@@ -1,5 +1,5 @@
 use std::{
-    any::Any,
+    any::{type_name, Any},
     collections::{BTreeMap, VecDeque},
 };
 
@@ -17,7 +17,35 @@ pub trait System: Sized + 'static {
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error>;
 }
 
+/// Options to inform the world on how to schedule a system.
+#[derive(Default, Debug, Clone)]
+#[non_exhaustive]
+pub struct SystemOptions {
+    /// Sets if this system is 'high-priority'.
+    ///
+    /// Typically, this means the world will always place the system at the *start* of the queue.
+    /// This is useful for systems that simply relay messages to other systems.
+    /// In those cases, the message waiting at the end of the queue would hurt performance by
+    /// fragmenting more impactful batches, and increase latency drastically.
+    pub high_priority: bool,
+}
+
+impl SystemOptions {
+    /// Convenience alias for `Self::default().with_high_priority()`.
+    pub fn high_priority() -> Self {
+        Self::default().with_high_priority()
+    }
+
+    /// Sets `high_priority` to true.
+    pub fn with_high_priority(mut self) -> Self {
+        self.high_priority = true;
+        self
+    }
+}
+
 pub trait AnySystemEntry {
+    fn debug_name(&self) -> &'static str;
+
     fn insert(&mut self, actor: ActorId, slot: &mut dyn Any);
 
     fn remove(&mut self, actor: ActorId);
@@ -32,7 +60,7 @@ where
     S: System,
 {
     system: S,
-    recv: State<S>,
+    state: State<S>,
 }
 
 impl<S> SystemEntry<S>
@@ -42,7 +70,7 @@ where
     pub fn new(system: S) -> Self {
         Self {
             system,
-            recv: State {
+            state: State {
                 instances: BTreeMap::new(),
                 queue: VecDeque::new(),
             },
@@ -54,6 +82,10 @@ impl<S> AnySystemEntry for SystemEntry<S>
 where
     S: System,
 {
+    fn debug_name(&self) -> &'static str {
+        type_name::<S>()
+    }
+
     fn insert(&mut self, actor: ActorId, slot: &mut dyn Any) {
         // TODO: Graceful error handling
 
@@ -61,14 +93,14 @@ where
         let slot: &mut Option<S::Instance> = slot.downcast_mut().unwrap();
         let instance = slot.take().unwrap();
 
-        self.recv.instances.insert(actor, instance);
+        self.state.instances.insert(actor, instance);
     }
 
     fn remove(&mut self, actor: ActorId) {
-        self.recv.instances.remove(&actor);
+        self.state.instances.remove(&actor);
 
         // Drop pending messages of this instance
-        self.recv.queue.retain(|(i, _)| *i != actor);
+        self.state.queue.retain(|(i, _)| *i != actor);
     }
 
     fn enqueue(&mut self, actor: ActorId, slot: &mut dyn Any) {
@@ -78,13 +110,13 @@ where
         let slot: &mut Option<S::Message> = slot.downcast_mut().unwrap();
         let message = slot.take().unwrap();
 
-        self.recv.queue.push_front((actor, message));
+        self.state.queue.push_front((actor, message));
     }
 
     fn process(&mut self, world: &mut World) {
-        let result = self.system.process(world, &mut self.recv);
+        let result = self.system.process(world, &mut self.state);
 
-        if !self.recv.queue.is_empty() {
+        if !self.state.queue.is_empty() {
             event!(Level::WARN, "system did not process all pending messages");
         }
 
@@ -98,6 +130,7 @@ where
     }
 }
 
+/// State of a system, such as its actor instances and pending messages.
 pub struct State<S>
 where
     S: System,

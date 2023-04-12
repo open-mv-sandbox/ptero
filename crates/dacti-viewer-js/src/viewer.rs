@@ -4,7 +4,7 @@ use anyhow::Error;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
 use ptero_js::SystemH;
-use stewart::{Addr, State, System, World};
+use stewart::{Addr, State, System, SystemOptions, World};
 use stewart_utils::{Context, Functional};
 use tracing::{event, instrument, Level};
 use uuid::{uuid, Uuid};
@@ -129,7 +129,7 @@ async fn start_service(
         render_pipeline: None,
     };
 
-    let id = ctx.register(ViewerServiceSystem);
+    let id = ctx.register(SystemOptions::default(), ViewerServiceSystem);
 
     let (id, mut ctx) = ctx.create(id)?;
     ctx.start(id, service)?;
@@ -152,7 +152,7 @@ async fn start_service(
     // Just for testing, fetch an additional resource
     let action = SourceAction::Get {
         id: uuid!("1f063ad4-5a91-47fe-b95c-668fc41a719d"),
-        on_result: ctx.when(|_, _, _| Ok(false))?,
+        on_result: ctx.when(SystemOptions::default(), |_, _, _| Ok(false))?,
     };
     let message = SourceMessage {
         id: Uuid::new_v4(),

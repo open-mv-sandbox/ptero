@@ -1,5 +1,5 @@
 use anyhow::Error;
-use stewart::{Addr, State, System, World};
+use stewart::{Addr, State, System, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
 
@@ -8,7 +8,7 @@ use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 /// Start a file service from a buffer.
 #[instrument("buffer-file", skip_all)]
 pub fn open_buffer(ctx: &mut Context, buffer: Vec<u8>) -> Result<Addr<FileMessage>, Error> {
-    let id = ctx.register(BufferFileSystem);
+    let id = ctx.register(SystemOptions::default(), BufferFileSystem);
 
     let (id, mut ctx) = ctx.create(id)?;
     let instance = BufferFile { buffer };

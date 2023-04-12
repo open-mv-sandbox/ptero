@@ -1,5 +1,4 @@
 use std::{
-    any::type_name,
     collections::{HashMap, VecDeque},
     marker::PhantomData,
     sync::atomic::AtomicPtr,
@@ -12,7 +11,7 @@ use tracing::{event, Level};
 use crate::{
     system::{AnySystemEntry, SystemEntry},
     tree::{Node, Tree},
-    CreateError, System,
+    CreateError, System, SystemOptions,
 };
 
 /// Thread-local system and actor collection.
@@ -38,13 +37,14 @@ impl World {
     /// However, the overhead of not re-using systems is acceptable in most cases.
     ///
     /// TODO: Option for automatic re-use by scanning for a system of a type to already exist.
-    pub fn register<S>(&mut self, system: S) -> SystemId
+    pub fn register<S>(&mut self, options: SystemOptions, system: S) -> SystemId
     where
         S: System,
     {
+        let entry = Box::new(SystemEntry::new(system));
         let slot = SystemSlot {
-            debug_name: type_name::<S>(),
-            system: Some(Box::new(SystemEntry::new(system))),
+            options,
+            entry: Some(entry),
         };
         let index = self.systems.insert(slot);
 
@@ -86,7 +86,7 @@ impl World {
             .systems
             .get_mut(node.system().index)
             .context("failed to find system")?;
-        let system = slot.system.as_mut().context("system unavailable")?;
+        let system = slot.entry.as_mut().context("system unavailable")?;
 
         // Give the instance to the system
         let mut instance = Some(instance);
@@ -144,7 +144,7 @@ impl World {
             .systems
             .get_mut(system_id.index)
             .context("failed to find system")?;
-        let system = slot.system.as_mut().context("system unavailable")?;
+        let system = slot.entry.as_mut().context("system unavailable")?;
 
         // Hand the message to the system
         let mut message = Some(message);
@@ -152,14 +152,11 @@ impl World {
 
         // Queue for later processing
         if !self.queue.contains(&system_id) {
-            self.queue.push_back(system_id);
-
-            // TODO: Re-add high-priority
-            /*if !node.options().high_priority {
-                self.queue.push_back(id);
+            if !slot.options.high_priority {
+                self.queue.push_back(system_id);
             } else {
-                self.queue.push_front(id);
-            }*/
+                self.queue.push_front(system_id);
+            }
         }
 
         Ok(())
@@ -184,7 +181,7 @@ impl World {
             .systems
             .get_mut(system_id.index)
             .context("failed to find system")?;
-        let mut system = slot.system.take().context("system unavailable")?;
+        let mut system = slot.entry.take().context("system unavailable")?;
 
         // Run the process handler
         system.process(self);
@@ -194,7 +191,7 @@ impl World {
             .systems
             .get_mut(system_id.index)
             .context("failed to find system for return")?;
-        slot.system = Some(system);
+        slot.entry = Some(system);
 
         Ok(())
     }
@@ -208,7 +205,7 @@ impl World {
                 .systems
                 .get_mut(system.index)
                 .context("failed to find system")?;
-            let system = slot.system.as_mut().context("system unavailable")?;
+            let system = slot.entry.as_mut().context("system unavailable")?;
 
             system.remove(actor);
         }
@@ -228,7 +225,8 @@ impl Drop for World {
                     let name = self
                         .systems
                         .get(system.index)
-                        .map(|s| s.debug_name)
+                        .and_then(|s| s.entry.as_ref())
+                        .map(|s| s.debug_name())
                         .unwrap_or("Unknown");
                     (name, count)
                 })
@@ -236,16 +234,16 @@ impl Drop for World {
 
             event!(
                 Level::WARN,
-                ?counts,
-                "actors not stopped before system drop"
+                "actors not stopped before system drop\n{:#?}",
+                counts
             );
         }
     }
 }
 
 struct SystemSlot {
-    debug_name: &'static str,
-    system: Option<Box<dyn AnySystemEntry>>,
+    options: SystemOptions,
+    entry: Option<Box<dyn AnySystemEntry>>,
 }
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]

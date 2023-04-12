@@ -2,7 +2,7 @@ use anyhow::Error;
 use clap::Args;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
-use stewart::{Addr, State, System, World};
+use stewart::{Addr, State, System, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -27,7 +27,7 @@ pub struct GetCommand {
 pub fn start(mut ctx: Context, command: GetCommand) -> Result<(), Error> {
     event!(Level::INFO, "getting file from package");
 
-    let id = ctx.register(GetCommandSystem);
+    let id = ctx.register(SystemOptions::default(), GetCommandSystem);
     let (id, mut ctx) = ctx.create(id)?;
 
     // Open up the package for writing in ptero-daicon

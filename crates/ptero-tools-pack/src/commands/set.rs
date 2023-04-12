@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
-use stewart::{Addr, State, System, World};
+use stewart::{Addr, State, System, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -26,7 +26,7 @@ pub struct SetCommand {
 pub fn start(mut ctx: Context, command: SetCommand) -> Result<(), Error> {
     event!(Level::INFO, "setting file in package");
 
-    let id = ctx.register(AddCommandSystem);
+    let id = ctx.register(SystemOptions::default(), AddCommandSystem);
     let (id, mut ctx) = ctx.create(id)?;
 
     let data = std::fs::read(&command.input)?;
