@@ -1,6 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
+use ptero_file::SystemFile;
 use stewart::{Addr, State, System, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
@@ -32,7 +33,7 @@ pub fn start(mut ctx: Context, command: SetCommand) -> Result<(), Error> {
     let data = std::fs::read(&command.input)?;
 
     // Open up the package for writing in ptero-daicon
-    let file = ptero_file::open_system_file(&mut ctx, &command.target, false)?;
+    let file = SystemFile::new(&mut ctx).open(&mut ctx, &command.target, false)?;
     let source = ptero_daicon::open_file(&mut ctx, file, OpenMode::ReadWrite)?;
 
     // Add the data to the source
@@ -58,8 +59,8 @@ impl System for AddCommandSystem {
     type Message = ();
 
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
-        while let Some((id, _, _)) = state.next() {
-            world.stop(id)?;
+        while let Some((actor, _)) = state.next() {
+            world.stop(actor)?;
         }
 
         Ok(())

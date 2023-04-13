@@ -1,4 +1,4 @@
-use anyhow::Error;
+use anyhow::{Context as _, Error};
 use bytemuck::{bytes_of, Zeroable};
 use daicon::Entry;
 use ptero_file::{FileAction, FileMessage, WriteLocation, WriteResult};
@@ -57,7 +57,9 @@ impl System for SetTaskSystem {
 
     #[instrument("set-task", skip_all)]
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
-        while let Some((id, instance, message)) = state.next() {
+        while let Some((actor, message)) = state.next() {
+            let instance = state.get_mut(actor).context("failed to get instance")?;
+
             match message {
                 Message::Slot(offset) => {
                     instance.entry_offset = Some(offset);
@@ -71,7 +73,7 @@ impl System for SetTaskSystem {
                     event!(Level::DEBUG, "success, sending result");
 
                     world.send(instance.on_result, ());
-                    world.stop(id)?;
+                    world.stop(actor)?;
                     return Ok(());
                 }
             }
@@ -92,8 +94,8 @@ impl System for SetTaskSystem {
                     action: FileAction::Write {
                         location: WriteLocation::Offset(entry_offset as u64),
                         data: bytes_of(&instance.entry).to_owned(),
-                        on_result: Context::of(world, id)
-                            .map_once(Addr::new(id), Message::EntryResult)?,
+                        on_result: Context::of(world, actor)
+                            .map_once(Addr::new(actor), Message::EntryResult)?,
                     },
                 };
                 world.send(instance.file, message);

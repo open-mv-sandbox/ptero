@@ -1,7 +1,7 @@
-use anyhow::Error;
+use anyhow::{Context as _, Error};
 use clap::Args;
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
-use ptero_file::ReadResult;
+use ptero_file::{ReadResult, SystemFile};
 use stewart::{Addr, State, System, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
@@ -31,7 +31,7 @@ pub fn start(mut ctx: Context, command: GetCommand) -> Result<(), Error> {
     let (id, mut ctx) = ctx.create(id)?;
 
     // Open up the package for writing in ptero-daicon
-    let file = ptero_file::open_system_file(&mut ctx, &command.target, false)?;
+    let file = SystemFile::new(&mut ctx).open(&mut ctx, &command.target, false)?;
     let source = ptero_daicon::open_file(&mut ctx, file, OpenMode::ReadWrite)?;
 
     // Add the data to the source
@@ -56,9 +56,10 @@ impl System for GetCommandSystem {
     type Message = ReadResult;
 
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
-        while let Some((id, instance, message)) = state.next() {
+        while let Some((actor, message)) = state.next() {
+            let instance = state.get_mut(actor).context("failed to get instance")?;
             std::fs::write(&instance.output, message.data)?;
-            world.stop(id)?;
+            world.stop(actor)?;
         }
 
         Ok(())

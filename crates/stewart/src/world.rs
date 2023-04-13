@@ -11,10 +11,10 @@ use tracing::{event, Level};
 use crate::{
     system::{AnySystemEntry, SystemEntry},
     tree::{Node, Tree},
-    CreateError, System, SystemOptions,
+    CreateError, InternalError, StartError, System, SystemOptions,
 };
 
-/// Thread-local system and actor collection.
+/// Thread-local system and actor scheduler.
 #[derive(Default)]
 pub struct World {
     systems: Arena<SystemSlot>,
@@ -35,12 +35,12 @@ impl World {
     /// You are recommended to re-use these for actors of the same type. Processing many messages
     /// at once is generally faster, and allows you to perform additional optimizations.
     /// However, the overhead of not re-using systems is acceptable in most cases.
-    ///
-    /// TODO: Option for automatic re-use by scanning for a system of a type to already exist.
     pub fn register<S>(&mut self, options: SystemOptions, system: S) -> SystemId
     where
         S: System,
     {
+        // TODO: Option for automatic re-use by scanning for a system of a type to already exist.
+
         let entry = Box::new(SystemEntry::new(system));
         let slot = SystemSlot {
             options,
@@ -68,7 +68,7 @@ impl World {
     }
 
     /// Start an actor instance, making it available for handling messages.
-    pub fn start<I>(&mut self, actor: ActorId, instance: I) -> Result<(), Error>
+    pub fn start<I>(&mut self, actor: ActorId, instance: I) -> Result<(), StartError>
     where
         I: 'static,
     {
@@ -81,12 +81,13 @@ impl World {
         let node = self
             .tree
             .get_mut(actor.index)
-            .context("failed to find node")?;
+            .ok_or(StartError::ActorNotFound)?;
         let slot = self
             .systems
             .get_mut(node.system().index)
-            .context("failed to find system")?;
-        let system = slot.entry.as_mut().context("system unavailable")?;
+            .context("failed to find system")
+            .map_err(InternalError)?;
+        let system = slot.entry.as_mut().ok_or(StartError::SystemUnavailable)?;
 
         // Give the instance to the system
         let mut instance = Some(instance);
@@ -100,7 +101,7 @@ impl World {
     /// After stopping an actor will no longer accept messages, but can still process them.
     /// After the current process step is done, the actor and all remaining pending messages will
     /// be dropped.
-    pub fn stop(&mut self, actor: ActorId) -> Result<(), Error> {
+    pub fn stop(&mut self, actor: ActorId) -> Result<(), InternalError> {
         let pending_stop = &mut self.pending_stop;
 
         // Ignore already pending to stop
@@ -163,7 +164,7 @@ impl World {
     }
 
     /// Process all pending messages, until none are left.
-    pub fn run_until_idle(&mut self) -> Result<(), Error> {
+    pub fn run_until_idle(&mut self) -> Result<(), InternalError> {
         self.apply_pending().context("failed to apply pending")?;
 
         while let Some(system_id) = self.queue.pop_front() {
@@ -246,11 +247,13 @@ struct SystemSlot {
     entry: Option<Box<dyn AnySystemEntry>>,
 }
 
+/// Handle referencing an actor in a `World`.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct ActorId {
     index: Index,
 }
 
+/// Handle referencing a system on a `World`.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct SystemId {
     index: Index,
@@ -269,6 +272,9 @@ pub struct Addr<M> {
 }
 
 impl<M> Addr<M> {
+    /// Create a new typed address for an actor.
+    ///
+    /// Message type is not checked here, but will be validated on sending.
     pub fn new(actor: ActorId) -> Self {
         Self {
             actor,

@@ -10,7 +10,10 @@ use crate::{ActorId, World};
 
 /// Actor processing system trait.
 pub trait System: Sized + 'static {
+    /// The type of actor instances this system processes.
     type Instance;
+
+    /// The type of messages actors of this system receive.
     type Message;
 
     /// Perform a processing step.
@@ -143,28 +146,17 @@ impl<S> State<S>
 where
     S: System,
 {
-    pub fn next(&mut self) -> Option<(ActorId, &mut S::Instance, S::Message)> {
-        loop {
-            let (actor, message) = if let Some(value) = self.queue.pop_front() {
-                value
-            } else {
-                return None;
-            };
-
-            if !self.instances.contains_key(&actor) {
-                event!(Level::ERROR, "failed to find instance for message");
-                continue;
-            }
-
-            let instance = self.instances.get_mut(&actor).unwrap();
-            return Some((actor, instance, message));
-        }
+    /// Get the next queued message, along with the actor ID it's for.
+    pub fn next(&mut self) -> Option<(ActorId, S::Message)> {
+        self.queue.pop_front()
     }
 
+    /// Get a reference to an actor's instance.
     pub fn get(&self, actor: ActorId) -> Option<&S::Instance> {
         self.instances.get(&actor)
     }
 
+    /// Get a mutable reference to an actor's instance.
     pub fn get_mut(&mut self, actor: ActorId) -> Option<&mut S::Instance> {
         self.instances.get_mut(&actor)
     }

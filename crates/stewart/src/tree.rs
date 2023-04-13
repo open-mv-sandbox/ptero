@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Error};
-use thiserror::Error;
 use thunderdome::{Arena, Index};
 
-use crate::SystemId;
+use crate::{CreateError, SystemId};
 
 #[derive(Default)]
 pub struct Tree {
@@ -97,11 +96,4 @@ impl Node {
     pub fn parent(&self) -> Option<Index> {
         self.parent
     }
-}
-
-#[derive(Error, Debug)]
-#[non_exhaustive]
-pub enum CreateError {
-    #[error("parent not found")]
-    ParentNotFound,
 }

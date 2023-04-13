@@ -1,6 +1,6 @@
 use std::{io::Write, mem::size_of};
 
-use anyhow::Error;
+use anyhow::{Context as _, Error};
 use bytemuck::{bytes_of, Zeroable};
 use daicon::{Entry, Header};
 use ptero_file::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
@@ -100,11 +100,13 @@ impl System for FileSourceSystem {
     type Instance = FileSource;
     type Message = Message;
 
-    fn process(&mut self, world: &mut World, messages: &mut State<Self>) -> Result<(), Error> {
-        while let Some((id, instance, message)) = messages.next() {
+    fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+        while let Some((actor, message)) = state.next() {
+            let instance = state.get_mut(actor).context("failed to get instance")?;
+
             match message {
                 Message::SourceMessage(message) => {
-                    instance.on_source_message(world, id, message)?;
+                    instance.on_source_message(world, actor, message)?;
                 }
                 Message::ReadTableResult(result) => {
                     instance.on_read_table(result)?;

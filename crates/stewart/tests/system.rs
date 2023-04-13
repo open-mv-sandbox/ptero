@@ -3,7 +3,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use anyhow::Error;
+use anyhow::{Context, Error};
 use rstest::{fixture, rstest};
 use stewart::{ActorId, Addr, State, System, SystemId, SystemOptions, World};
 use tracing_test::traced_test;
@@ -88,7 +88,9 @@ impl System for TestActorSystem {
     type Message = ();
 
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
-        while let Some((id, instance, _)) = state.next() {
+        while let Some((id, _)) = state.next() {
+            let instance = state.get_mut(id).context("failed to get instance")?;
+
             instance.count.fetch_add(1, Ordering::SeqCst);
             world.stop(id)?;
         }

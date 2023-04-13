@@ -1,6 +1,7 @@
 use anyhow::Error;
 use clap::Args;
 use ptero_daicon::OpenMode;
+use ptero_file::SystemFile;
 use stewart::{State, System, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
@@ -22,7 +23,7 @@ pub fn start(mut ctx: Context, command: CreateCommand) -> Result<(), Error> {
     let (id, mut ctx) = ctx.create(id)?;
     ctx.start(id, ())?;
 
-    let file = ptero_file::open_system_file(&mut ctx, &command.target, false)?;
+    let file = SystemFile::new(&mut ctx).open(&mut ctx, &command.target, false)?;
     ptero_daicon::open_file(&mut ctx, file, OpenMode::Create)?;
 
     // TODO: Receive back open success/failure

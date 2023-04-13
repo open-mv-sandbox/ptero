@@ -1,33 +1,49 @@
-use anyhow::Error;
-use stewart::{Addr, State, System, SystemOptions, World};
+use anyhow::{Context as _, Error};
+use stewart::{Addr, State, System, SystemId, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
 
 use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 
-/// Start a file service from a buffer.
-#[instrument("buffer-file", skip_all)]
-pub fn open_buffer(ctx: &mut Context, buffer: Vec<u8>) -> Result<Addr<FileMessage>, Error> {
-    let id = ctx.register(SystemOptions::default(), BufferFileSystem);
+/// Buffer file API entry point.
+#[derive(Clone)]
+pub struct BufferFile {
+    system: SystemId,
+}
 
-    let (id, mut ctx) = ctx.create(id)?;
-    let instance = BufferFile { buffer };
-    ctx.start(id, instance)?;
+impl BufferFile {
+    pub fn new(world: &mut World) -> Self {
+        Self {
+            system: world.register(SystemOptions::default(), BufferFileSystem),
+        }
+    }
 
-    Ok(Addr::new(id))
+    #[instrument("buffer-file", skip_all)]
+    pub fn open_buffer(
+        &self,
+        ctx: &mut Context,
+        buffer: Vec<u8>,
+    ) -> Result<Addr<FileMessage>, Error> {
+        let (id, mut ctx) = ctx.create(self.system)?;
+        let instance = BufferFileService { buffer };
+        ctx.start(id, instance)?;
+
+        Ok(Addr::new(id))
+    }
 }
 
 struct BufferFileSystem;
 
 impl System for BufferFileSystem {
-    type Instance = BufferFile;
+    type Instance = BufferFileService;
     type Message = FileMessage;
 
     #[instrument("buffer-file", skip_all)]
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
         event!(Level::INFO, "handling message");
 
-        while let Some((_id, instance, message)) = state.next() {
+        while let Some((id, message)) = state.next() {
+            let instance = state.get_mut(id).context("failed to get instance")?;
             instance.handle(world, message);
         }
 
@@ -35,11 +51,11 @@ impl System for BufferFileSystem {
     }
 }
 
-struct BufferFile {
+struct BufferFileService {
     buffer: Vec<u8>,
 }
 
-impl BufferFile {
+impl BufferFileService {
     fn handle(&mut self, world: &mut World, message: FileMessage) {
         match message.action {
             FileAction::Read {

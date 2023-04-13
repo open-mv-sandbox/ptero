@@ -1,6 +1,6 @@
 use std::{borrow::Cow, cell::RefCell, rc::Rc};
 
-use anyhow::Error;
+use anyhow::{Context as _, Error};
 use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
 use ptero_js::SystemH;
@@ -170,7 +170,9 @@ impl System for ViewerServiceSystem {
     type Message = Message;
 
     fn process(&mut self, _world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
-        while let Some((_id, instance, message)) = state.next() {
+        while let Some((actor, message)) = state.next() {
+            let instance = state.get_mut(actor).context("failed to get instance")?;
+
             match message {
                 Message::ShaderFetched(message) => {
                     let data = std::str::from_utf8(&message.data)?;

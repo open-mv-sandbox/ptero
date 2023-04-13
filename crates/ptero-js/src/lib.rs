@@ -43,7 +43,9 @@ impl System for FetchFileSystem {
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
         let mut has_update = BTreeSet::new();
 
-        while let Some((actor, instance, message)) = state.next() {
+        while let Some((actor, message)) = state.next() {
+            let instance = state.get_mut(actor).context("failed to get instance")?;
+
             match message {
                 Message::File(message) => {
                     match message.action {

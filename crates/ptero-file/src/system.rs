@@ -4,47 +4,61 @@ use std::{
 };
 
 use anyhow::{Context as _, Error};
-use stewart::{Addr, State, System, SystemOptions, World};
+use stewart::{Addr, State, System, SystemId, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
 
 use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 
-/// Start a file service from a system file.
-#[instrument("system-file", skip_all)]
-pub fn open_system_file(
-    ctx: &mut Context,
-    path: &str,
-    truncate: bool,
-) -> Result<Addr<FileMessage>, Error> {
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .truncate(truncate)
-        .create(true)
-        .open(path)
-        .context("failed to open system file for writing")?;
+/// System file API entry point.
+#[derive(Clone)]
+pub struct SystemFile {
+    system: SystemId,
+}
 
-    let id = ctx.register(SystemOptions::default(), SystemFileSystem);
+impl SystemFile {
+    pub fn new(world: &mut World) -> Self {
+        Self {
+            system: world.register(SystemOptions::default(), SystemFileSystem),
+        }
+    }
 
-    let (id, mut ctx) = ctx.create(id)?;
-    let instance = SystemFile { file };
-    ctx.start(id, instance)?;
+    #[instrument("system-file", skip_all)]
+    pub fn open(
+        &self,
+        ctx: &mut Context,
+        path: &str,
+        truncate: bool,
+    ) -> Result<Addr<FileMessage>, Error> {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .truncate(truncate)
+            .create(true)
+            .open(path)
+            .context("failed to open system file for writing")?;
 
-    Ok(Addr::new(id))
+        let (id, mut ctx) = ctx.create(self.system)?;
+        let instance = SystemFileService { file };
+        ctx.start(id, instance)?;
+
+        Ok(Addr::new(id))
+    }
 }
 
 struct SystemFileSystem;
 
 impl System for SystemFileSystem {
-    type Instance = SystemFile;
+    type Instance = SystemFileService;
     type Message = FileMessage;
 
     #[instrument("system-file", skip_all)]
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
         event!(Level::INFO, "handling messages");
 
-        while let Some((_id, instance, message)) = state.next() {
+        while let Some((actor, message)) = state.next() {
+            let instance = state.get_mut(actor).context("failed to get instance")?;
+
             match message.action {
                 FileAction::Read {
                     offset,
@@ -97,7 +111,7 @@ impl System for SystemFileSystem {
     }
 }
 
-struct SystemFile {
+struct SystemFileService {
     file: File,
 }
 

@@ -28,7 +28,7 @@ fn main() -> Result<(), Error> {
 
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
-    use anyhow::Error;
+    use anyhow::{Context, Error};
     use stewart::{Addr, State, System, SystemId, SystemOptions, World};
     use tracing::{event, instrument, span, Level};
 
@@ -70,7 +70,9 @@ mod hello_service {
         fn process(&mut self, _world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
-            while let Some((_id, instance, message)) = state.next() {
+            while let Some((id, message)) = state.next() {
+                let instance = state.get_mut(id).context("failed to get instance")?;
+
                 let span = span!(Level::INFO, "hello-service", name = instance.name);
                 let _enter = span.enter();
 
