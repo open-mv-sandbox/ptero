@@ -30,12 +30,18 @@ pub enum CreateError {
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum StartError {
-    /// Actor not found.
+    /// The actor couldn't be found.
     #[error("actor not found")]
     ActorNotFound,
-    /// System unavailable.
+    /// The system is unavailable.
     #[error("system unavailable")]
     SystemUnavailable,
+    /// The actor has already been started.
+    #[error("actor already started")]
+    ActorAlreadyStarted,
+    /// Actor instance's type is wrong.
+    #[error("instance wrong type")]
+    InstanceWrongType,
     /// Internal error, see `InternalError`.
     #[error("internal error")]
     InternalError(#[from] InternalError),

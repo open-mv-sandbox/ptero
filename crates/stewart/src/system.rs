@@ -3,7 +3,7 @@ use std::{
     collections::{BTreeMap, VecDeque},
 };
 
-use anyhow::Error;
+use anyhow::{Context, Error};
 use tracing::{event, Level};
 
 use crate::{ActorId, World};
@@ -49,11 +49,11 @@ impl SystemOptions {
 pub trait AnySystemEntry {
     fn debug_name(&self) -> &'static str;
 
-    fn insert(&mut self, actor: ActorId, slot: &mut dyn Any);
+    fn insert(&mut self, actor: ActorId, slot: &mut dyn Any) -> Result<(), Error>;
 
     fn remove(&mut self, actor: ActorId);
 
-    fn enqueue(&mut self, actor: ActorId, slot: &mut dyn Any);
+    fn enqueue(&mut self, actor: ActorId, slot: &mut dyn Any) -> Result<(), Error>;
 
     fn process(&mut self, world: &mut World);
 }
@@ -89,14 +89,15 @@ where
         type_name::<S>()
     }
 
-    fn insert(&mut self, actor: ActorId, slot: &mut dyn Any) {
-        // TODO: Graceful error handling
-
+    fn insert(&mut self, actor: ActorId, slot: &mut dyn Any) -> Result<(), Error> {
         // Take the instance out
-        let slot: &mut Option<S::Instance> = slot.downcast_mut().unwrap();
-        let instance = slot.take().unwrap();
+        let slot: &mut Option<S::Instance> =
+            slot.downcast_mut().context("incorrect instance type")?;
+        let instance = slot.take().context("instance not in slot")?;
 
         self.state.instances.insert(actor, instance);
+
+        Ok(())
     }
 
     fn remove(&mut self, actor: ActorId) {
@@ -106,14 +107,15 @@ where
         self.state.queue.retain(|(i, _)| *i != actor);
     }
 
-    fn enqueue(&mut self, actor: ActorId, slot: &mut dyn Any) {
-        // TODO: Graceful error handling
-
+    fn enqueue(&mut self, actor: ActorId, slot: &mut dyn Any) -> Result<(), Error> {
         // Take the message out
-        let slot: &mut Option<S::Message> = slot.downcast_mut().unwrap();
-        let message = slot.take().unwrap();
+        let slot: &mut Option<S::Message> =
+            slot.downcast_mut().context("incorrect message type")?;
+        let message = slot.take().context("message not in slot")?;
 
         self.state.queue.push_front((actor, message));
+
+        Ok(())
     }
 
     fn process(&mut self, world: &mut World) {

@@ -21,6 +21,7 @@ pub struct World {
     tree: Tree,
     queue: VecDeque<SystemId>,
 
+    pending_start: Vec<ActorId>,
     pending_stop: Vec<(ActorId, SystemId)>,
 }
 
@@ -64,7 +65,10 @@ impl World {
         let node = Node::new(system, parent.map(|i| i.index));
         let index = self.tree.insert(node)?;
 
-        Ok(ActorId { index })
+        let actor = ActorId { index };
+        self.pending_start.push(actor);
+
+        Ok(actor)
     }
 
     /// Start an actor instance, making it available for handling messages.
@@ -74,8 +78,13 @@ impl World {
     {
         event!(Level::INFO, "starting actor");
 
-        // TODO: Validate not started yet
-        // TODO: Typed errors once again
+        // Validate if it's not started yet
+        let maybe_index = self.pending_start.iter().position(|v| *v == actor);
+        let pending_index = if let Some(value) = maybe_index {
+            value
+        } else {
+            return Err(StartError::ActorAlreadyStarted);
+        };
 
         // Find the node for the actor, and the associated system
         let node = self
@@ -91,7 +100,12 @@ impl World {
 
         // Give the instance to the system
         let mut instance = Some(instance);
-        system.insert(actor, &mut instance);
+        system
+            .insert(actor, &mut instance)
+            .map_err(|_| StartError::InstanceWrongType)?;
+
+        // Finalize remove pending
+        self.pending_start.remove(pending_index);
 
         Ok(())
     }
@@ -104,13 +118,14 @@ impl World {
     pub fn stop(&mut self, actor: ActorId) -> Result<(), InternalError> {
         let pending_stop = &mut self.pending_stop;
 
-        // Ignore already pending to stop
-        if pending_stop.iter().any(|(i, _)| *i == actor) {
-            return Ok(());
-        }
-
-        // Remove from the tree and mark any removed nodes as pending to stop
+        // Remove from the tree, and mark any removed nodes as pending to stop
         self.tree.remove(actor.index, |node| {
+            // Ignore already pending to stop
+            if pending_stop.iter().any(|(i, _)| *i == actor) {
+                return;
+            }
+
+            // Queue for stopping
             pending_stop.push((actor, node.system()));
         })?;
 
@@ -128,6 +143,8 @@ impl World {
         let result = self.try_send(addr.actor, message.into());
 
         // TODO: What to do with this error?
+        // Sending failures are currently ignored, but maybe we should have a unified message
+        // error system.
         if let Err(error) = result {
             event!(Level::ERROR, ?error, "failed to send message");
         }
@@ -149,7 +166,7 @@ impl World {
 
         // Hand the message to the system
         let mut message = Some(message);
-        system.enqueue(actor, &mut message);
+        system.enqueue(actor, &mut message)?;
 
         // Queue for later processing
         if !self.queue.contains(&system_id) {
@@ -165,18 +182,21 @@ impl World {
 
     /// Process all pending messages, until none are left.
     pub fn run_until_idle(&mut self) -> Result<(), InternalError> {
-        self.apply_pending().context("failed to apply pending")?;
+        self.process_pending()
+            .context("failed to process pending")?;
 
         while let Some(system_id) = self.queue.pop_front() {
-            self.process(system_id).context("failed to process")?;
+            self.process_system(system_id)
+                .context("failed to process")?;
 
-            self.apply_pending().context("failed to apply pending")?;
+            self.process_pending()
+                .context("failed to process pending")?;
         }
 
         Ok(())
     }
 
-    fn process(&mut self, system_id: SystemId) -> Result<(), Error> {
+    fn process_system(&mut self, system_id: SystemId) -> Result<(), Error> {
         // Borrow the system
         let slot = self
             .systems
@@ -197,8 +217,11 @@ impl World {
         Ok(())
     }
 
-    fn apply_pending(&mut self) -> Result<(), Error> {
-        // TODO: Check pending start
+    fn process_pending(&mut self) -> Result<(), Error> {
+        // Remove any actors that weren't started in time
+        while let Some(actor) = self.pending_start.pop() {
+            self.stop(actor)?;
+        }
 
         // Finalize stopping
         for (actor, system) in self.pending_stop.drain(..) {
