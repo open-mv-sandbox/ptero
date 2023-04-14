@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::{Context, Error};
+use anyhow::Error;
 use thunderdome::{Arena, Index};
 
 use crate::{CreateError, SystemId};
@@ -58,11 +58,9 @@ impl Tree {
         }
 
         // Remove the given actor itself
-        let node = self
-            .nodes
-            .remove(index)
-            .context("tried to remove actor that doesn't exist")?;
-        on_removed(node);
+        if let Some(node) = self.nodes.remove(index) {
+            on_removed(node);
+        }
 
         Ok(())
     }

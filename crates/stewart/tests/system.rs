@@ -5,7 +5,8 @@ use std::{
 
 use anyhow::{Context, Error};
 use rstest::{fixture, rstest};
-use stewart::{ActorId, Addr, State, System, SystemId, SystemOptions, World};
+use stewart::{ActorId, Addr, StartError, State, System, SystemId, SystemOptions, World};
+use tracing::{event, Level};
 use tracing_test::traced_test;
 
 #[rstest]
@@ -42,6 +43,28 @@ fn system_stops_actors(mut world: TestWorld) -> Result<(), Error> {
     Ok(())
 }
 
+#[rstest]
+#[traced_test]
+fn system_removes_not_started() -> Result<(), Error> {
+    let mut world = World::new();
+    let system = world.register(SystemOptions::default(), TestActorSystem);
+
+    let actor = world.create(system, None)?;
+
+    // Process, this should remove the stale actor
+    world.run_until_idle()?;
+
+    // Make sure we can't start
+    let result = world.start(actor, TestActor::default());
+    if let Err(StartError::ActorNotFound) = result {
+        event!(Level::INFO, "correct result");
+    } else {
+        assert!(false, "incorret result: {:?}", result);
+    }
+
+    Ok(())
+}
+
 #[fixture]
 fn world() -> TestWorld {
     let mut world = World::new();
@@ -54,15 +77,15 @@ fn world() -> TestWorld {
 }
 
 fn create_actor<'a>(world: &mut World, system: SystemId, parent: Option<ActorId>) -> ActorInfo {
-    let id = world.create(system, parent).unwrap();
+    let actor = world.create(system, parent).unwrap();
 
-    let actor = TestActor::default();
-    let count = actor.count.clone();
-    world.start(id, actor).unwrap();
+    let instance = TestActor::default();
+    let count = instance.count.clone();
+    world.start(actor, instance).unwrap();
 
     let info = ActorInfo {
-        id,
-        addr: Addr::new(id),
+        id: actor,
+        addr: Addr::new(actor),
         count,
     };
 

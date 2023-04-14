@@ -78,14 +78,6 @@ impl World {
     {
         event!(Level::INFO, "starting actor");
 
-        // Validate if it's not started yet
-        let maybe_index = self.pending_start.iter().position(|v| *v == actor);
-        let pending_index = if let Some(value) = maybe_index {
-            value
-        } else {
-            return Err(StartError::ActorAlreadyStarted);
-        };
-
         // Find the node for the actor, and the associated system
         let node = self
             .tree
@@ -97,6 +89,14 @@ impl World {
             .context("failed to find system")
             .map_err(InternalError)?;
         let system = slot.entry.as_mut().ok_or(StartError::SystemUnavailable)?;
+
+        // Validate if it's not started yet
+        let maybe_index = self.pending_start.iter().position(|v| *v == actor);
+        let pending_index = if let Some(value) = maybe_index {
+            value
+        } else {
+            return Err(StartError::ActorAlreadyStarted);
+        };
 
         // Give the instance to the system
         let mut instance = Some(instance);
