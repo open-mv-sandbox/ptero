@@ -1,92 +1,112 @@
-use std::{io::Write, mem::size_of};
+use std::{collections::BTreeSet, io::Write, mem::size_of};
 
 use anyhow::{Context as _, Error};
 use bytemuck::{bytes_of, Zeroable};
 use daicon::{Entry, Header};
 use ptero_file::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
-use stewart::{ActorId, Addr, State, System, SystemOptions, World};
+use stewart::{ActorId, Addr, State, System, SystemId, SystemOptions, World};
 use stewart_utils::{Context, Functional};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
-use crate::{cache::CachedTable, set::start_set_task, SourceAction, SourceMessage};
+use crate::{
+    cache::CachedTable,
+    set::{start_set_task, SetTaskSystem},
+    SourceAction, SourceMessage,
+};
 
-/// Open a file as a daicon source.
-///
-/// A "source" returns a file from UUIDs. A "file source" uses a file as a source.
-#[instrument("file-source", skip_all)]
-pub fn open_file(
-    ctx: &mut Context,
-    file: Addr<FileMessage>,
-    mode: OpenMode,
-) -> Result<Addr<SourceMessage>, Error> {
-    let id = ctx.register(SystemOptions::default(), FileSourceSystem);
+#[derive(Clone)]
+pub struct FileSourceApi {
+    system: SystemId,
+    set_task: SystemId,
+}
 
-    let (id, mut ctx) = ctx.create(id)?;
-    let addr = Addr::new(id);
-
-    let source = ctx.map(addr, Message::SourceMessage)?;
-    let mut table = None;
-
-    // TODO: this is also the validation step, respond if we correctly validated
-    match mode {
-        OpenMode::ReadWrite => {
-            // Immediately start table read
-            let size = (size_of::<Header>() + (size_of::<Entry>() * 256)) as u64;
-            let message = FileMessage {
-                id: Uuid::new_v4(),
-                action: FileAction::Read {
-                    offset: 0,
-                    size,
-                    on_result: ctx.map_once(addr, Message::ReadTableResult)?,
-                },
-            };
-            ctx.send(file, message);
-        }
-        OpenMode::Create => {
-            // Start writing immediately at the given offset
-            let create_table = CachedTable::new(0, 256);
-            let mut data = Vec::new();
-
-            // Write the header
-            let (header, _) = create_table.create_header();
-            data.write_all(bytes_of(&header))?;
-
-            // Write empty entries
-            for _ in 0..256 {
-                let entry = Entry::zeroed();
-                data.write_all(bytes_of(&entry))?;
-            }
-
-            // Send to file for writing
-            let action = FileAction::Write {
-                location: WriteLocation::Offset(0),
-                data,
-                on_result: ctx.when(SystemOptions::default(), |_, _, _| Ok(false))?,
-            };
-            let message = FileMessage {
-                id: Uuid::new_v4(),
-                action,
-            };
-            ctx.send(file, message);
-
-            // Store the table
-            table = Some(create_table);
+impl FileSourceApi {
+    pub fn new(world: &mut World) -> Self {
+        Self {
+            system: world.register(SystemOptions::default(), FileSourceSystem),
+            set_task: world.register(SystemOptions::default(), SetTaskSystem),
         }
     }
 
-    // Start the root manager actor
-    let actor = FileSource {
-        write_header_result: ctx.map(addr, Message::WriteHeaderResult)?,
-        file,
-        table,
+    /// Open a file as a daicon source.
+    ///
+    /// A "source" returns a file from UUIDs. A "file source" uses a file as a source.
+    #[instrument("file-source", skip_all)]
+    pub fn open(
+        &self,
+        ctx: &mut Context,
+        file: Addr<FileMessage>,
+        mode: OpenMode,
+    ) -> Result<Addr<SourceMessage>, Error> {
+        let (id, mut ctx) = ctx.create(self.system)?;
+        let addr = Addr::new(id);
 
-        get_tasks: Vec::new(),
-        pending_slots: Vec::new(),
-    };
-    ctx.start(id, actor)?;
+        let source = ctx.map(addr, Message::SourceMessage)?;
+        let mut table = None;
 
-    Ok(source)
+        // TODO: this is also the validation step, respond if we correctly validated
+        match mode {
+            OpenMode::ReadWrite => {
+                // Immediately start table read
+                let size = (size_of::<Header>() + (size_of::<Entry>() * 256)) as u64;
+                let message = FileMessage {
+                    id: Uuid::new_v4(),
+                    action: FileAction::Read {
+                        offset: 0,
+                        size,
+                        on_result: ctx.map_once(addr, Message::ReadTableResult)?,
+                    },
+                };
+                ctx.send(file, message);
+            }
+            OpenMode::Create => {
+                // Start writing immediately at the given offset
+                let create_table = CachedTable::new(0, 256);
+                let mut data = Vec::new();
+
+                // Write the header
+                let (header, _) = create_table.create_header();
+                data.write_all(bytes_of(&header))?;
+
+                // Write empty entries
+                for _ in 0..256 {
+                    let entry = Entry::zeroed();
+                    data.write_all(bytes_of(&entry))?;
+                }
+
+                // Send to file for writing
+                let action = FileAction::Write {
+                    location: WriteLocation::Offset(0),
+                    data,
+                    on_result: ctx.when(SystemOptions::default(), |_, _, _| Ok(false))?,
+                };
+                let message = FileMessage {
+                    id: Uuid::new_v4(),
+                    action,
+                };
+                ctx.send(file, message);
+
+                // Store the table
+                table = Some(create_table);
+            }
+        }
+
+        // Start the root manager actor
+        let actor = FileSource {
+            api: self.clone(),
+
+            write_header_result: ctx.map(addr, Message::WriteHeaderResult)?,
+            file,
+            table,
+
+            get_tasks: Vec::new(),
+            pending_slots: Vec::new(),
+        };
+        ctx.start(id, actor)?;
+
+        Ok(source)
+    }
 }
 
 pub enum OpenMode {
@@ -100,7 +120,10 @@ impl System for FileSourceSystem {
     type Instance = FileSource;
     type Message = Message;
 
+    #[instrument("file-source", skip_all)]
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+        let mut changed = BTreeSet::new();
+
         while let Some((actor, message)) = state.next() {
             let instance = state.get_mut(actor).context("failed to get instance")?;
 
@@ -116,8 +139,12 @@ impl System for FileSourceSystem {
                 }
             }
 
-            // Check if we can resolve any get requests
-            // TODO: Handle in bulk
+            changed.insert(actor);
+        }
+
+        // Check if we can resolve any get requests
+        for actor in changed {
+            let instance = state.get_mut(actor).context("failed to get instance")?;
             instance.check_pending(world);
         }
 
@@ -126,6 +153,8 @@ impl System for FileSourceSystem {
 }
 
 struct FileSource {
+    api: FileSourceApi,
+
     write_header_result: Addr<WriteResult>,
     file: Addr<FileMessage>,
     table: Option<CachedTable>,
@@ -157,7 +186,7 @@ impl FileSource {
             } => {
                 event!(Level::INFO, ?id, bytes = data.len(), "received set");
 
-                let addr = start_set_task(ctx, self.file, id, data, on_result)?;
+                let addr = start_set_task(ctx, self.api.set_task, self.file, id, data, on_result)?;
                 self.pending_slots.push(addr);
             }
         }

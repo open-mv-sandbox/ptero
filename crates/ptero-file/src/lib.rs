@@ -8,7 +8,7 @@ mod system;
 use stewart::Addr;
 use uuid::Uuid;
 
-pub use self::{buffer::BufferFile, system::SystemFile};
+pub use self::{buffer::BufferFileApi, system::SystemFileApi};
 
 /// Message to a file actor.
 pub struct FileMessage {

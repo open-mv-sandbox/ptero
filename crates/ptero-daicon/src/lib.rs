@@ -8,7 +8,7 @@ use ptero_file::ReadResult;
 use stewart::Addr;
 use uuid::Uuid;
 
-pub use self::file::{open_file, OpenMode};
+pub use self::file::{FileSourceApi, OpenMode};
 
 pub struct SourceMessage {
     pub id: Uuid,

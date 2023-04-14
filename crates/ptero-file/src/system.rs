@@ -12,11 +12,11 @@ use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 
 /// System file API entry point.
 #[derive(Clone)]
-pub struct SystemFile {
+pub struct SystemFileApi {
     system: SystemId,
 }
 
-impl SystemFile {
+impl SystemFileApi {
     pub fn new(world: &mut World) -> Self {
         Self {
             system: world.register(SystemOptions::default(), SystemFileSystem),
@@ -39,7 +39,7 @@ impl SystemFile {
             .context("failed to open system file for writing")?;
 
         let (id, mut ctx) = ctx.create(self.system)?;
-        let instance = SystemFileService { file };
+        let instance = SystemFile { file };
         ctx.start(id, instance)?;
 
         Ok(Addr::new(id))
@@ -49,7 +49,7 @@ impl SystemFile {
 struct SystemFileSystem;
 
 impl System for SystemFileSystem {
-    type Instance = SystemFileService;
+    type Instance = SystemFile;
     type Message = FileMessage;
 
     #[instrument("system-file", skip_all)]
@@ -111,7 +111,7 @@ impl System for SystemFileSystem {
     }
 }
 
-struct SystemFileService {
+struct SystemFile {
     file: File,
 }
 

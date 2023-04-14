@@ -1,7 +1,7 @@
 use anyhow::{Context as _, Error};
 use clap::Args;
-use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
-use ptero_file::{ReadResult, SystemFile};
+use ptero_daicon::{FileSourceApi, OpenMode, SourceAction, SourceMessage};
+use ptero_file::{ReadResult, SystemFileApi};
 use stewart::{Addr, State, System, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
@@ -27,12 +27,15 @@ pub struct GetCommand {
 pub fn start(mut ctx: Context, command: GetCommand) -> Result<(), Error> {
     event!(Level::INFO, "getting file from package");
 
-    let id = ctx.register(SystemOptions::default(), GetCommandSystem);
-    let (id, mut ctx) = ctx.create(id)?;
+    let file_api = SystemFileApi::new(&mut ctx);
+    let source_api = FileSourceApi::new(&mut ctx);
+
+    let system = ctx.register(SystemOptions::default(), GetCommandSystem);
+    let (id, mut ctx) = ctx.create(system)?;
 
     // Open up the package for writing in ptero-daicon
-    let file = SystemFile::new(&mut ctx).open(&mut ctx, &command.target, false)?;
-    let source = ptero_daicon::open_file(&mut ctx, file, OpenMode::ReadWrite)?;
+    let file = file_api.open(&mut ctx, &command.target, false)?;
+    let source = source_api.open(&mut ctx, file, OpenMode::ReadWrite)?;
 
     // Add the data to the source
     let message = SourceMessage {
@@ -59,7 +62,7 @@ impl System for GetCommandSystem {
         while let Some((actor, message)) = state.next() {
             let instance = state.get_mut(actor).context("failed to get instance")?;
             std::fs::write(&instance.output, message.data)?;
-            world.stop(actor)?;
+            world.stop(actor);
         }
 
         Ok(())

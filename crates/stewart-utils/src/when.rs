@@ -37,10 +37,12 @@ impl<'a> Functional for Context<'a> {
         M: 'static,
     {
         // In-line create a new system
+        // TODO: System currently will never be cleaned up, fix this
+        // Probably an actor stop callback will be required for this
         let system: WhenSystem<F, M> = WhenSystem { _w: PhantomData };
-        let id = self.register(options, system);
+        let system = self.register(options, system);
 
-        let (id, mut ctx) = self.create(id)?;
+        let (id, mut ctx) = self.create(system)?;
         let actor = When::<F, M> {
             function,
             _a: PhantomData,
@@ -109,7 +111,7 @@ where
             let result = (instance.function)(world, id, message)?;
 
             if !result {
-                world.stop(id)?;
+                world.stop(id);
             }
         }
 

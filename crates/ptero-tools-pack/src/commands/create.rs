@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
-use ptero_daicon::OpenMode;
-use ptero_file::SystemFile;
+use ptero_daicon::{FileSourceApi, OpenMode};
+use ptero_file::SystemFileApi;
 use stewart::{State, System, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
@@ -18,13 +18,16 @@ pub struct CreateCommand {
 pub fn start(mut ctx: Context, command: CreateCommand) -> Result<(), Error> {
     event!(Level::INFO, "creating package");
 
-    let id = ctx.register(SystemOptions::default(), CreateCommandSystem);
+    let file_api = SystemFileApi::new(&mut ctx);
+    let source_api = FileSourceApi::new(&mut ctx);
 
-    let (id, mut ctx) = ctx.create(id)?;
+    let system = ctx.register(SystemOptions::default(), CreateCommandSystem);
+
+    let (id, mut ctx) = ctx.create(system)?;
     ctx.start(id, ())?;
 
-    let file = SystemFile::new(&mut ctx).open(&mut ctx, &command.target, false)?;
-    ptero_daicon::open_file(&mut ctx, file, OpenMode::Create)?;
+    let file = file_api.open(&mut ctx, &command.target, false)?;
+    source_api.open(&mut ctx, file, OpenMode::Create)?;
 
     // TODO: Receive back open success/failure
 

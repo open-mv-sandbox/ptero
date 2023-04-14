@@ -40,6 +40,7 @@ impl System for FetchFileSystem {
     type Instance = FetchFile;
     type Message = Message;
 
+    #[instrument("fetch-file", skip_all)]
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
         let mut has_update = BTreeSet::new();
 

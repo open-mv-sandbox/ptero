@@ -4,48 +4,46 @@ use std::{
 };
 
 use anyhow::{Context, Error};
-use rstest::{fixture, rstest};
 use stewart::{ActorId, Addr, StartError, State, System, SystemId, SystemOptions, World};
 use tracing::{event, Level};
 use tracing_test::traced_test;
 
-#[rstest]
+#[test]
 #[traced_test]
-fn system_sends_message_to_actor(mut world: TestWorld) -> Result<(), Error> {
-    // Send a message
-    world.world.send(world.root.addr, ());
-    world.world.run_until_idle()?;
+fn send_message_to_actor() -> Result<(), Error> {
+    let (mut world, system) = given_world_and_system();
+    let (parent, _child) = given_parent_child(&mut world, system)?;
 
-    // Actor will now have removed itself, send again to make sure it doesn't crash
-    world.world.send(world.root.addr, ());
-    world.world.run_until_idle()?;
+    // Regular send
+    when_sent_message_to(&mut world, parent.addr)?;
+    assert_eq!(parent.count.load(Ordering::SeqCst), 1);
 
-    // Make sure the first message was handled, but not the second one
-    assert_eq!(world.root.count.load(Ordering::SeqCst), 1);
+    // Can't send to stopped
+    world.stop(parent.id);
+    when_sent_message_to(&mut world, parent.addr)?;
+    assert_eq!(parent.count.load(Ordering::SeqCst), 1);
 
     Ok(())
 }
 
-#[rstest]
+#[test]
 #[traced_test]
-fn system_stops_actors(mut world: TestWorld) -> Result<(), Error> {
-    // Send a message to the part
-    world.world.send(world.root.addr, ());
-    world.world.run_until_idle()?;
+fn stop_actors() -> Result<(), Error> {
+    let (mut world, system) = given_world_and_system();
+    let (parent, child) = given_parent_child(&mut world, system)?;
 
-    // Actor will now have removed itself, try sending a message to the child
-    world.world.send(world.child.addr, ());
-    world.world.run_until_idle()?;
+    world.stop(parent.id);
 
-    // Make sure it wasn't handled
-    assert_eq!(world.child.count.load(Ordering::SeqCst), 0);
+    // Can't send message to child as it should be stopped too
+    when_sent_message_to(&mut world, child.addr)?;
+    assert_eq!(child.count.load(Ordering::SeqCst), 0);
 
     Ok(())
 }
 
-#[rstest]
+#[test]
 #[traced_test]
-fn system_removes_not_started() -> Result<(), Error> {
+fn not_started_removed() -> Result<(), Error> {
     let mut world = World::new();
     let system = world.register(SystemOptions::default(), TestActorSystem);
 
@@ -65,23 +63,33 @@ fn system_removes_not_started() -> Result<(), Error> {
     Ok(())
 }
 
-#[fixture]
-fn world() -> TestWorld {
+fn given_world_and_system() -> (World, SystemId) {
     let mut world = World::new();
     let system = world.register(SystemOptions::default(), TestActorSystem);
 
-    let root = create_actor(&mut world, system, None);
-    let child = create_actor(&mut world, system, Some(root.id));
-
-    TestWorld { world, root, child }
+    (world, system)
 }
 
-fn create_actor<'a>(world: &mut World, system: SystemId, parent: Option<ActorId>) -> ActorInfo {
-    let actor = world.create(system, parent).unwrap();
+fn given_parent_child(
+    world: &mut World,
+    system: SystemId,
+) -> Result<(ActorInfo, ActorInfo), Error> {
+    let parent = given_actor(world, system, None)?;
+    let child = given_actor(world, system, Some(parent.id))?;
+
+    Ok((parent, child))
+}
+
+fn given_actor<'a>(
+    world: &mut World,
+    system: SystemId,
+    parent: Option<ActorId>,
+) -> Result<ActorInfo, Error> {
+    let actor = world.create(system, parent)?;
 
     let instance = TestActor::default();
     let count = instance.count.clone();
-    world.start(actor, instance).unwrap();
+    world.start(actor, instance)?;
 
     let info = ActorInfo {
         id: actor,
@@ -89,13 +97,13 @@ fn create_actor<'a>(world: &mut World, system: SystemId, parent: Option<ActorId>
         count,
     };
 
-    info
+    Ok(info)
 }
 
-struct TestWorld {
-    world: World,
-    root: ActorInfo,
-    child: ActorInfo,
+fn when_sent_message_to(world: &mut World, addr: Addr<()>) -> Result<(), Error> {
+    world.send(addr, ());
+    world.run_until_idle()?;
+    Ok(())
 }
 
 struct ActorInfo {
@@ -110,12 +118,10 @@ impl System for TestActorSystem {
     type Instance = TestActor;
     type Message = ();
 
-    fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+    fn process(&mut self, _world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
         while let Some((id, _)) = state.next() {
             let instance = state.get_mut(id).context("failed to get instance")?;
-
             instance.count.fetch_add(1, Ordering::SeqCst);
-            world.stop(id)?;
         }
 
         Ok(())

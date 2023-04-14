@@ -4,7 +4,7 @@ use anyhow::Error;
 use stewart::World;
 use tracing::{event, Level};
 
-use crate::hello_service::Hello;
+use crate::hello_service::HelloServiceApi;
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
@@ -12,7 +12,7 @@ fn main() -> Result<(), Error> {
     let mut world = World::new();
 
     // Start the hello service
-    let hello = Hello::new(&mut world);
+    let hello = HelloServiceApi::new(&mut world);
     let service = hello.start(&mut world, "Example".to_string())?;
 
     // Now that we have an address, send it some data
@@ -34,14 +34,14 @@ mod hello_service {
 
     /// The entrypoint of the Hello Service's API.
     #[derive(Clone)]
-    pub struct Hello {
-        actor: SystemId,
+    pub struct HelloServiceApi {
+        system: SystemId,
     }
 
-    impl Hello {
+    impl HelloServiceApi {
         pub fn new(world: &mut World) -> Self {
             Self {
-                actor: world.register(SystemOptions::default(), HelloServiceSystem),
+                system: world.register(SystemOptions::default(), HelloServiceSystem),
             }
         }
 
@@ -51,7 +51,7 @@ mod hello_service {
 
             // stewart_utils provides a `Context` helper that automatically tracks current parent
             // for creation, but you are not required to use this.
-            let id = world.create(self.actor, None)?;
+            let id = world.create(self.system, None)?;
             let instance = HelloService { name };
             world.start(id, instance)?;
 

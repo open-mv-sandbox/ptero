@@ -1,7 +1,7 @@
 use anyhow::Error;
 use clap::Args;
-use ptero_daicon::{OpenMode, SourceAction, SourceMessage};
-use ptero_file::SystemFile;
+use ptero_daicon::{FileSourceApi, OpenMode, SourceAction, SourceMessage};
+use ptero_file::SystemFileApi;
 use stewart::{Addr, State, System, SystemOptions, World};
 use stewart_utils::Context;
 use tracing::{event, instrument, Level};
@@ -27,14 +27,17 @@ pub struct SetCommand {
 pub fn start(mut ctx: Context, command: SetCommand) -> Result<(), Error> {
     event!(Level::INFO, "setting file in package");
 
-    let id = ctx.register(SystemOptions::default(), AddCommandSystem);
-    let (id, mut ctx) = ctx.create(id)?;
+    let file_api = SystemFileApi::new(&mut ctx);
+    let source_api = FileSourceApi::new(&mut ctx);
+
+    let system = ctx.register(SystemOptions::default(), AddCommandSystem);
+    let (id, mut ctx) = ctx.create(system)?;
 
     let data = std::fs::read(&command.input)?;
 
     // Open up the package for writing in ptero-daicon
-    let file = SystemFile::new(&mut ctx).open(&mut ctx, &command.target, false)?;
-    let source = ptero_daicon::open_file(&mut ctx, file, OpenMode::ReadWrite)?;
+    let file = file_api.open(&mut ctx, &command.target, false)?;
+    let source = source_api.open(&mut ctx, file, OpenMode::ReadWrite)?;
 
     // Add the data to the source
     let message = SourceMessage {
@@ -60,7 +63,7 @@ impl System for AddCommandSystem {
 
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
         while let Some((actor, _)) = state.next() {
-            world.stop(actor)?;
+            world.stop(actor);
         }
 
         Ok(())

@@ -2,7 +2,7 @@ use anyhow::{Context as _, Error};
 use bytemuck::{bytes_of, Zeroable};
 use daicon::Entry;
 use ptero_file::{FileAction, FileMessage, WriteLocation, WriteResult};
-use stewart::{Addr, State, System, SystemOptions, World};
+use stewart::{Addr, State, System, SystemId, World};
 use stewart_utils::{Context, Functional};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
@@ -10,14 +10,13 @@ use uuid::Uuid;
 #[instrument("set-task", skip_all)]
 pub fn start_set_task(
     mut ctx: Context,
+    system: SystemId,
     file: Addr<FileMessage>,
     id: Uuid,
     data: Vec<u8>,
     on_result: Addr<()>,
 ) -> Result<Addr<u32>, Error> {
-    let sid = ctx.register(SystemOptions::default(), SetTaskSystem);
-
-    let (aid, mut ctx) = ctx.create(sid)?;
+    let (aid, mut ctx) = ctx.create(system)?;
     let addr = Addr::new(aid);
 
     // Start the append immediately
@@ -49,7 +48,7 @@ pub fn start_set_task(
     Ok(ctx.map_once(addr, Message::Slot)?)
 }
 
-struct SetTaskSystem;
+pub struct SetTaskSystem;
 
 impl System for SetTaskSystem {
     type Instance = SetTask;
@@ -73,7 +72,7 @@ impl System for SetTaskSystem {
                     event!(Level::DEBUG, "success, sending result");
 
                     world.send(instance.on_result, ());
-                    world.stop(actor)?;
+                    world.stop(actor);
                     return Ok(());
                 }
             }
@@ -106,7 +105,7 @@ impl System for SetTaskSystem {
     }
 }
 
-struct SetTask {
+pub struct SetTask {
     file: Addr<FileMessage>,
     on_result: Addr<()>,
 
@@ -115,7 +114,7 @@ struct SetTask {
     entry: Entry,
 }
 
-enum Message {
+pub enum Message {
     Slot(u32),
     AppendResult(WriteResult),
     EntryResult(WriteResult),

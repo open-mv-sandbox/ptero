@@ -4,7 +4,7 @@ use std::{
     sync::atomic::AtomicPtr,
 };
 
-use anyhow::{Context, Error};
+use anyhow::{anyhow, Context, Error};
 use thunderdome::{Arena, Index};
 use tracing::{event, Level};
 
@@ -23,6 +23,7 @@ pub struct World {
 
     pending_start: Vec<ActorId>,
     pending_stop: Vec<(ActorId, SystemId)>,
+    pending_unregister: Vec<SystemId>,
 }
 
 impl World {
@@ -33,9 +34,7 @@ impl World {
 
     /// Register an actor processing system.
     ///
-    /// You are recommended to re-use these for actors of the same type. Processing many messages
-    /// at once is generally faster, and allows you to perform additional optimizations.
-    /// However, the overhead of not re-using systems is acceptable in most cases.
+    /// If you register this uniquely for an actor, you need to also clean it up.
     pub fn register<S>(&mut self, options: SystemOptions, system: S) -> SystemId
     where
         S: System,
@@ -50,6 +49,20 @@ impl World {
         let index = self.systems.insert(slot);
 
         SystemId { index }
+    }
+
+    /// Remove an actor processing system.
+    ///
+    /// TODO: Custom error type
+    pub fn unregister(&mut self, system: SystemId) -> Result<(), Error> {
+        // Make sure no actors using this system remain
+        if self.tree.has_of_system(system) {
+            return Err(anyhow!("system still in use"));
+        }
+
+        self.pending_unregister.push(system);
+
+        Ok(())
     }
 
     /// Create a new actor.
@@ -115,7 +128,7 @@ impl World {
     /// After stopping an actor will no longer accept messages, but can still process them.
     /// After the current process step is done, the actor and all remaining pending messages will
     /// be dropped.
-    pub fn stop(&mut self, actor: ActorId) -> Result<(), InternalError> {
+    pub fn stop(&mut self, actor: ActorId) {
         let pending_stop = &mut self.pending_stop;
 
         // Remove from the tree, and mark any removed nodes as pending to stop
@@ -127,9 +140,7 @@ impl World {
 
             // Queue for stopping
             pending_stop.push((actor, node.system()));
-        })?;
-
-        Ok(())
+        });
     }
 
     /// Send a message to an actor.
@@ -220,7 +231,7 @@ impl World {
     fn process_pending(&mut self) -> Result<(), Error> {
         // Remove any actors that weren't started in time
         while let Some(actor) = self.pending_start.pop() {
-            self.stop(actor)?;
+            self.stop(actor);
         }
 
         // Finalize stopping
@@ -232,6 +243,11 @@ impl World {
             let system = slot.entry.as_mut().context("system unavailable")?;
 
             system.remove(actor);
+        }
+
+        // Finalize unregisters
+        for system in self.pending_unregister.drain(..) {
+            self.systems.remove(system.index);
         }
 
         Ok(())

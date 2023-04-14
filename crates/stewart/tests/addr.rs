@@ -3,7 +3,7 @@ use std::mem::size_of;
 use stewart::Addr;
 
 #[test]
-fn system_addr_option_same_size() {
+fn addr_option_is_same_size() {
     // This should be provided to us by the underlying Index type from thunderdome
     // But, it's good to verify just in case
     let size_plain = size_of::<Addr<()>>();

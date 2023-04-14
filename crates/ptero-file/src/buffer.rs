@@ -7,11 +7,11 @@ use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 
 /// Buffer file API entry point.
 #[derive(Clone)]
-pub struct BufferFile {
+pub struct BufferFileApi {
     system: SystemId,
 }
 
-impl BufferFile {
+impl BufferFileApi {
     pub fn new(world: &mut World) -> Self {
         Self {
             system: world.register(SystemOptions::default(), BufferFileSystem),
@@ -25,7 +25,7 @@ impl BufferFile {
         buffer: Vec<u8>,
     ) -> Result<Addr<FileMessage>, Error> {
         let (id, mut ctx) = ctx.create(self.system)?;
-        let instance = BufferFileService { buffer };
+        let instance = BufferFile { buffer };
         ctx.start(id, instance)?;
 
         Ok(Addr::new(id))
@@ -35,7 +35,7 @@ impl BufferFile {
 struct BufferFileSystem;
 
 impl System for BufferFileSystem {
-    type Instance = BufferFileService;
+    type Instance = BufferFile;
     type Message = FileMessage;
 
     #[instrument("buffer-file", skip_all)]
@@ -51,11 +51,11 @@ impl System for BufferFileSystem {
     }
 }
 
-struct BufferFileService {
+struct BufferFile {
     buffer: Vec<u8>,
 }
 
-impl BufferFileService {
+impl BufferFile {
     fn handle(&mut self, world: &mut World, message: FileMessage) {
         match message.action {
             FileAction::Read {

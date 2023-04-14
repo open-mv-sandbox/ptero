@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use anyhow::Error;
 use thunderdome::{Arena, Index};
 
 use crate::{CreateError, SystemId};
@@ -33,14 +32,14 @@ impl Tree {
         self.nodes.get_mut(index)
     }
 
-    pub fn remove<F>(&mut self, index: Index, mut on_removed: F) -> Result<(), Error>
+    pub fn remove<F>(&mut self, index: Index, mut on_removed: F)
     where
         F: FnMut(Node),
     {
         self.remove_inner(index, &mut on_removed)
     }
 
-    fn remove_inner<F>(&mut self, index: Index, on_removed: &mut F) -> Result<(), Error>
+    fn remove_inner<F>(&mut self, index: Index, on_removed: &mut F)
     where
         F: FnMut(Node),
     {
@@ -54,15 +53,13 @@ impl Tree {
             .map(|(index, _)| index)
             .collect();
         for child in children {
-            self.remove_inner(child, on_removed)?;
+            self.remove_inner(child, on_removed);
         }
 
         // Remove the given actor itself
         if let Some(node) = self.nodes.remove(index) {
             on_removed(node);
         }
-
-        Ok(())
     }
 
     pub fn count(&self) -> HashMap<SystemId, usize> {
@@ -74,6 +71,16 @@ impl Tree {
         }
 
         counts
+    }
+
+    pub fn has_of_system(&self, system: SystemId) -> bool {
+        for (_, node) in &self.nodes {
+            if node.system == system {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
