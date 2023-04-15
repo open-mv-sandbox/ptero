@@ -24,9 +24,9 @@ impl BufferFileApi {
         ctx: &mut Context,
         buffer: Vec<u8>,
     ) -> Result<Addr<FileMessage>, Error> {
-        let (id, mut ctx) = ctx.create(self.system)?;
+        let (id, mut ctx) = ctx.create()?;
         let instance = BufferFile { buffer };
-        ctx.start(id, instance)?;
+        ctx.start(id, self.system, instance)?;
 
         Ok(Addr::new(id))
     }

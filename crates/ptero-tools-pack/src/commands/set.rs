@@ -31,7 +31,7 @@ pub fn start(mut ctx: Context, command: SetCommand) -> Result<(), Error> {
     let source_api = FileSourceApi::new(&mut ctx);
 
     let system = ctx.register(SystemOptions::default(), AddCommandSystem);
-    let (id, mut ctx) = ctx.create(system)?;
+    let (id, mut ctx) = ctx.create()?;
 
     let data = std::fs::read(&command.input)?;
 
@@ -50,7 +50,7 @@ pub fn start(mut ctx: Context, command: SetCommand) -> Result<(), Error> {
     };
     ctx.send(source, message);
 
-    ctx.start(id, ())?;
+    ctx.start(id, system, ())?;
 
     Ok(())
 }
@@ -63,7 +63,7 @@ impl System for AddCommandSystem {
 
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
         while let Some((actor, _)) = state.next() {
-            world.stop(actor);
+            world.stop(actor)?;
         }
 
         Ok(())

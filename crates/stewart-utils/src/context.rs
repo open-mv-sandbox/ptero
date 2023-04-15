@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use stewart::{ActorId, CreateError, SystemId, World};
+use stewart::{ActorId, CreateError, World};
 
 /// Context bundle utility for system operations.
 ///
@@ -30,8 +30,8 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub fn create(&mut self, system: SystemId) -> Result<(ActorId, Context), CreateError> {
-        let id = self.world.create(system, self.current)?;
+    pub fn create(&mut self) -> Result<(ActorId, Context), CreateError> {
+        let id = self.world.create(self.current)?;
 
         let ctx = Context {
             world: self.world,

@@ -39,7 +39,7 @@ impl FileSourceApi {
         file: Addr<FileMessage>,
         mode: OpenMode,
     ) -> Result<Addr<SourceMessage>, Error> {
-        let (id, mut ctx) = ctx.create(self.system)?;
+        let (id, mut ctx) = ctx.create()?;
         let addr = Addr::new(id);
 
         let source = ctx.map(addr, Message::SourceMessage)?;
@@ -103,7 +103,7 @@ impl FileSourceApi {
             get_tasks: Vec::new(),
             pending_slots: Vec::new(),
         };
-        ctx.start(id, actor)?;
+        ctx.start(id, self.system, actor)?;
 
         Ok(source)
     }

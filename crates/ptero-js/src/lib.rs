@@ -17,16 +17,16 @@ pub fn open_fetch_file(
     url: String,
     hnd: SystemH,
 ) -> Result<Addr<FileMessage>, Error> {
-    let id = ctx.register(SystemOptions::default(), FetchFileSystem);
+    let system = ctx.register(SystemOptions::default(), FetchFileSystem);
 
-    let (id, mut ctx) = ctx.create(id)?;
+    let (id, mut ctx) = ctx.create()?;
     let addr = Addr::new(id);
 
     let service = FetchFile {
         data: None,
         pending: Vec::new(),
     };
-    ctx.start(id, service)?;
+    ctx.start(id, system, service)?;
 
     spawn_local(do_fetch(hnd, addr, url));
 

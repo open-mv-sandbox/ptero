@@ -1,28 +1,30 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{BTreeSet, HashMap, VecDeque},
+    hash::Hash,
     marker::PhantomData,
     sync::atomic::AtomicPtr,
 };
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{bail, Context, Error};
 use thunderdome::{Arena, Index};
 use tracing::{event, Level};
 
 use crate::{
     system::{AnySystemEntry, SystemEntry},
     tree::{Node, Tree},
-    CreateError, InternalError, StartError, System, SystemOptions,
+    ActorId, CreateError, InternalError, StartError, System, SystemOptions,
 };
 
 /// Thread-local system and actor scheduler.
 #[derive(Default)]
 pub struct World {
+    // TODO: Systems collection
     systems: Arena<SystemSlot>,
     tree: Tree,
     queue: VecDeque<SystemId>,
 
     pending_start: Vec<ActorId>,
-    pending_stop: Vec<(ActorId, SystemId)>,
+    pending_stop: UniqueQueue<ActorId>,
     pending_unregister: Vec<SystemId>,
 }
 
@@ -34,7 +36,10 @@ impl World {
 
     /// Register an actor processing system.
     ///
-    /// If you register this uniquely for an actor, you need to also clean it up.
+    /// Actor processing systems are linked to actors. This means when an actor is cleaned up, the
+    /// processing systems linked to it will also be cleaned up.
+    ///
+    /// TODO: This is not currently implemented.
     pub fn register<S>(&mut self, options: SystemOptions, system: S) -> SystemId
     where
         S: System,
@@ -51,57 +56,34 @@ impl World {
         SystemId { index }
     }
 
-    /// Remove an actor processing system.
-    ///
-    /// TODO: Custom error type
-    pub fn unregister(&mut self, system: SystemId) -> Result<(), Error> {
-        // Make sure no actors using this system remain
-        if self.tree.has_of_system(system) {
-            return Err(anyhow!("system still in use"));
-        }
-
-        self.pending_unregister.push(system);
-
-        Ok(())
-    }
-
     /// Create a new actor.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create(
-        &mut self,
-        system: SystemId,
-        parent: Option<ActorId>,
-    ) -> Result<ActorId, CreateError> {
+    pub fn create(&mut self, parent: Option<ActorId>) -> Result<ActorId, CreateError> {
         event!(Level::INFO, "creating actor");
 
-        let node = Node::new(system, parent.map(|i| i.index));
-        let index = self.tree.insert(node)?;
+        let node = Node::new(parent);
+        let actor = self.tree.insert(node)?;
 
-        let actor = ActorId { index };
         self.pending_start.push(actor);
 
         Ok(actor)
     }
 
     /// Start an actor instance, making it available for handling messages.
-    pub fn start<I>(&mut self, actor: ActorId, instance: I) -> Result<(), StartError>
+    pub fn start<I>(
+        &mut self,
+        actor: ActorId,
+        system: SystemId,
+        instance: I,
+    ) -> Result<(), StartError>
     where
         I: 'static,
     {
         event!(Level::INFO, "starting actor");
 
-        // Find the node for the actor, and the associated system
-        let node = self
-            .tree
-            .get_mut(actor.index)
-            .ok_or(StartError::ActorNotFound)?;
-        let slot = self
-            .systems
-            .get_mut(node.system().index)
-            .context("failed to find system")
-            .map_err(InternalError)?;
-        let system = slot.entry.as_mut().ok_or(StartError::SystemUnavailable)?;
+        // Find the node for the actor
+        let node = self.tree.get_mut(actor).ok_or(StartError::ActorNotFound)?;
 
         // Validate if it's not started yet
         let maybe_index = self.pending_start.iter().position(|v| *v == actor);
@@ -111,11 +93,21 @@ impl World {
             return Err(StartError::ActorAlreadyStarted);
         };
 
+        // Find the system
+        let slot = self
+            .systems
+            .get_mut(system.index)
+            .ok_or(StartError::SystemNotFound)?;
+        let system_entry = slot.entry.as_mut().ok_or(StartError::SystemUnavailable)?;
+
         // Give the instance to the system
         let mut instance = Some(instance);
-        system
+        system_entry
             .insert(actor, &mut instance)
             .map_err(|_| StartError::InstanceWrongType)?;
+
+        // Link the node to the system
+        node.set_system(Some(system));
 
         // Finalize remove pending
         self.pending_start.remove(pending_index);
@@ -128,19 +120,9 @@ impl World {
     /// After stopping an actor will no longer accept messages, but can still process them.
     /// After the current process step is done, the actor and all remaining pending messages will
     /// be dropped.
-    pub fn stop(&mut self, actor: ActorId) {
-        let pending_stop = &mut self.pending_stop;
-
-        // Remove from the tree, and mark any removed nodes as pending to stop
-        self.tree.remove(actor.index, |node| {
-            // Ignore already pending to stop
-            if pending_stop.iter().any(|(i, _)| *i == actor) {
-                return;
-            }
-
-            // Queue for stopping
-            pending_stop.push((actor, node.system()));
-        });
+    pub fn stop(&mut self, actor: ActorId) -> Result<(), Error> {
+        self.pending_stop.push(actor)?;
+        Ok(())
     }
 
     /// Send a message to an actor.
@@ -165,14 +147,20 @@ impl World {
     where
         M: 'static,
     {
-        let node = self.tree.get(actor.index).context("failed to find node")?;
+        // Make sure the actor's not already being stopped
+        if self.pending_stop.contains(actor) {
+            bail!("actor stopping");
+        }
+
+        // Get the actor in tree
+        let node = self.tree.get(actor).context("actor not found")?;
 
         // Find the system associated with this node
-        let system_id = node.system();
+        let system_id = node.system().context("actor not started")?;
         let slot = self
             .systems
             .get_mut(system_id.index)
-            .context("failed to find system")?;
+            .context("system not found")?;
         let system = slot.entry.as_mut().context("system unavailable")?;
 
         // Hand the message to the system
@@ -231,19 +219,10 @@ impl World {
     fn process_pending(&mut self) -> Result<(), Error> {
         // Remove any actors that weren't started in time
         while let Some(actor) = self.pending_start.pop() {
-            self.stop(actor);
+            self.stop(actor)?;
         }
 
-        // Finalize stopping
-        for (actor, system) in self.pending_stop.drain(..) {
-            let slot = self
-                .systems
-                .get_mut(system.index)
-                .context("failed to find system")?;
-            let system = slot.entry.as_mut().context("system unavailable")?;
-
-            system.remove(actor);
-        }
+        self.process_stop()?;
 
         // Finalize unregisters
         for system in self.pending_unregister.drain(..) {
@@ -252,11 +231,49 @@ impl World {
 
         Ok(())
     }
+
+    fn process_stop(&mut self) -> Result<(), Error> {
+        // Process stop queue in reverse order
+        while let Some(actor) = self.pending_stop.peek() {
+            // Check if this actor has any children to process first
+            let mut has_children = false;
+            self.tree.query_children(actor, |child| {
+                self.pending_stop.push(child)?;
+                has_children = true;
+                Ok(())
+            })?;
+
+            // If we do have children, stop those first
+            if has_children {
+                continue;
+            }
+
+            // We verified, we can remove this now
+            self.pending_stop.pop();
+            let node = self
+                .tree
+                .remove(actor)
+                .context("node for actor not found")?;
+
+            // Remove it from the system it's in, if it is in one
+            if let Some(system) = node.system() {
+                let slot = self
+                    .systems
+                    .get_mut(system.index)
+                    .context("failed to find system")?;
+                let system = slot.entry.as_mut().context("system unavailable")?;
+
+                system.remove(actor);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Drop for World {
     fn drop(&mut self) {
-        let counts = self.tree.count();
+        let counts = self.tree.query_count();
 
         if !counts.is_empty() {
             let counts: HashMap<_, _> = counts
@@ -284,12 +301,6 @@ impl Drop for World {
 struct SystemSlot {
     options: SystemOptions,
     entry: Option<Box<dyn AnySystemEntry>>,
-}
-
-/// Handle referencing an actor in a `World`.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub struct ActorId {
-    index: Index,
 }
 
 /// Handle referencing a system on a `World`.
@@ -329,3 +340,51 @@ impl<M> Clone for Addr<M> {
 }
 
 impl<M> Copy for Addr<M> {}
+
+struct UniqueQueue<T> {
+    queue: Vec<T>,
+    set: BTreeSet<T>,
+}
+
+impl<T> UniqueQueue<T>
+where
+    T: Ord + Clone + Copy,
+{
+    fn push(&mut self, value: T) -> Result<(), Error> {
+        // Check if it's already in the queue, if it is remove it so we can move it to the end
+        if !self.set.insert(value) {
+            let index = self
+                .queue
+                .iter()
+                .position(|v| *v == value)
+                .context("value in pending stop set, but not in list")?;
+            self.queue.remove(index);
+        }
+
+        // Add to end of queue
+        self.queue.push(value);
+
+        Ok(())
+    }
+
+    fn peek(&self) -> Option<T> {
+        self.queue.last().cloned()
+    }
+
+    fn pop(&mut self) {
+        self.queue.pop();
+    }
+
+    fn contains(&self, value: T) -> bool {
+        self.set.contains(&value)
+    }
+}
+
+impl<T> Default for UniqueQueue<T> {
+    fn default() -> Self {
+        Self {
+            queue: Default::default(),
+            set: Default::default(),
+        }
+    }
+}

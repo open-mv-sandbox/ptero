@@ -14,7 +14,8 @@ use thiserror::Error;
 
 pub use self::{
     system::{State, System, SystemOptions},
-    world::{ActorId, Addr, SystemId, World},
+    tree::ActorId,
+    world::{Addr, SystemId, World},
 };
 
 /// Error on actor creation.
@@ -30,24 +31,28 @@ pub enum CreateError {
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum StartError {
-    /// The actor couldn't be found.
-    #[error("actor not found")]
-    ActorNotFound,
-    /// The system is unavailable.
-    #[error("system unavailable")]
-    SystemUnavailable,
     /// The actor has already been started.
     #[error("actor already started")]
     ActorAlreadyStarted,
+    /// The actor couldn't be found.
+    #[error("actor not found")]
+    ActorNotFound,
+    /// The system couldn't be found.
+    #[error("system not found")]
+    SystemNotFound,
+    /// The system is unavailable.
+    #[error("system unavailable")]
+    SystemUnavailable,
     /// Actor instance's type is wrong.
     #[error("instance wrong type")]
     InstanceWrongType,
-    /// Internal error, see `InternalError`.
-    #[error("internal error")]
-    InternalError(#[from] InternalError),
 }
 
 /// Internal error, this is always a bug.
 #[derive(Error, Debug)]
 #[error("internal error, this is a bug")]
 pub struct InternalError(#[from] Error);
+
+// TODO: Consider if all API functions should either return at least `Result<?, InternalError>`,
+// or if internal errors shouldn't ever be 'leaked'. They probably should be bubbled up, because
+// an internal error ignored could lead to security bugs.

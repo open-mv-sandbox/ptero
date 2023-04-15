@@ -31,7 +31,7 @@ pub fn start(mut ctx: Context, command: GetCommand) -> Result<(), Error> {
     let source_api = FileSourceApi::new(&mut ctx);
 
     let system = ctx.register(SystemOptions::default(), GetCommandSystem);
-    let (id, mut ctx) = ctx.create(system)?;
+    let (id, mut ctx) = ctx.create()?;
 
     // Open up the package for writing in ptero-daicon
     let file = file_api.open(&mut ctx, &command.target, false)?;
@@ -47,7 +47,7 @@ pub fn start(mut ctx: Context, command: GetCommand) -> Result<(), Error> {
     };
     ctx.send(source, message);
 
-    ctx.start(id, command)?;
+    ctx.start(id, system, command)?;
 
     Ok(())
 }
@@ -62,7 +62,7 @@ impl System for GetCommandSystem {
         while let Some((actor, message)) = state.next() {
             let instance = state.get_mut(actor).context("failed to get instance")?;
             std::fs::write(&instance.output, message.data)?;
-            world.stop(actor);
+            world.stop(actor)?;
         }
 
         Ok(())

@@ -51,9 +51,9 @@ mod hello_service {
 
             // stewart_utils provides a `Context` helper that automatically tracks current parent
             // for creation, but you are not required to use this.
-            let id = world.create(self.system, None)?;
+            let id = world.create(None)?;
             let instance = HelloService { name };
-            world.start(id, instance)?;
+            world.start(id, self.system, instance)?;
 
             Ok(Addr::new(id))
         }

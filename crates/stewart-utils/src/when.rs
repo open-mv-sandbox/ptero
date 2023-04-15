@@ -42,12 +42,12 @@ impl<'a> Functional for Context<'a> {
         let system: WhenSystem<F, M> = WhenSystem { _w: PhantomData };
         let system = self.register(options, system);
 
-        let (id, mut ctx) = self.create(system)?;
+        let (id, mut ctx) = self.create()?;
         let actor = When::<F, M> {
             function,
             _a: PhantomData,
         };
-        ctx.start(id, actor)?;
+        ctx.start(id, system, actor)?;
 
         Ok(Addr::new(id))
     }
@@ -111,7 +111,7 @@ where
             let result = (instance.function)(world, id, message)?;
 
             if !result {
-                world.stop(id);
+                world.stop(id)?;
             }
         }
 

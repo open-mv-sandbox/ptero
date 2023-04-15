@@ -23,8 +23,8 @@ pub fn start(mut ctx: Context, command: CreateCommand) -> Result<(), Error> {
 
     let system = ctx.register(SystemOptions::default(), CreateCommandSystem);
 
-    let (id, mut ctx) = ctx.create(system)?;
-    ctx.start(id, ())?;
+    let (id, mut ctx) = ctx.create()?;
+    ctx.start(id, system, ())?;
 
     let file = file_api.open(&mut ctx, &command.target, false)?;
     source_api.open(&mut ctx, file, OpenMode::Create)?;

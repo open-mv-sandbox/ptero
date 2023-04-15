@@ -19,7 +19,7 @@ fn send_message_to_actor() -> Result<(), Error> {
     assert_eq!(parent.count.load(Ordering::SeqCst), 1);
 
     // Can't send to stopped
-    world.stop(parent.id);
+    world.stop(parent.id)?;
     when_sent_message_to(&mut world, parent.addr)?;
     assert_eq!(parent.count.load(Ordering::SeqCst), 1);
 
@@ -32,7 +32,7 @@ fn stop_actors() -> Result<(), Error> {
     let (mut world, system) = given_world_and_system();
     let (parent, child) = given_parent_child(&mut world, system)?;
 
-    world.stop(parent.id);
+    world.stop(parent.id)?;
 
     // Can't send message to child as it should be stopped too
     when_sent_message_to(&mut world, child.addr)?;
@@ -47,13 +47,13 @@ fn not_started_removed() -> Result<(), Error> {
     let mut world = World::new();
     let system = world.register(SystemOptions::default(), TestActorSystem);
 
-    let actor = world.create(system, None)?;
+    let actor = world.create(None)?;
 
     // Process, this should remove the stale actor
     world.run_until_idle()?;
 
     // Make sure we can't start
-    let result = world.start(actor, TestActor::default());
+    let result = world.start(actor, system, TestActor::default());
     if let Err(StartError::ActorNotFound) = result {
         event!(Level::INFO, "correct result");
     } else {
@@ -85,11 +85,11 @@ fn given_actor<'a>(
     system: SystemId,
     parent: Option<ActorId>,
 ) -> Result<ActorInfo, Error> {
-    let actor = world.create(system, parent)?;
+    let actor = world.create(parent)?;
 
     let instance = TestActor::default();
     let count = instance.count.clone();
-    world.start(actor, instance)?;
+    world.start(actor, system, instance)?;
 
     let info = ActorInfo {
         id: actor,

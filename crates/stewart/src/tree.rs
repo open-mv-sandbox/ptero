@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::Error;
 use thunderdome::{Arena, Index};
 
 use crate::{CreateError, SystemId};
@@ -10,95 +11,90 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn insert(&mut self, node: Node) -> Result<Index, CreateError> {
+    pub fn insert(&mut self, node: Node) -> Result<ActorId, CreateError> {
         // Link to the parent
         if let Some(parent) = node.parent {
             self.nodes
-                .get_mut(parent)
+                .get_mut(parent.index)
                 .ok_or(CreateError::ParentNotFound)?;
         }
 
         // Insert the node
         let index = self.nodes.insert(node);
 
-        Ok(index)
+        Ok(ActorId { index })
     }
 
-    pub fn get(&self, index: Index) -> Option<&Node> {
-        self.nodes.get(index)
+    pub fn get(&self, actor: ActorId) -> Option<&Node> {
+        self.nodes.get(actor.index)
     }
 
-    pub fn get_mut(&mut self, index: Index) -> Option<&mut Node> {
-        self.nodes.get_mut(index)
+    pub fn get_mut(&mut self, actor: ActorId) -> Option<&mut Node> {
+        self.nodes.get_mut(actor.index)
     }
 
-    pub fn remove<F>(&mut self, index: Index, mut on_removed: F)
+    /// Remove a node.
+    ///
+    /// Warning: This doesn't check the node doesn't have any children, leaving those orphaned if
+    /// not removed first.
+    pub fn remove(&mut self, actor: ActorId) -> Option<Node> {
+        self.nodes.remove(actor.index)
+    }
+
+    /// Query the children of an actor.
+    pub fn query_children<F>(&self, actor: ActorId, mut on_child: F) -> Result<(), Error>
     where
-        F: FnMut(Node),
-    {
-        self.remove_inner(index, &mut on_removed)
-    }
-
-    fn remove_inner<F>(&mut self, index: Index, on_removed: &mut F)
-    where
-        F: FnMut(Node),
+        F: FnMut(ActorId) -> Result<(), Error>,
     {
         // TODO: Optimize hierarchy walking
-
-        // Remove all children, always first recursively on purpose
-        let children: Vec<_> = self
-            .nodes
-            .iter()
-            .filter(|(_, n)| n.parent() == Some(index))
-            .map(|(index, _)| index)
-            .collect();
-        for child in children {
-            self.remove_inner(child, on_removed);
+        let children = self.nodes.iter().filter(|(_, n)| n.parent() == Some(actor));
+        for (index, _) in children {
+            on_child(ActorId { index })?;
         }
 
-        // Remove the given actor itself
-        if let Some(node) = self.nodes.remove(index) {
-            on_removed(node);
-        }
+        Ok(())
     }
 
-    pub fn count(&self) -> HashMap<SystemId, usize> {
+    pub fn query_count(&self) -> HashMap<SystemId, usize> {
         let mut counts = HashMap::new();
 
-        for (_, node) in &self.nodes {
-            let entry = counts.entry(node.system).or_default();
+        for system in self.nodes.iter().filter_map(|(_, n)| n.system) {
+            let entry = counts.entry(system).or_default();
             *entry = *entry + 1;
         }
 
         counts
     }
+}
 
-    pub fn has_of_system(&self, system: SystemId) -> bool {
-        for (_, node) in &self.nodes {
-            if node.system == system {
-                return true;
-            }
-        }
-
-        false
-    }
+/// Handle referencing an actor in a `World`.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub struct ActorId {
+    index: Index,
 }
 
 pub struct Node {
-    system: SystemId,
-    parent: Option<Index>,
+    system: Option<SystemId>,
+    parent: Option<ActorId>,
 }
 
 impl Node {
-    pub fn new(system: SystemId, parent: Option<Index>) -> Self {
-        Self { system, parent }
+    pub fn new(parent: Option<ActorId>) -> Self {
+        Self {
+            system: None,
+            parent,
+        }
     }
 
-    pub fn system(&self) -> SystemId {
+    pub fn system(&self) -> Option<SystemId> {
         self.system
     }
 
-    pub fn parent(&self) -> Option<Index> {
+    pub fn set_system(&mut self, value: Option<SystemId>) {
+        self.system = value;
+    }
+
+    pub fn parent(&self) -> Option<ActorId> {
         self.parent
     }
 }

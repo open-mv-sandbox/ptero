@@ -129,10 +129,10 @@ async fn start_service(
         render_pipeline: None,
     };
 
-    let id = ctx.register(SystemOptions::default(), ViewerServiceSystem);
+    let system = ctx.register(SystemOptions::default(), ViewerServiceSystem);
 
-    let (id, mut ctx) = ctx.create(id)?;
-    ctx.start(id, service)?;
+    let (id, mut ctx) = ctx.create()?;
+    ctx.start(id, system, service)?;
     let addr = Addr::new(id);
 
     // Start a fetch request for shader data

@@ -16,7 +16,7 @@ pub fn start_set_task(
     data: Vec<u8>,
     on_result: Addr<()>,
 ) -> Result<Addr<u32>, Error> {
-    let (aid, mut ctx) = ctx.create(system)?;
+    let (aid, mut ctx) = ctx.create()?;
     let addr = Addr::new(aid);
 
     // Start the append immediately
@@ -43,7 +43,7 @@ pub fn start_set_task(
         data_offset: None,
         entry,
     };
-    ctx.start(aid, task)?;
+    ctx.start(aid, system, task)?;
 
     Ok(ctx.map_once(addr, Message::Slot)?)
 }
@@ -72,7 +72,7 @@ impl System for SetTaskSystem {
                     event!(Level::DEBUG, "success, sending result");
 
                     world.send(instance.on_result, ());
-                    world.stop(actor);
+                    world.stop(actor)?;
                     return Ok(());
                 }
             }

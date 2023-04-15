@@ -38,9 +38,9 @@ impl SystemFileApi {
             .open(path)
             .context("failed to open system file for writing")?;
 
-        let (id, mut ctx) = ctx.create(self.system)?;
+        let (id, mut ctx) = ctx.create()?;
         let instance = SystemFile { file };
-        ctx.start(id, instance)?;
+        ctx.start(id, self.system, instance)?;
 
         Ok(Addr::new(id))
     }
