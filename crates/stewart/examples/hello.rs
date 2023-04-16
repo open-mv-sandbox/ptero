@@ -4,7 +4,7 @@ use anyhow::Error;
 use stewart::World;
 use tracing::{event, Level};
 
-use crate::hello_service::HelloServiceApi;
+use crate::hello_service::start_hello_service;
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
@@ -12,8 +12,7 @@ fn main() -> Result<(), Error> {
     let mut world = World::new();
 
     // Start the hello service
-    let hello = HelloServiceApi::new(&mut world);
-    let service = hello.start(&mut world, "Example".to_string())?;
+    let service = start_hello_service(&mut world, "Example".to_string())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -29,34 +28,23 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::{Context, Error};
-    use stewart::{Addr, State, System, SystemId, SystemOptions, World};
+    use stewart::{Addr, State, System, SystemOptions, World};
     use tracing::{event, instrument, span, Level};
 
-    /// The entrypoint of the Hello Service's API.
-    #[derive(Clone)]
-    pub struct HelloServiceApi {
-        system: SystemId,
-    }
+    #[instrument("hello-service", skip_all, fields(name = name))]
+    pub fn start_hello_service(world: &mut World, name: String) -> Result<Addr<String>, Error> {
+        event!(Level::DEBUG, "creating service");
 
-    impl HelloServiceApi {
-        pub fn new(world: &mut World) -> Self {
-            Self {
-                system: world.register(SystemOptions::default(), HelloServiceSystem),
-            }
-        }
+        // Self-owned system
+        let system = world.register(SystemOptions::default(), HelloServiceSystem);
 
-        #[instrument("hello-service", skip_all, fields(name = name))]
-        pub fn start(&self, world: &mut World, name: String) -> Result<Addr<String>, Error> {
-            event!(Level::DEBUG, "creating service");
+        // stewart_utils provides a `Context` helper that automatically tracks current parent
+        // for creation, but you are not required to use this.
+        let id = world.create(None)?;
+        let instance = HelloService { name };
+        world.start(id, system, instance)?;
 
-            // stewart_utils provides a `Context` helper that automatically tracks current parent
-            // for creation, but you are not required to use this.
-            let id = world.create(None)?;
-            let instance = HelloService { name };
-            world.start(id, self.system, instance)?;
-
-            Ok(Addr::new(id))
-        }
+        Ok(Addr::new(id))
     }
 
     // The actor implementation below remains entirely private to the module.

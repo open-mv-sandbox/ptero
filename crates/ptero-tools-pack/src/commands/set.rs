@@ -1,9 +1,9 @@
-use anyhow::Error;
+use anyhow::{Context, Error};
 use clap::Args;
 use ptero_daicon::{FileSourceApi, OpenMode, SourceAction, SourceMessage};
-use ptero_file::SystemFileApi;
+use ptero_file::{FileMessage, SystemFileServiceMessage};
 use stewart::{Addr, State, System, SystemOptions, World};
-use stewart_utils::Context;
+use stewart_utils::map_once;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -24,48 +24,75 @@ pub struct SetCommand {
 }
 
 #[instrument("set-command", skip_all)]
-pub fn start(mut ctx: Context, command: SetCommand) -> Result<(), Error> {
+pub fn start(
+    world: &mut World,
+    system_file: Addr<SystemFileServiceMessage>,
+    command: SetCommand,
+) -> Result<(), Error> {
     event!(Level::INFO, "setting file in package");
 
-    let file_api = SystemFileApi::new(&mut ctx);
-    let source_api = FileSourceApi::new(&mut ctx);
+    let system = world.register(SystemOptions::default(), SetCommandSystem);
+    let actor = world.create(None)?;
+    let addr = Addr::new(actor);
 
-    let system = ctx.register(SystemOptions::default(), AddCommandSystem);
-    let (id, mut ctx) = ctx.create()?;
-
-    let data = std::fs::read(&command.input)?;
-
-    // Open up the package for writing in ptero-daicon
-    let file = file_api.open(&mut ctx, &command.target, false)?;
-    let source = source_api.open(&mut ctx, file, OpenMode::ReadWrite)?;
-
-    // Add the data to the source
-    let message = SourceMessage {
-        id: Uuid::new_v4(),
-        action: SourceAction::Set {
-            id: command.id,
-            data,
-            on_result: Addr::new(id),
-        },
+    // Open the target file
+    let message = SystemFileServiceMessage::Open {
+        parent: Some(actor),
+        path: command.target.clone(),
+        truncate: false,
+        on_result: map_once(world, Some(actor), addr, Message::FileOpened)?,
     };
-    ctx.send(source, message);
+    world.send(system_file, message);
 
-    ctx.start(id, system, ())?;
+    world.start(actor, system, command)?;
 
     Ok(())
 }
 
-struct AddCommandSystem;
+struct SetCommandSystem;
 
-impl System for AddCommandSystem {
-    type Instance = ();
-    type Message = ();
+impl System for SetCommandSystem {
+    type Instance = SetCommand;
+    type Message = Message;
 
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
-        while let Some((actor, _)) = state.next() {
-            world.stop(actor)?;
+        while let Some((actor, message)) = state.next() {
+            match message {
+                Message::FileOpened(file) => {
+                    let source_api = FileSourceApi::new(world);
+
+                    // Open up the package for writing in ptero-daicon
+                    let source = source_api.open(world, Some(actor), file, OpenMode::ReadWrite)?;
+
+                    // Add the data to the source
+                    let instance = state.get(actor).context("failed to get instance")?;
+                    let data = std::fs::read(&instance.input)?;
+                    let message = SourceMessage {
+                        id: Uuid::new_v4(),
+                        action: SourceAction::Set {
+                            id: instance.id,
+                            data,
+                            on_result: map_once(
+                                world,
+                                Some(actor),
+                                Addr::new(actor),
+                                Message::Write,
+                            )?,
+                        },
+                    };
+                    world.send(source, message);
+                }
+                Message::Write(()) => {
+                    world.stop(actor)?;
+                }
+            }
         }
 
         Ok(())
     }
+}
+
+enum Message {
+    FileOpened(Addr<FileMessage>),
+    Write(()),
 }

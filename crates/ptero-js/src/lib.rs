@@ -3,8 +3,8 @@ use std::{cell::RefCell, collections::BTreeSet, rc::Rc};
 use anyhow::{Context as _, Error};
 use js_sys::{ArrayBuffer, Uint8Array};
 use ptero_file::{FileAction, FileMessage, ReadResult};
-use stewart::{Addr, State, System, SystemOptions, World};
-use stewart_utils::{Context, Functional};
+use stewart::{ActorId, Addr, State, System, SystemOptions, World};
+use stewart_utils::map;
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 use wasm_bindgen::JsCast;
@@ -13,25 +13,25 @@ use web_sys::{Request, RequestInit, RequestMode, Response};
 
 #[instrument("fetch-file", skip_all)]
 pub fn open_fetch_file(
-    ctx: &mut Context,
+    world: &mut World,
+    parent: Option<ActorId>,
     url: String,
     hnd: SystemH,
 ) -> Result<Addr<FileMessage>, Error> {
-    let system = ctx.register(SystemOptions::default(), FetchFileSystem);
+    let system = world.register(SystemOptions::default(), FetchFileSystem);
 
-    let (id, mut ctx) = ctx.create()?;
-    let addr = Addr::new(id);
+    let actor = world.create(parent)?;
+    let addr = Addr::new(actor);
 
     let service = FetchFile {
         data: None,
         pending: Vec::new(),
     };
-    ctx.start(id, system, service)?;
+    world.start(actor, system, service)?;
 
     spawn_local(do_fetch(hnd, addr, url));
 
-    let addr = ctx.map(addr, Message::File)?;
-    Ok(addr)
+    Ok(map(world, Some(actor), addr, Message::File)?)
 }
 
 struct FetchFileSystem;

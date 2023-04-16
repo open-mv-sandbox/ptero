@@ -4,45 +4,71 @@ use std::{
 };
 
 use anyhow::{Context as _, Error};
-use stewart::{Addr, State, System, SystemId, SystemOptions, World};
-use stewart_utils::Context;
+use stewart::{ActorId, Addr, State, System, SystemId, SystemOptions, World};
 use tracing::{event, instrument, Level};
 
 use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 
-/// System file API entry point.
-#[derive(Clone)]
-pub struct SystemFileApi {
+pub fn start_system_file_service(
+    world: &mut World,
+) -> Result<Addr<SystemFileServiceMessage>, Error> {
+    // Create the service system
+    let system = SystemFileServiceSystem {
+        system: world.register(SystemOptions::default(), SystemFileSystem),
+    };
+    let system = world.register(SystemOptions::default(), system);
+
+    // Start the service
+    let id = world.create(None)?;
+    let instance = ();
+    world.start(id, system, instance)?;
+
+    Ok(Addr::new(id))
+}
+
+pub enum SystemFileServiceMessage {
+    Open {
+        parent: Option<ActorId>,
+        path: String,
+        truncate: bool,
+        on_result: Addr<Addr<FileMessage>>,
+    },
+}
+
+struct SystemFileServiceSystem {
     system: SystemId,
 }
 
-impl SystemFileApi {
-    pub fn new(world: &mut World) -> Self {
-        Self {
-            system: world.register(SystemOptions::default(), SystemFileSystem),
+impl System for SystemFileServiceSystem {
+    type Instance = ();
+    type Message = SystemFileServiceMessage;
+
+    fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+        while let Some((_id, message)) = state.next() {
+            let SystemFileServiceMessage::Open {
+                parent,
+                path,
+                truncate,
+                on_result,
+            } = message;
+
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .truncate(truncate)
+                .create(true)
+                .open(path)
+                .context("failed to open system file for writing")?;
+
+            let id = world.create(parent)?;
+            let instance = SystemFile { file };
+            world.start(id, self.system, instance)?;
+
+            let addr: Addr<FileMessage> = Addr::new(id);
+            world.send(on_result, addr);
         }
-    }
 
-    #[instrument("system-file", skip_all)]
-    pub fn open(
-        &self,
-        ctx: &mut Context,
-        path: &str,
-        truncate: bool,
-    ) -> Result<Addr<FileMessage>, Error> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .truncate(truncate)
-            .create(true)
-            .open(path)
-            .context("failed to open system file for writing")?;
-
-        let (id, mut ctx) = ctx.create()?;
-        let instance = SystemFile { file };
-        ctx.start(id, self.system, instance)?;
-
-        Ok(Addr::new(id))
+        Ok(())
     }
 }
 

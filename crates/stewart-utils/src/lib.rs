@@ -1,6 +1,5 @@
 //! Small essential utilities for stewart.
 
-mod context;
-mod when;
+mod functional;
 
-pub use self::{context::Context, when::Functional};
+pub use self::functional::{map, map_once, when};

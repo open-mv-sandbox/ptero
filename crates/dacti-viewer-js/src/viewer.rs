@@ -5,7 +5,7 @@ use ptero_daicon::{FileSourceApi, OpenMode, SourceAction, SourceMessage};
 use ptero_file::ReadResult;
 use ptero_js::SystemH;
 use stewart::{Addr, State, System, SystemOptions, World};
-use stewart_utils::{Context, Functional};
+use stewart_utils::{map_once, when};
 use tracing::{event, instrument, Level};
 use uuid::{uuid, Uuid};
 use wasm_bindgen::prelude::*;
@@ -33,17 +33,16 @@ impl Viewer {
     pub async fn from_canvas(target: HtmlCanvasElement) -> Result<Viewer, String> {
         crate::init_hooks();
 
-        let system = World::new();
-        let hnd = Rc::new(RefCell::new(system));
-        let mut system = hnd.borrow_mut();
+        let world = World::new();
+        let hnd = Rc::new(RefCell::new(world));
+        let mut world = hnd.borrow_mut();
 
-        let mut ctx = Context::root(&mut system);
-        let addr = start_service(&mut ctx, target, hnd.clone())
+        let addr = start_service(&mut world, target, hnd.clone())
             .await
             .map_err(|v| v.to_string())?;
 
-        system.run_until_idle().map_err(|v| v.to_string())?;
-        drop(system);
+        world.run_until_idle().map_err(|v| v.to_string())?;
+        drop(world);
 
         Ok(Viewer { hnd, addr })
     }
@@ -58,7 +57,7 @@ impl Viewer {
 
 #[instrument("viewer-service", skip_all)]
 async fn start_service(
-    ctx: &mut Context<'_>,
+    world: &mut World,
     target: HtmlCanvasElement,
     hnd: SystemH,
 ) -> Result<Addr<Message>, Error> {
@@ -129,37 +128,44 @@ async fn start_service(
         render_pipeline: None,
     };
 
-    let system = ctx.register(SystemOptions::default(), ViewerServiceSystem);
+    let system = world.register(SystemOptions::default(), ViewerServiceSystem);
 
-    let (id, mut ctx) = ctx.create()?;
-    ctx.start(id, system, service)?;
-    let addr = Addr::new(id);
+    let actor = world.create(None)?;
+    world.start(actor, system, service)?;
+    let addr = Addr::new(actor);
 
     // Start a fetch request for shader data
-    let file = ptero_js::open_fetch_file(&mut ctx, "/viewer-builtins.dacti-pack".to_string(), hnd)?;
-    let source_api = FileSourceApi::new(&mut ctx);
-    let source = source_api.open(&mut ctx, file, OpenMode::ReadWrite)?;
+    let file = ptero_js::open_fetch_file(
+        world,
+        Some(actor),
+        "/viewer-builtins.dacti-pack".to_string(),
+        hnd,
+    )?;
+    let source_api = FileSourceApi::new(world);
+    let source = source_api.open(world, Some(actor), file, OpenMode::ReadWrite)?;
 
     let action = SourceAction::Get {
         id: uuid!("bacc2ba1-8dc7-4d54-a7a4-cdad4d893a1b"),
-        on_result: ctx.map_once(addr, Message::ShaderFetched)?,
+        on_result: map_once(world, Some(actor), addr, Message::ShaderFetched)?,
     };
     let message = SourceMessage {
         id: Uuid::new_v4(),
         action,
     };
-    ctx.send(source, message);
+    world.send(source, message);
 
     // Just for testing, fetch an additional resource
     let action = SourceAction::Get {
         id: uuid!("1f063ad4-5a91-47fe-b95c-668fc41a719d"),
-        on_result: ctx.when(SystemOptions::default(), |_, _, _| Ok(false))?,
+        on_result: when(world, Some(actor), SystemOptions::default(), |_, _, _| {
+            Ok(false)
+        })?,
     };
     let message = SourceMessage {
         id: Uuid::new_v4(),
         action,
     };
-    ctx.send(source, message);
+    world.send(source, message);
 
     Ok(addr)
 }

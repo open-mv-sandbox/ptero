@@ -1,6 +1,5 @@
 use anyhow::{Context as _, Error};
-use stewart::{Addr, State, System, SystemId, SystemOptions, World};
-use stewart_utils::Context;
+use stewart::{ActorId, Addr, State, System, SystemId, SystemOptions, World};
 use tracing::{event, instrument, Level};
 
 use crate::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
@@ -21,12 +20,13 @@ impl BufferFileApi {
     #[instrument("buffer-file", skip_all)]
     pub fn open_buffer(
         &self,
-        ctx: &mut Context,
+        world: &mut World,
+        parent: Option<ActorId>,
         buffer: Vec<u8>,
     ) -> Result<Addr<FileMessage>, Error> {
-        let (id, mut ctx) = ctx.create()?;
+        let id = world.create(parent)?;
         let instance = BufferFile { buffer };
-        ctx.start(id, self.system, instance)?;
+        world.start(id, self.system, instance)?;
 
         Ok(Addr::new(id))
     }

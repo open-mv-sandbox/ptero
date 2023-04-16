@@ -2,22 +2,23 @@ use anyhow::{Context as _, Error};
 use bytemuck::{bytes_of, Zeroable};
 use daicon::Entry;
 use ptero_file::{FileAction, FileMessage, WriteLocation, WriteResult};
-use stewart::{Addr, State, System, SystemId, World};
-use stewart_utils::{Context, Functional};
+use stewart::{ActorId, Addr, State, System, SystemId, World};
+use stewart_utils::{map, map_once};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
 #[instrument("set-task", skip_all)]
 pub fn start_set_task(
-    mut ctx: Context,
+    world: &mut World,
+    parent: Option<ActorId>,
     system: SystemId,
     file: Addr<FileMessage>,
     id: Uuid,
     data: Vec<u8>,
     on_result: Addr<()>,
 ) -> Result<Addr<u32>, Error> {
-    let (aid, mut ctx) = ctx.create()?;
-    let addr = Addr::new(aid);
+    let actor = world.create(parent)?;
+    let addr = Addr::new(actor);
 
     // Start the append immediately
     let size = data.len() as u32;
@@ -26,10 +27,10 @@ pub fn start_set_task(
         action: FileAction::Write {
             location: WriteLocation::Append,
             data,
-            on_result: ctx.map(addr, Message::AppendResult)?,
+            on_result: map(world, Some(actor), addr, Message::AppendResult)?,
         },
     };
-    ctx.send(file, message);
+    world.send(file, message);
 
     // Create the actor for tracking state of writing
     let mut entry = Entry::zeroed();
@@ -43,9 +44,9 @@ pub fn start_set_task(
         data_offset: None,
         entry,
     };
-    ctx.start(aid, system, task)?;
+    world.start(actor, system, task)?;
 
-    Ok(ctx.map_once(addr, Message::Slot)?)
+    Ok(map_once(world, Some(actor), addr, Message::Slot)?)
 }
 
 pub struct SetTaskSystem;
@@ -93,8 +94,12 @@ impl System for SetTaskSystem {
                     action: FileAction::Write {
                         location: WriteLocation::Offset(entry_offset as u64),
                         data: bytes_of(&instance.entry).to_owned(),
-                        on_result: Context::of(world, actor)
-                            .map_once(Addr::new(actor), Message::EntryResult)?,
+                        on_result: map_once(
+                            world,
+                            Some(actor),
+                            Addr::new(actor),
+                            Message::EntryResult,
+                        )?,
                     },
                 };
                 world.send(instance.file, message);

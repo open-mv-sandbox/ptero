@@ -3,8 +3,8 @@ mod commands;
 use anyhow::Error;
 use clap::{Parser, Subcommand};
 use commands::get::GetCommand;
+use ptero_file::start_system_file_service;
 use stewart::World;
-use stewart_utils::Context;
 use tracing::{event, Level};
 use tracing_subscriber::{prelude::*, EnvFilter, FmtSubscriber};
 
@@ -36,18 +36,20 @@ fn main() {
 
 fn try_main(args: CliArgs) -> Result<(), Error> {
     // Set up the runtime
-    let mut system = World::new();
-    let ctx = Context::root(&mut system);
+    let mut world = World::new();
+
+    // Set up system APIs
+    let system_file = start_system_file_service(&mut world)?;
 
     // Start the command actor
     match args.command {
-        Command::Create(command) => commands::create::start(ctx, command)?,
-        Command::Set(command) => commands::set::start(ctx, command)?,
-        Command::Get(command) => commands::get::start(ctx, command)?,
+        Command::Create(command) => commands::create::start(&mut world, system_file, command)?,
+        Command::Set(command) => commands::set::start(&mut world, system_file, command)?,
+        Command::Get(command) => commands::get::start(&mut world, system_file, command)?,
     };
 
     // Run the command until it's done
-    system.run_until_idle()?;
+    world.run_until_idle()?;
 
     // TODO: Receive command errors
     Ok(())

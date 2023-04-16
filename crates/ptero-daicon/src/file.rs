@@ -5,7 +5,7 @@ use bytemuck::{bytes_of, Zeroable};
 use daicon::{Entry, Header};
 use ptero_file::{FileAction, FileMessage, ReadResult, WriteLocation, WriteResult};
 use stewart::{ActorId, Addr, State, System, SystemId, SystemOptions, World};
-use stewart_utils::{Context, Functional};
+use stewart_utils::{map, map_once, when};
 use tracing::{event, instrument, Level};
 use uuid::Uuid;
 
@@ -15,7 +15,6 @@ use crate::{
     SourceAction, SourceMessage,
 };
 
-#[derive(Clone)]
 pub struct FileSourceApi {
     system: SystemId,
     set_task: SystemId,
@@ -35,14 +34,15 @@ impl FileSourceApi {
     #[instrument("file-source", skip_all)]
     pub fn open(
         &self,
-        ctx: &mut Context,
+        world: &mut World,
+        parent: Option<ActorId>,
         file: Addr<FileMessage>,
         mode: OpenMode,
     ) -> Result<Addr<SourceMessage>, Error> {
-        let (id, mut ctx) = ctx.create()?;
-        let addr = Addr::new(id);
+        let actor = world.create(parent)?;
+        let addr = Addr::new(actor);
 
-        let source = ctx.map(addr, Message::SourceMessage)?;
+        let source = map(world, Some(actor), addr, Message::SourceMessage)?;
         let mut table = None;
 
         // TODO: this is also the validation step, respond if we correctly validated
@@ -55,10 +55,10 @@ impl FileSourceApi {
                     action: FileAction::Read {
                         offset: 0,
                         size,
-                        on_result: ctx.map_once(addr, Message::ReadTableResult)?,
+                        on_result: map_once(world, Some(actor), addr, Message::ReadTableResult)?,
                     },
                 };
-                ctx.send(file, message);
+                world.send(file, message);
             }
             OpenMode::Create => {
                 // Start writing immediately at the given offset
@@ -79,13 +79,15 @@ impl FileSourceApi {
                 let action = FileAction::Write {
                     location: WriteLocation::Offset(0),
                     data,
-                    on_result: ctx.when(SystemOptions::default(), |_, _, _| Ok(false))?,
+                    on_result: when(world, Some(actor), SystemOptions::default(), |_, _, _| {
+                        Ok(false)
+                    })?,
                 };
                 let message = FileMessage {
                     id: Uuid::new_v4(),
                     action,
                 };
-                ctx.send(file, message);
+                world.send(file, message);
 
                 // Store the table
                 table = Some(create_table);
@@ -93,17 +95,18 @@ impl FileSourceApi {
         }
 
         // Start the root manager actor
-        let actor = FileSource {
-            api: self.clone(),
+        let instance = FileSource {
+            actor,
+            set_task: self.set_task,
 
-            write_header_result: ctx.map(addr, Message::WriteHeaderResult)?,
+            write_header_result: map(world, Some(actor), addr, Message::WriteHeaderResult)?,
             file,
             table,
 
             get_tasks: Vec::new(),
             pending_slots: Vec::new(),
         };
-        ctx.start(id, self.system, actor)?;
+        world.start(actor, self.system, instance)?;
 
         Ok(source)
     }
@@ -129,7 +132,7 @@ impl System for FileSourceSystem {
 
             match message {
                 Message::SourceMessage(message) => {
-                    instance.on_source_message(world, actor, message)?;
+                    instance.on_source_message(world, message)?;
                 }
                 Message::ReadTableResult(result) => {
                     instance.on_read_table(result)?;
@@ -153,7 +156,8 @@ impl System for FileSourceSystem {
 }
 
 struct FileSource {
-    api: FileSourceApi,
+    actor: ActorId,
+    set_task: SystemId,
 
     write_header_result: Addr<WriteResult>,
     file: Addr<FileMessage>,
@@ -169,11 +173,8 @@ impl FileSource {
     fn on_source_message(
         &mut self,
         world: &mut World,
-        id: ActorId,
         message: SourceMessage,
     ) -> Result<(), Error> {
-        let ctx = Context::of(world, id);
-
         match message.action {
             SourceAction::Get { id, on_result } => {
                 event!(Level::INFO, ?id, "received get");
@@ -186,7 +187,15 @@ impl FileSource {
             } => {
                 event!(Level::INFO, ?id, bytes = data.len(), "received set");
 
-                let addr = start_set_task(ctx, self.api.set_task, self.file, id, data, on_result)?;
+                let addr = start_set_task(
+                    world,
+                    Some(self.actor),
+                    self.set_task,
+                    self.file,
+                    id,
+                    data,
+                    on_result,
+                )?;
                 self.pending_slots.push(addr);
             }
         }
