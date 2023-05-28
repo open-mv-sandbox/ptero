@@ -1,8 +1,8 @@
 ## Pterodactil
 
-Pterodactil is a toolkit for working with [dacti formats](https://github.com/open-mv-sandbox/dacti).
+Dacti/Daicon related projects incubation workspace.
 
-> 🚧 Everything in this workspace is not ready for production use. All formats, implementations, and other details are subject to change at any time. If you want to try out elements in this workspace regardless for testing and validation purposes, coordinate with the maintainers.
+This used to contain a daicon implementation, but this has since been moved to the daicon repository.
 
 ## Dacti Viewer
 
@@ -16,16 +16,6 @@ To generate the package for use in projects, run `wasm-pack build` in the JS cra
 See the [wasm-pack documentation](https://rustwasm.github.io/docs/wasm-pack/) for more information.
 
 You do not need to build the library manually for the web example.
-
-## Miri
-
-This project is additionally tested using the [Miri project](https://github.com/rust-lang/miri).
-While no unsafe code is used in ptero, this additionally verifies dependencies are behaving safely too.
-
-## Related Projects
-
-- [Dacti](https://github.com/open-mv-sandbox/dacti): Ptero is made for working with dacti formats.
-- [Daicon](https://github.com/open-mv-sandbox/daicon): Dacti uses daicon as the base for its binary formats, and ptero also provides APIs for working with daicon.
 
 ## License
 

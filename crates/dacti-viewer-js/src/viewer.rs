@@ -1,13 +1,16 @@
 use std::{borrow::Cow, cell::RefCell, rc::Rc};
 
-use anyhow::{Context as _, Error};
-use ptero_daicon::{FileSourceApi, OpenMode, SourceAction, SourceMessage};
-use ptero_file::ReadResult;
-use ptero_js::SystemH;
-use stewart::{Addr, State, System, SystemOptions, World};
-use stewart_utils::{map_once, when};
+use anyhow::Error;
+use daicon::{
+    open_file_source,
+    protocol::{ReadResult, SourceAction, SourceGet, SourceMessage},
+    OpenMode, OpenOptions,
+};
+use daicon_types::Id;
+use daicon_web::{open_fetch_file, WorldHandle};
+use stewart::{Actor, Context, Options, Sender, State, World};
 use tracing::{event, instrument, Level};
-use uuid::{uuid, Uuid};
+use uuid::Uuid;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 use wgpu::{
@@ -24,8 +27,8 @@ use crate::surface;
 /// JS browser viewer instance handle.
 #[wasm_bindgen]
 pub struct Viewer {
-    hnd: SystemH,
-    addr: Addr<Message>,
+    hnd: WorldHandle,
+    sender: Sender<Message>,
 }
 
 #[wasm_bindgen]
@@ -35,32 +38,33 @@ impl Viewer {
 
         let world = World::new();
         let hnd = Rc::new(RefCell::new(world));
-        let mut world = hnd.borrow_mut();
 
-        let addr = start_service(&mut world, target, hnd.clone())
+        let sender = start_service(hnd.clone(), target)
             .await
             .map_err(|v| v.to_string())?;
 
+        let mut world = hnd.borrow_mut();
         world.run_until_idle().map_err(|v| v.to_string())?;
         drop(world);
 
-        Ok(Viewer { hnd, addr })
+        Ok(Viewer { hnd, sender })
     }
 
     pub fn tick(&mut self) -> Result<(), String> {
-        let mut system = self.hnd.borrow_mut();
-        system.send(self.addr, Message::Tick);
-        system.run_until_idle().map_err(|v| v.to_string())?;
+        let mut world = self.hnd.borrow_mut();
+        let mut ctx = world.root();
+
+        self.sender.send(&mut ctx, Message::Tick);
+        world.run_until_idle().map_err(|v| v.to_string())?;
         Ok(())
     }
 }
 
 #[instrument("viewer-service", skip_all)]
 async fn start_service(
-    world: &mut World,
+    hnd: WorldHandle,
     target: HtmlCanvasElement,
-    hnd: SystemH,
-) -> Result<Addr<Message>, Error> {
+) -> Result<Sender<Message>, Error> {
     event!(Level::INFO, "creating viewer service");
 
     let instance = Instance::default();
@@ -128,75 +132,42 @@ async fn start_service(
         render_pipeline: None,
     };
 
-    let system = world.register(SystemOptions::default(), ViewerServiceSystem);
+    let mut world = hnd.borrow_mut();
+    let mut ctx = world.root();
 
-    let actor = world.create(None)?;
-    world.start(actor, system, service)?;
-    let addr = Addr::new(actor);
+    let (mut ctx, sender) = ctx.create(Options::default())?;
+    ctx.start(service)?;
 
     // Start a fetch request for shader data
-    let file = ptero_js::open_fetch_file(
-        world,
-        Some(actor),
+    let file = open_fetch_file(
+        &mut ctx,
         "/viewer-builtins.dacti-pack".to_string(),
-        hnd,
+        hnd.clone(),
     )?;
-    let source_api = FileSourceApi::new(world);
-    let source = source_api.open(world, Some(actor), file, OpenMode::ReadWrite)?;
+    let source = open_file_source(&mut ctx, file, OpenMode::ReadWrite, OpenOptions::default())?;
 
-    let action = SourceAction::Get {
-        id: uuid!("bacc2ba1-8dc7-4d54-a7a4-cdad4d893a1b"),
-        on_result: map_once(world, Some(actor), addr, Message::ShaderFetched)?,
+    let action = SourceGet {
+        id: Id(0xbacc2ba1),
+        on_result: sender.clone().map(Message::ShaderFetched),
     };
     let message = SourceMessage {
         id: Uuid::new_v4(),
-        action,
+        action: SourceAction::Get(action),
     };
-    world.send(source, message);
+    source.send(&mut ctx, message);
 
     // Just for testing, fetch an additional resource
-    let action = SourceAction::Get {
-        id: uuid!("1f063ad4-5a91-47fe-b95c-668fc41a719d"),
-        on_result: when(world, Some(actor), SystemOptions::default(), |_, _, _| {
-            Ok(false)
-        })?,
+    let action = SourceGet {
+        id: Id(0x1f063ad4),
+        on_result: Sender::noop(),
     };
     let message = SourceMessage {
         id: Uuid::new_v4(),
-        action,
+        action: SourceAction::Get(action),
     };
-    world.send(source, message);
+    source.send(&mut ctx, message);
 
-    Ok(addr)
-}
-
-struct ViewerServiceSystem;
-
-impl System for ViewerServiceSystem {
-    type Instance = ViewerService;
-    type Message = Message;
-
-    fn process(&mut self, _world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
-        while let Some((actor, message)) = state.next() {
-            let instance = state.get_mut(actor).context("failed to get instance")?;
-
-            match message {
-                Message::ShaderFetched(message) => {
-                    let data = std::str::from_utf8(&message.data)?;
-                    let pipeline = create_render_pipeline(
-                        &instance.device,
-                        &instance.pipeline_layout,
-                        instance.swapchain_format,
-                        &data,
-                    );
-                    instance.render_pipeline = Some(pipeline);
-                }
-                Message::Tick => instance.tick(),
-            }
-        }
-
-        Ok(())
-    }
+    Ok(sender)
 }
 
 struct ViewerService {
@@ -207,6 +178,32 @@ struct ViewerService {
     pipeline_layout: PipelineLayout,
     swapchain_format: TextureFormat,
     render_pipeline: Option<RenderPipeline>,
+}
+
+impl Actor for ViewerService {
+    type Message = Message;
+
+    fn process(&mut self, _ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
+        while let Some(message) = state.next() {
+            match message {
+                Message::ShaderFetched(message) => {
+                    let data = std::str::from_utf8(&message.data)?;
+                    event!(Level::INFO, "received shader\n{}", data);
+
+                    let pipeline = create_render_pipeline(
+                        &self.device,
+                        &self.pipeline_layout,
+                        self.swapchain_format,
+                        &data,
+                    );
+                    self.render_pipeline = Some(pipeline);
+                }
+                Message::Tick => self.tick(),
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl ViewerService {

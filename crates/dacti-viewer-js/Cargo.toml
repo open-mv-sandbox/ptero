@@ -9,13 +9,12 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 anyhow.workspace = true
 console_error_panic_hook.workspace = true
+daicon.workspace = true
+daicon-types.workspace = true
+daicon-web.workspace = true
 js-sys.workspace = true
-ptero-daicon.workspace = true
-ptero-file.workspace = true
-ptero-js.workspace = true
 raw-window-handle.workspace = true
 stewart.workspace = true
-stewart-utils.workspace = true
 tracing.workspace = true
 tracing-wasm.workspace = true
 uuid.workspace = true
@@ -26,8 +25,6 @@ dacti-viewer.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { workspace = true, features = ["webgl"] }
-# TODO: wasm32-wasi will provide random
-getrandom = { version = "0.2", features = ["js"] }
 
 [dependencies.web-sys]
 workspace = true
